@@ -14,3 +14,9 @@ node_modules/
 .vscode/
 
 docs/
+
+# agent and bmad folders
+_bmad/*
+.agent/skills/bmad-*
+.github/skills/bmad-*
+.sfdx/*
