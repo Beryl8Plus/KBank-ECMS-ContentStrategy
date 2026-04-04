@@ -43,7 +43,10 @@ Get the conditions of a specific decision rule. Used when returning to edit step
       "conditionId": "uuid-group-1",
       "type": "group",
       "sequence": 3,
-      "connectorOperator": null,
+      "attributeId": "uuid-attr-group-4",
+      "attributeIsActive": true,
+      "logicalOperator": "=",
+      "connectorOperator": "AND",
       "conditions": [
         {
           "conditionId": "uuid-cond-3",
