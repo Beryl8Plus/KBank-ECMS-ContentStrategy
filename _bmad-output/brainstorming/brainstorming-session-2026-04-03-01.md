@@ -1,11 +1,11 @@
 ---
-stepsCompleted: [1, 2, 3]
-inputDocuments: ["src/diagram/models.md", "src/api/save-decision-rule.md", "src/api/decision-rule-management-apis/save-decision-rule-step-2.md", "docs/api/decision-rule-management-apis/save-decision-rule-step-3.md"]
-session_topic: "Design decision rule APIs — step 1 (conditions), step 2 (rule-sets with attribute values), and step 3 (scheduling)"
-session_goals: "Define clean, flexible JSON structures for all three save steps that map to decision_rules, rules, rule_condition_groups, rule_condition, and schedules tables"
+stepsCompleted: [1, 2, 3, 4, 5]
+inputDocuments: ["src/diagram/models.md", "src/api/save-decision-rule.md", "src/api/decision-rule-management-apis/save-decision-rule-step-2.md", "docs/api/decision-rule-management-apis/save-decision-rule-step-3.md", "docs/api/decision-rule-management-apis/get-decision-rule-condition.md", "docs/diagram/models.md"]
+session_topic: "Design decision rule APIs — step 1 (conditions), step 2 (rule-sets with attribute values), step 3 (scheduling), GET conditions for edit, and refactor to self-referencing rule_condition model"
+session_goals: "Define clean, flexible JSON structures for all three save steps and GET conditions API that map to decision_rules, rules, rule_condition, and schedules tables (single-table self-ref tree)"
 selected_approach: "ai-recommended"
 techniques_used: ["First Principles Thinking", "Morphological Analysis", "Decision Tree Mapping"]
-ideas_generated: ["Idea #1: Operator at condition level", "Idea #2: Backend normalize to nested groups", "Idea #3: Hybrid dual storage", "Idea #4: Connector at condition level + group as visual container (SELECTED)", "Idea #5: Raw JSON payload + normalized relational", "Step2 Idea #1: GET flat columns + values array (SELECTED)", "Step2 Idea #2: GET key-value map per rule", "Step2 Idea #3: GET nested with condition group context", "Step2 Idea #4: POST clean save with conditionId references (SELECTED)", "Step3 Idea #1: schedules array per request with max 3 per placement (SELECTED)"]
+ideas_generated: ["Idea #1: Operator at condition level", "Idea #2: Backend normalize to nested groups", "Idea #3: Hybrid dual storage", "Idea #4: Connector at condition level + group as visual container (SELECTED)", "Idea #5: Raw JSON payload + normalized relational", "Step2 Idea #1: GET flat columns + values array (SELECTED)", "Step2 Idea #2: GET key-value map per rule", "Step2 Idea #3: GET nested with condition group context", "Step2 Idea #4: POST clean save with conditionId references (SELECTED)", "Step3 Idea #1: schedules array per request with max 3 per placement (SELECTED)", "GET Cond Idea #1: Mirror POST + inline attributeIsActive (SELECTED)", "GET Cond Idea #2: Nested tree + separate attributeStatuses map", "GET Cond Idea #3: Inline attribute object", "GET Cond Idea #4: Flat response + frontend reconstruct (REJECTED)", "Refactor Idea #1: Unified conditions array with type discriminator (SELECTED)", "Refactor Idea #2: Keep conditionGroups wrapper mapped to rule_condition", "Refactor Idea #3: Flat array with parentSequence (REJECTED)"]
 context_file: "src/diagram/models.md"
 ---
 
@@ -211,3 +211,114 @@ Updated file:
 
 Created file:
 - `docs/api/decision-rule-management-apis/save-decision-rule-step-3.md` — Request body, response body, validation error table, and DB mapping including capacity check SQL
+
+---
+
+## Step 4 API Design — GET Conditions for Edit
+
+### Context
+
+- When user returns to **edit step 1** of an existing decision rule, frontend calls `GET /decision-rules/{decision_rule_id}/conditions` to reload the condition tree and populate the form.
+- Response must be **round-trip identical** to the POST step 1 shape so the same form components can render it directly.
+- Each condition must include `attributeIsActive` from `attributes.is_active` so frontend can **show a warning** on inactive attributes (warn but not block save).
+
+### Data Flow Understanding
+
+| Layer | DB Table | UI Representation |
+|-------|----------|-------------------|
+| **Decision Rule** | `decision_rules` | Form header fields (name, type, contentPath, score) |
+| **Root Groups** | `rule_condition_groups` (parent=null) | Top-level "Attribute Group" containers |
+| **Conditions** | `rule_condition` → `attributes` | Condition rows with attribute selector + operator |
+| **Nested Groups** | `rule_condition_groups` (parent≠null) | Nested group items within condition arrays |
+
+### Ideas Generated
+
+#### Idea #1: Mirror POST + inline `attributeIsActive` (SELECTED)
+- Response = POST structure + `conditionGroupId`, `conditionId`, `attributeIsActive` per condition
+- Frontend reads `attributeIsActive` directly, shows warning badge per condition
+- **Pro:** Simple, direct, form populate with no transformation
+- **Con:** `isActive` duplicated if same attribute used in multiple conditions (max ~30 conditions, negligible)
+
+#### Idea #2: Nested tree + separate `attributeStatuses` map
+- `conditionGroups` = nested tree without isActive
+- Add `attributeStatuses: { "uuid": { isActive: true } }` flat map
+- Frontend lookups from map by `attributeId`
+- **Pro:** No duplication
+- **Con:** Extra lookup logic in frontend
+
+#### Idea #3: Inline attribute object
+- Each condition has `attribute: { id, isActive }` nested object
+- **Pro:** Extensible for future fields
+- **Con:** Over-structured for single boolean field; user confirmed no extra data needed
+
+#### Idea #4: Flat response + frontend reconstruct (REJECTED)
+- Flat arrays with parentId references
+- **Rejected:** Breaks round-trip fidelity, frontend must reconstruct tree
+
+### Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| **Response shape** | Mirror POST nested tree (Idea #1) | Round-trip fidelity — edit form = same shape as save |
+| **isActive placement** | Inline `attributeIsActive` per condition | Direct, no lookup, duplication negligible (max ~30 conditions) |
+| **IDs included** | `conditionGroupId` + `conditionId` | Required for edit/update/delete operations |
+| **Decision rule metadata** | Included in response | Frontend populates form header fields |
+| **Inactive attribute handling** | Warning only, not block save | Attribute may be re-activated; decision rule still DRAFT |
+
+### Final Output — Step 4
+
+Updated file:
+- `docs/api/decision-rule-management-apis/get-decision-rule-condition.md` — GET response body with nested conditions, `attributeIsActive` per condition, DB mapping table
+
+---
+
+## Step 5: Refactor — Self-Referencing `rule_condition` Model
+
+### Context
+
+- `rule_condition_groups` table was **removed** from the schema.
+- `rule_condition` now uses `parent_rule_condition_id` (self-referencing FK) instead of `rule_condition_group_id`.
+- Groups are stored as `rule_condition` rows with `attribute_id = null`, `logical_operator = null`, `value = null`.
+- This is a **single-table self-referencing tree** instead of the previous 2-table design.
+
+### Model Change Summary
+
+| Aspect | Old Model | New Model |
+|---|---|---|
+| Group storage | `rule_condition_groups` table | `rule_condition` row with `attribute_id = null` |
+| Nesting | `rule_condition_groups.parent_rule_condition_groups` | `rule_condition.parent_rule_condition_id` |
+| Condition-to-group | `rule_condition.rule_condition_group_id` FK | `rule_condition.parent_rule_condition_id` FK |
+| Tree structure | 2-table (groups + conditions) | 1-table (self-ref) |
+
+### Ideas Generated
+
+#### Refactor Idea #1: Unified `conditions` array — type discriminator (SELECTED)
+- Top-level `conditions: [...]` replaces `conditionGroups: [{ conditions }]`
+- `type: "group"` + nested `conditions: [...]` replaces `type: "nestedGroup"` + `conditionGroup: [...]`
+- Recursive same-shape structure at every level
+- JSON mirrors DB exactly — 1 table = 1 recursive array
+- Round-trip fidelity maintained
+
+#### Refactor Idea #2: Keep `conditionGroups` wrapper mapped to `rule_condition`
+- JSON shape unchanged, backend maps `conditionGroups[n]` → `rule_condition` row
+- **Con:** Naming mismatch — JSON says "groups" but DB has no groups table
+
+#### Refactor Idea #3: Flat array with `parentSequence`
+- All conditions in flat array with parentSequence references
+- **Rejected:** Frontend must reconstruct tree, breaks round-trip fidelity
+
+### Key Changes Applied
+
+| Aspect | Old API Spec | New API Spec |
+|---|---|---|
+| Top-level wrapper | `conditionGroups: [{ conditions }]` | `conditions: [...]` directly |
+| Nested group type | `"type": "nestedGroup"` + `conditionGroup: [...]` | `"type": "group"` + `conditions: [...]` |
+| Nesting key name | `conditionGroup` (singular) | `conditions` (same key, recursive) |
+| DB table for groups | `rule_condition_groups` | `rule_condition` with `attribute_id = null` |
+| GET query | 2 queries (groups + conditions with JOIN) | 1 query with LEFT JOIN + app-layer tree build |
+
+### Files Updated
+
+- `docs/api/decision-rule-management-apis/save-decision-rule-step-1.md` — Refactored JSON to unified `conditions` array, updated DB mapping
+- `docs/api/decision-rule-management-apis/get-decision-rule-condition.md` — Refactored response to mirror POST, updated query to single LEFT JOIN
+- `docs/api/decision-rule-management-apis/save-decision-rule-step-2.md` — Updated constraint text (removed "condition groups" reference)
