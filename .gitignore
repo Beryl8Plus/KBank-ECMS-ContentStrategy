@@ -19,4 +19,7 @@ docs/
 _bmad/*
 .agent/skills/bmad-*
 .github/skills/bmad-*
+.gemini/skills/bmad-*
+
+# Salesforce DX files
 .sfdx/*
