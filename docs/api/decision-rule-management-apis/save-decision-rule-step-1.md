@@ -30,8 +30,8 @@ POST : /decision-rule/save/step-1
         {
           "type": "condition",
           "source": "user_attribute",
-          "attributeId": "uuid-attr-1",
-          "logicalOperator": "=",
+          "attributeId": "uuid-attr-3",
+          "logicalOperator": "IN",
           "sequence": 1,
           "connectorOperator": "OR"
         },
