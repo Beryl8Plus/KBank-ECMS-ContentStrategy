@@ -34,6 +34,7 @@ func (s *ScheduleService) ValidateScheduleOverlap(ctx context.Context, schedule 
 
 	conflict, err := s.repo.CheckScheduleOverlap(
 		ctx,
+		schedule.DecisionRuleID,
 		schedule.PlacementID,
 		schedule.EffectiveFrom,
 		schedule.EffectiveUntil,

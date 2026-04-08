@@ -16,7 +16,7 @@ import (
 // mockScheduleRepository is a local in-package mock for domainrepo.ScheduleRepository.
 // Function fields default to nil — set only what the specific test needs.
 type mockScheduleRepository struct {
-	checkFn         func(ctx context.Context, placementID uuid.UUID, effectiveFrom, effectiveUntil time.Time, excludeID *uuid.UUID) (*entity.Schedule, error)
+	checkFn         func(ctx context.Context, decisionRuleID uuid.UUID, placementID uuid.UUID, effectiveFrom, effectiveUntil time.Time, excludeID *uuid.UUID) (*entity.Schedule, error)
 	createFn        func(ctx context.Context, schedule *entity.Schedule) error
 	getByIDFn       func(ctx context.Context, id uuid.UUID) (*entity.Schedule, error)
 	listFn          func(ctx context.Context) ([]*entity.Schedule, error)
@@ -27,11 +27,12 @@ type mockScheduleRepository struct {
 
 func (m *mockScheduleRepository) CheckScheduleOverlap(
 	ctx context.Context,
+	decisionRuleID uuid.UUID,
 	placementID uuid.UUID,
 	effectiveFrom, effectiveUntil time.Time,
 	excludeID *uuid.UUID,
 ) (*entity.Schedule, error) {
-	return m.checkFn(ctx, placementID, effectiveFrom, effectiveUntil, excludeID)
+	return m.checkFn(ctx, decisionRuleID, placementID, effectiveFrom, effectiveUntil, excludeID)
 }
 
 func (m *mockScheduleRepository) CreateSchedule(ctx context.Context, schedule *entity.Schedule) error {
@@ -189,7 +190,7 @@ func TestScheduleService_ValidateScheduleOverlap(t *testing.T) {
 			t.Parallel()
 			var capturedExcludeID *uuid.UUID
 			mock := &mockScheduleRepository{
-				checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, excludeID *uuid.UUID) (*entity.Schedule, error) {
+				checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, excludeID *uuid.UUID) (*entity.Schedule, error) {
 					capturedExcludeID = excludeID
 					return tt.repoReturn, tt.repoErr
 				},
@@ -222,7 +223,7 @@ func TestScheduleService_CreateSchedule(t *testing.T) {
 	t.Run("no overlap - creates successfully", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 		}
@@ -237,7 +238,7 @@ func TestScheduleService_CreateSchedule(t *testing.T) {
 		conflict.PlacementID = placementID
 		createCalled := false
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return conflict, nil
 			},
 			createFn: func(_ context.Context, _ *entity.Schedule) error {
@@ -255,7 +256,7 @@ func TestScheduleService_CreateSchedule(t *testing.T) {
 	t.Run("repo create error is propagated", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			createFn: func(_ context.Context, _ *entity.Schedule) error {
@@ -292,7 +293,7 @@ func TestScheduleService_GetScheduleByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			mock := &mockScheduleRepository{
-				checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+				checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 					return nil, nil
 				},
 				getByIDFn: func(_ context.Context, _ uuid.UUID) (*entity.Schedule, error) { return tt.repoReturn, tt.repoErr },
@@ -322,7 +323,7 @@ func TestScheduleService_ListSchedules(t *testing.T) {
 	t.Run("returns list from repo", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			listFn: func(_ context.Context) ([]*entity.Schedule, error) { return []*entity.Schedule{s1, s2}, nil },
@@ -336,7 +337,7 @@ func TestScheduleService_ListSchedules(t *testing.T) {
 	t.Run("repo error propagated", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			listFn: func(_ context.Context) ([]*entity.Schedule, error) { return nil, errors.New("db down") },
@@ -359,7 +360,7 @@ func TestScheduleService_UpdateSchedule(t *testing.T) {
 	t.Run("no overlap - updates successfully", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			updateFn: func(_ context.Context, _ *entity.Schedule) error { return nil },
@@ -374,7 +375,7 @@ func TestScheduleService_UpdateSchedule(t *testing.T) {
 		conflict.PlacementID = existing.PlacementID
 		updateCalled := false
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return conflict, nil
 			},
 			updateFn: func(_ context.Context, _ *entity.Schedule) error { updateCalled = true; return nil },
@@ -395,7 +396,7 @@ func TestScheduleService_DeleteSchedule(t *testing.T) {
 		t.Parallel()
 		called := false
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			deleteFn: func(_ context.Context, got uuid.UUID) error { called = true; assert.Equal(t, id, got); return nil },
@@ -408,7 +409,7 @@ func TestScheduleService_DeleteSchedule(t *testing.T) {
 	t.Run("repo error propagated", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockScheduleRepository{
-			checkFn: func(_ context.Context, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
+			checkFn: func(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
 				return nil, nil
 			},
 			deleteFn: func(_ context.Context, _ uuid.UUID) error { return errors.New("fk constraint") },

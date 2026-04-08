@@ -7,11 +7,12 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap_active_schedule_per_placement'
+    SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap_active_schedule_per_rule_placement'
   ) THEN
     ALTER TABLE schedules
-    ADD CONSTRAINT no_overlap_active_schedule_per_placement
+    ADD CONSTRAINT no_overlap_active_schedule_per_rule_placement
     EXCLUDE USING gist (
+      decision_rule_id WITH =,
       placement_id WITH =,
       tstzrange(effective_from, effective_until) WITH &&
     ) WHERE (is_active = true AND deleted_at IS NULL);
@@ -24,9 +25,9 @@ END $$;
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap_active_schedule_per_placement'
+    SELECT 1 FROM pg_constraint WHERE conname = 'no_overlap_active_schedule_per_rule_placement'
   ) THEN
-    ALTER TABLE schedules DROP CONSTRAINT no_overlap_active_schedule_per_placement;
+    ALTER TABLE schedules DROP CONSTRAINT no_overlap_active_schedule_per_rule_placement;
   END IF;
 END $$;
 -- +goose StatementEnd

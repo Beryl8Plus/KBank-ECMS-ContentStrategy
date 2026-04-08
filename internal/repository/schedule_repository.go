@@ -27,7 +27,8 @@ func NewSchedulePostgresRepository(db *gorm.DB) *SchedulePostgresRepository {
 }
 
 // CheckScheduleOverlap returns the first active non-deleted schedule for the same
-// placement whose [effective_from, effective_until) range overlaps [effectiveFrom, effectiveUntil).
+// (decision_rule_id, placement_id) pair whose [effective_from, effective_until) range
+// overlaps [effectiveFrom, effectiveUntil).
 //
 // Overlap condition for half-open ranges [A.from, A.until) and [B.from, B.until):
 //
@@ -37,6 +38,7 @@ func NewSchedulePostgresRepository(db *gorm.DB) *SchedulePostgresRepository {
 // Returns (nil, nil) when no conflicting schedule is found.
 func (r *SchedulePostgresRepository) CheckScheduleOverlap(
 	ctx context.Context,
+	decisionRuleID uuid.UUID,
 	placementID uuid.UUID,
 	effectiveFrom, effectiveUntil time.Time,
 	excludeID *uuid.UUID,
@@ -44,6 +46,7 @@ func (r *SchedulePostgresRepository) CheckScheduleOverlap(
 	var conflict entity.Schedule
 
 	q := r.db.WithContext(ctx).
+		Where("decision_rule_id = ?", decisionRuleID).
 		Where("placement_id = ?", placementID).
 		Where("is_active = true").
 		Where("effective_from < ? AND effective_until > ?", effectiveUntil, effectiveFrom)

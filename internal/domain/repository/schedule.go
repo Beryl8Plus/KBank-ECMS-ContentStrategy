@@ -12,11 +12,13 @@ import (
 // ScheduleRepository defines the contract for schedule-related database operations.
 type ScheduleRepository interface {
 	// CheckScheduleOverlap returns the first active non-deleted schedule for the same
-	// placement whose [effective_from, effective_until) range overlaps [effectiveFrom, effectiveUntil).
+	// (decision_rule_id, placement_id) pair whose [effective_from, effective_until) range
+	// overlaps [effectiveFrom, effectiveUntil).
 	// If excludeID is non-nil, that schedule is excluded from the check (for self-update scenarios).
 	// Returns (nil, nil) when no conflicting schedule is found.
 	CheckScheduleOverlap(
 		ctx context.Context,
+		decisionRuleID uuid.UUID,
 		placementID uuid.UUID,
 		effectiveFrom, effectiveUntil time.Time,
 		excludeID *uuid.UUID,
