@@ -1,0 +1,149 @@
+package repository
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"kbank-ecms/internal/domain/entity"
+	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/logger"
+	"os"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/redis/go-redis/v9"
+)
+
+// RedisRepository implements domain repository.CacheRepository using Redis.
+type RedisRepository struct {
+	client *redis.Client
+}
+
+// Compile-time interface check.
+var _ domainrepo.CacheRepository = (*RedisRepository)(nil)
+
+// NewRedisRepository creates a Redis client and returns a RedisRepository.
+func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepository, error) {
+	SETENV := os.Getenv("SETENV")
+
+	var rdb *redis.Client
+
+	// If DEVLOCAL, use basic setup
+	if SETENV == "DEVLOCAL" {
+		rdb = redis.NewClient(&redis.Options{
+			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
+			Password: cfg.Password,
+		})
+	} else {
+		// Default to ENV variable, if not set use the hardcoded one (as fallback/placeholder)
+		principalID := os.Getenv("REDIS_PRINCIPAL_ID")
+		redisResourceID := "acca5fbb-b7e4-4009-81f1-37e38fd66d78" // https://learn.microsoft.com/en-us/azure/redis/entra-for-authentication
+
+		opts := &redis.Options{
+			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
+			Username: principalID,
+			TLSConfig: &tls.Config{
+				MinVersion:         tls.VersionTLS12,
+				InsecureSkipVerify: true, // Skip certificate verification for internal IP-based connections
+			},
+		}
+
+		if cfg.Password != "" {
+			opts.Password = cfg.Password
+		} else {
+			// Use Workload Identity if password is not provided
+			cred, err := azidentity.NewWorkloadIdentityCredential(nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create workload identity credential: %w", err)
+			}
+
+			opts.CredentialsProvider = func() (string, string) {
+				// Get token for Redis
+				token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+					Scopes: []string{redisResourceID + "/.default"},
+				})
+				if err != nil {
+					fmt.Printf("failed to get redis token: %v\n", err)
+					return principalID, ""
+				}
+				return principalID, token.Token
+			}
+		}
+		rdb = redis.NewClient(opts)
+	}
+
+	// Ping to check connection
+	_, err := rdb.Ping(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to redis %s:%s: %w", cfg.Host, cfg.Port, err)
+	}
+
+	logger.LStartup(entity.StartupLog{
+		Service: "REDIS",
+		Level:   "INFO",
+		Message: "Connected to Azure Redis Enterprise successfully",
+	})
+
+	return &RedisRepository{client: rdb}, nil
+}
+
+// Get retrieves a value from Redis by key.
+func (r *RedisRepository) Get(ctx context.Context, key string) (string, error) {
+	val, err := r.client.Get(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// Set stores a value in Redis with an expiration.
+func (r *RedisRepository) Set(ctx context.Context, key string, value string, expiration time.Duration) error {
+	return r.client.Set(ctx, key, value, expiration).Err()
+}
+
+// HGet retrieves a value from a Redis Hash by key and field.
+func (r *RedisRepository) HGet(ctx context.Context, key string, field string) (string, error) {
+	val, err := r.client.HGet(ctx, key, field).Result()
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+// HSet sets a value in a Redis Hash.
+func (r *RedisRepository) HSet(ctx context.Context, key string, field string, value string) error {
+	return r.client.HSet(ctx, key, field, value).Err()
+}
+
+// FlushDB flushes the currently selected Redis database.
+func (r *RedisRepository) FlushDB(ctx context.Context) error {
+	return r.client.FlushDB(ctx).Err()
+}
+
+// GetSet implements the cache-aside pattern.
+// It attempts to fetch the value for key from Redis.
+// On a cache miss (redis.Nil), it calls loader, stores the result with the
+// given expiration, and returns it. Any other Get or Set error is returned
+// directly to the caller.
+func (r *RedisRepository) GetSet(ctx context.Context, key string, expiration time.Duration, loader func(ctx context.Context) (string, error)) (string, error) {
+	val, err := r.client.Get(ctx, key).Result()
+	if err == nil {
+		return val, nil
+	}
+	if err != redis.Nil {
+		return "", fmt.Errorf("cache get %q: %w", key, err)
+	}
+
+	// Cache miss — invoke loader.
+	val, err = loader(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if setErr := r.client.Set(ctx, key, val, expiration).Err(); setErr != nil {
+		return "", fmt.Errorf("cache set %q: %w", key, setErr)
+	}
+
+	return val, nil
+}

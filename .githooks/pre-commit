@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Pre-commit hook to automate formatting and linting
+# This script is automatically installed by `make install-hooks`
+
+echo "Running pre-commit hooks..."
+
+# 1. Run all formatters (go fmt + tag formatting)
+echo "1/2: Formatting code..."
+make fmt
+
+# 1.1 Stage the formatted files automatically
+# This ensures that any changes made by the formatters are included in the commit
+MODIFIED_FILES=$(git diff --name-only)
+if [ -n "$MODIFIED_FILES" ]; then
+    echo "Staging formatted files..."
+    git add .
+fi
+
+# 2. Run linting
+echo "2/2: Linting code..."
+if command -v golangci-lint >/dev/null 2>&1; then
+    make lint
+    RESULT=$?
+else
+    echo "Warning: golangci-lint not found. Skipping linting step."
+    echo "Please install it via: brew install golangci-lint (macOS) or visit https://golangci-lint.run/usage/install/"
+    RESULT=0 # Don't fail if the tool is missing
+fi
+
+if [ $RESULT -ne 0 ]; then
+    echo "Pre-commit hooks failed! Please fix the errors before committing."
+    exit 1
+fi
+
+echo "Pre-commit hooks passed. Proceeding with commit..."
+exit 0

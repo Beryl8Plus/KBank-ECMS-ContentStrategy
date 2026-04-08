@@ -13,13 +13,15 @@ node_modules/
 # IDE settings
 .vscode/
 
+# docs
 docs/
 
 # agent and bmad folders
 _bmad/*
-.agent/skills/bmad-*
-.github/skills/bmad-*
-.gemini/skills/bmad-*
+.**/skills/bmad-*
 
 # Salesforce DX files
 .sfdx/*
+
+# build files
+bin/*
