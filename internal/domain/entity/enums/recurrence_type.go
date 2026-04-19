@@ -25,9 +25,9 @@ func (r RecurrenceType) IsValid() bool {
 	return false
 }
 
-// ParseRecurrenceType parses a raw string into a RecurrenceType.
+// Parse parses a raw string into a RecurrenceType.
 // Returns an error if the value is not a valid type.
-func ParseRecurrenceType(s string) (RecurrenceType, error) {
+func (r RecurrenceType) Parse(s string) (RecurrenceType, error) {
 	v := RecurrenceType(s)
 	if !v.IsValid() {
 		return "", fmt.Errorf("invalid RecurrenceType %q: must be one of ONCE, RRULE, CALENDAR", s)

@@ -25,12 +25,12 @@ func (o OccurrenceSource) IsValid() bool {
 	return false
 }
 
-// ParseOccurrenceSource parses a raw string into an OccurrenceSource.
+// Parse parses a raw string into an OccurrenceSource.
 // Returns an error if the value is not a valid source.
-func ParseOccurrenceSource(s string) (OccurrenceSource, error) {
-	v := OccurrenceSource(s)
+func (o OccurrenceSource) Parse(val string) (OccurrenceSource, error) {
+	v := OccurrenceSource(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid OccurrenceSource %q: must be one of RECURRENCE, CALENDAR, MANUAL", s)
+		return "", fmt.Errorf("invalid OccurrenceSource %q: must be one of RECURRENCE, CALENDAR, MANUAL", val)
 	}
 	return v, nil
 }

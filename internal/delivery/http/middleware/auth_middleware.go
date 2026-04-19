@@ -18,9 +18,8 @@ func UserIDMiddleware() gin.HandlerFunc {
 		if userIdStr != "" {
 			if uid, err := uuid.Parse(userIdStr); err == nil {
 				// Set in Gin context for profile permission guard
-				c.Set(string(ctxconsts.UserIDKey), uid)
-
-				// Set in standard request context for GORM hooks
+				c.Set(ctxconsts.UserIDKey, uid)
+				// Append to request context for GORM hooks and downstream c.Request.Context() reads
 				newCtx := context.WithValue(c.Request.Context(), ctxconsts.UserIDKey, uid)
 				c.Request = c.Request.WithContext(newCtx)
 			}

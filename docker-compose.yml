@@ -22,3 +22,92 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    ports:
+      - "5540:5540"
+    environment:
+      RI_ACCEPT_TERMS_AND_CONDITIONS: "true"
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: 6379
+      RI_REDIS_ALIAS: local-redis
+      RI_REDIS_DB: 0
+    volumes:
+      - redisinsight:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  server:
+    build: .
+    command: ["sh", "-c", "./migrate && ./kbank-ecms"]
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      SWAGGER_HOST: localhost:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  cms-delivery:
+    build: .
+    command: ["./cms-delivery"]
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      SWAGGER_HOST: localhost:8082
+      CMS_RUNTIME_GRPC_ADDR: cms-runtime:50051
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      cms-runtime:
+        condition: service_started
+
+  cms-runtime:
+    build: .
+    command: ["./cms-runtime"]
+    ports:
+      - "50051:50051"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      CMS_RUNTIME_GRPC_PORT: "50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui
+    ports:
+      - "8083:8080"
+    environment:
+      URLS: |
+        [
+          { "url": "http://localhost:8081/swagger/doc.json", "name": "Server (Rule Management)" },
+          { "url": "http://localhost:8082/swagger/doc.json", "name": "CMS Delivery" }
+        ]
+      URLS_PRIMARY_NAME: "Server (Rule Management)"
+    depends_on:
+      - server
+      - cms-delivery
+
+volumes:
+  redisinsight:

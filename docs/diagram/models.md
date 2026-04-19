@@ -126,16 +126,20 @@ Table rules {
     deleted_at timestamptz
 }
 
+Table rule_attriutes {
+  ruld_id uuid [ref: > rules.id]
+  attribute_id uuid [ref: > attributes.id]
+  value jsonb
+}
+
 // --- 3. Advanced Logic Engine ---
 Table rule_conditions {
     id uuid [primary key]
     sequence integer
     decision_rule_id uuid [ref: > decision_rules.id]
-    rule_id uuid [ref: > rules.id]
     parent_rule_condition_id uuid [ref: > rule_conditions.id]
     attribute_id uuid [ref: > attributes.id]
     logical_operator enum // <,>,=,IN,BETWEEN
-    value jsonb
     connector_operator enum [note: 'AND, OR — connects this condition to the next item in sequence. null for last item in group.']
 
     created_at timestamptz

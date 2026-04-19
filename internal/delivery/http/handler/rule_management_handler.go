@@ -45,5 +45,5 @@ func (h *RuleManagementHandler) IngressRuleManagement(c *gin.Context) {
 
 	result := h.service.ProcessRuleManagement()
 
-	c.JSON(http.StatusOK, dto.APIResponse{Code: "200", Data: result})
+	c.JSON(http.StatusOK, dto.APIResponse{Data: result})
 }

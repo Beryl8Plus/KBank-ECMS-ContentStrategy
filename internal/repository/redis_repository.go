@@ -21,7 +21,7 @@ type RedisRepository struct {
 }
 
 // Compile-time interface check.
-var _ domainrepo.CacheRepository = (*RedisRepository)(nil)
+var _ domainrepo.RedisCacheRepository = (*RedisRepository)(nil)
 
 // NewRedisRepository creates a Redis client and returns a RedisRepository.
 func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepository, error) {
@@ -35,6 +35,7 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 			Password: cfg.Password,
 		})
+
 	} else {
 		// Default to ENV variable, if not set use the hardcoded one (as fallback/placeholder)
 		principalID := os.Getenv("REDIS_PRINCIPAL_ID")
@@ -79,10 +80,17 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 		return nil, fmt.Errorf("failed to connect to redis %s:%s: %w", cfg.Host, cfg.Port, err)
 	}
 
-	logger.LStartup(entity.StartupLog{
+	logger.LStartup(ctx, entity.StartupLog{
 		Service: "REDIS",
 		Level:   "INFO",
-		Message: "Connected to Azure Redis Enterprise successfully",
+		Message: fmt.Sprintf("Connected to %s %s:%s successfully",
+			func() string {
+				if SETENV == "DEVLOCAL" {
+					return "Local Redis"
+				} else {
+					return "Azure Redis Enterprise"
+				}
+			}(), cfg.Host, cfg.Port),
 	})
 
 	return &RedisRepository{client: rdb}, nil
@@ -146,4 +154,9 @@ func (r *RedisRepository) GetSet(ctx context.Context, key string, expiration tim
 	}
 
 	return val, nil
+}
+
+// Delete removes the key from Redis. Returns nil if the key does not exist.
+func (r *RedisRepository) Delete(ctx context.Context, key string) error {
+	return r.client.Del(ctx, key).Err()
 }

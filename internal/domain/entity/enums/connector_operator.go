@@ -24,12 +24,12 @@ func (o ConnectorOperator) IsValid() bool {
 	return false
 }
 
-// ParseConnectorOperator parses a raw string into a ConnectorOperator.
+// Parse parses a raw string into a ConnectorOperator.
 // Returns an error if the value is not a valid connector.
-func ParseConnectorOperator(s string) (ConnectorOperator, error) {
-	v := ConnectorOperator(s)
+func (o ConnectorOperator) Parse(val string) (ConnectorOperator, error) {
+	v := ConnectorOperator(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid ConnectorOperator %q: must be one of AND, OR", s)
+		return "", fmt.Errorf("invalid ConnectorOperator %q: must be one of AND, OR", val)
 	}
 	return v, nil
 }

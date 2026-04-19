@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 )
 
@@ -46,13 +47,13 @@ func (r *SchedulePostgresRepository) CheckScheduleOverlap(
 	var conflict entity.Schedule
 
 	q := r.db.WithContext(ctx).
-		Where("decision_rule_id = ?", decisionRuleID).
-		Where("placement_id = ?", placementID).
-		Where("is_active = true").
-		Where("effective_from < ? AND effective_until > ?", effectiveUntil, effectiveFrom)
+		Where("\"DECISION_RULE_ID\" = ?", decisionRuleID).
+		Where("\"PLACEMENT_ID\" = ?", placementID).
+		Where("\"IS_ACTIVE\" = true").
+		Where("\"EFFECTIVE_FROM\" < ? AND \"EFFECTIVE_UNTIL\" > ?", effectiveUntil, effectiveFrom)
 
 	if excludeID != nil {
-		q = q.Where("id != ?", *excludeID)
+		q = q.Where("\"ID\" != ?", *excludeID)
 	}
 
 	err := q.First(&conflict).Error
@@ -78,7 +79,7 @@ func (r *SchedulePostgresRepository) CreateSchedule(ctx context.Context, schedul
 // Returns (nil, nil) when no record is found.
 func (r *SchedulePostgresRepository) GetScheduleByID(ctx context.Context, id uuid.UUID) (*entity.Schedule, error) {
 	var s entity.Schedule
-	err := r.db.WithContext(ctx).First(&s, "id = ?", id).Error
+	err := r.db.WithContext(ctx).First(&s, "\"ID\" = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -91,7 +92,7 @@ func (r *SchedulePostgresRepository) GetScheduleByID(ctx context.Context, id uui
 // ListSchedules returns all non-deleted schedules ordered by created_at descending.
 func (r *SchedulePostgresRepository) ListSchedules(ctx context.Context) ([]*entity.Schedule, error) {
 	var schedules []*entity.Schedule
-	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&schedules).Error; err != nil {
+	if err := r.db.WithContext(ctx).Order("\"CREATED_AT\" DESC").Find(&schedules).Error; err != nil {
 		return nil, fmt.Errorf("listing schedules: %w", err)
 	}
 	return schedules, nil
@@ -110,7 +111,7 @@ func (r *SchedulePostgresRepository) ListSchedulesPaginated(ctx context.Context,
 
 	offset := (page - 1) * limit
 	if err := r.db.WithContext(ctx).
-		Order("created_at DESC").
+		Order("\"CREATED_AT\" DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&schedules).Error; err != nil {
@@ -130,8 +131,31 @@ func (r *SchedulePostgresRepository) UpdateSchedule(ctx context.Context, schedul
 
 // DeleteSchedule soft-deletes the schedule with the given ID.
 func (r *SchedulePostgresRepository) DeleteSchedule(ctx context.Context, id uuid.UUID) error {
-	if err := r.db.WithContext(ctx).Delete(&entity.Schedule{}, "id = ?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Delete(&entity.Schedule{}, "\"ID\" = ?", id).Error; err != nil {
 		return fmt.Errorf("deleting schedule: %w", err)
 	}
 	return nil
+}
+
+// ListActiveSchedulesInWindow returns all active schedules whose time window
+// contains at: effective_from <= at AND effective_until > at.
+// Each schedule is preloaded with its DecisionRule and Placement associations.
+func (r *SchedulePostgresRepository) ListActiveSchedulesInWindow(ctx context.Context, at time.Time) ([]*entity.Schedule, error) {
+	var atStr = at.Format(time.RFC3339)
+	var schedules []*entity.Schedule
+	err := r.db.WithContext(ctx).
+		Preload("DecisionRule", func(db *gorm.DB) *gorm.DB {
+			return db.Where("\"STATUS\" = ?", enums.DecisionRuleStatusActive)
+		}).
+		Preload("DecisionRule.RuleConditions").
+		Preload("DecisionRule.RuleConditions.Attribute").
+		Preload("DecisionRule.Rules.RuleAttributes").
+		Preload("Placement").
+		Where("\"IS_ACTIVE\" = true").
+		Where("\"EFFECTIVE_FROM\" <= ? AND \"EFFECTIVE_UNTIL\" > ?", atStr, atStr).
+		Find(&schedules).Error
+	if err != nil {
+		return nil, fmt.Errorf("listing active schedules in window: %w", err)
+	}
+	return schedules, nil
 }

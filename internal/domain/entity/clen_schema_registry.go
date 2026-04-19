@@ -2,10 +2,10 @@ package entity
 
 import "gorm.io/datatypes"
 
-// SchemaRegistry stores versioned JSON schemas for frontend display.
+// CLENSchemaRegistry stores versioned JSON schemas for frontend display.
 //
-// Table: schema_registry
-type MDPSchemaRegistry struct {
+// Table: clen_schema_registry
+type CLENSchemaRegistry struct {
 	BaseModel
 	SchemaName       string         `gorm:"size:255"      json:"schemaName"`
 	Version          string         `gorm:"size:255"      json:"version"`
@@ -13,6 +13,6 @@ type MDPSchemaRegistry struct {
 	IsActive         bool           `gorm:"default:false" json:"isActive"`
 }
 
-func (MDPSchemaRegistry) TableName() string {
-	return "mdp_schema_registry"
+func (CLENSchemaRegistry) TableName() string {
+	return "clen_schema_registry"
 }

@@ -27,16 +27,16 @@ func (f Feature) IsValid() bool {
 }
 
 // Values returns all valid Feature values.
-func Values() []Feature {
+func (f Feature) Values() []Feature {
 	return featureCodes
 }
 
-// ParseFeature parses a string into a Feature.
-func ParseFeature(s string) (Feature, error) {
+// Parse parses a string into a Feature.
+func (f Feature) Parse(val string) (Feature, error) {
 	for _, v := range featureCodes {
-		if v.String() == s {
+		if v.String() == val {
 			return v, nil
 		}
 	}
-	return "", fmt.Errorf("invalid feature code: %s", s)
+	return "", fmt.Errorf("invalid feature code: %s", val)
 }

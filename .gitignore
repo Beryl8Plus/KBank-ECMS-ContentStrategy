@@ -25,3 +25,6 @@ _bmad/*
 
 # build files
 bin/*
+
+# Serena files
+.serena/*

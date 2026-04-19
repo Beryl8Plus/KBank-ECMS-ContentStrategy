@@ -77,6 +77,10 @@ func (m *mockScheduleRepository) DeleteSchedule(ctx context.Context, id uuid.UUI
 	return nil
 }
 
+func (m *mockScheduleRepository) ListActiveSchedulesInWindow(ctx context.Context, at time.Time) ([]*entity.Schedule, error) {
+	return nil, nil
+}
+
 func TestScheduleService_ValidateScheduleOverlap(t *testing.T) {
 	t.Parallel()
 

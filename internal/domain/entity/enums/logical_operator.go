@@ -7,8 +7,11 @@ type LogicalOperator string
 
 const (
 	LogicalOperatorLT      LogicalOperator = "<"
+	LogicalOperatorLTE     LogicalOperator = "<="
 	LogicalOperatorGT      LogicalOperator = ">"
+	LogicalOperatorGTE     LogicalOperator = ">="
 	LogicalOperatorEQ      LogicalOperator = "="
+	LogicalOperatorNEQ     LogicalOperator = "!="
 	LogicalOperatorIN      LogicalOperator = "IN"
 	LogicalOperatorBETWEEN LogicalOperator = "BETWEEN"
 )
@@ -21,18 +24,22 @@ func (o LogicalOperator) String() string {
 // IsValid reports whether o is a known LogicalOperator constant.
 func (o LogicalOperator) IsValid() bool {
 	switch o {
-	case LogicalOperatorLT, LogicalOperatorGT, LogicalOperatorEQ, LogicalOperatorIN, LogicalOperatorBETWEEN:
+	case
+		LogicalOperatorLT, LogicalOperatorLTE,
+		LogicalOperatorGT, LogicalOperatorGTE,
+		LogicalOperatorEQ, LogicalOperatorNEQ,
+		LogicalOperatorIN, LogicalOperatorBETWEEN:
 		return true
 	}
 	return false
 }
 
-// ParseLogicalOperator parses a raw string into a LogicalOperator.
+// Parse parses a raw string into a LogicalOperator.
 // Returns an error if the value is not a valid operator.
-func ParseLogicalOperator(s string) (LogicalOperator, error) {
-	v := LogicalOperator(s)
+func (o LogicalOperator) Parse(val string) (LogicalOperator, error) {
+	v := LogicalOperator(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid LogicalOperator %q: must be one of <, >, =, IN, BETWEEN", s)
+		return "", fmt.Errorf("invalid LogicalOperator %q: must be one of <, <=, >, >=, =, !=, IN, BETWEEN", val)
 	}
 	return v, nil
 }

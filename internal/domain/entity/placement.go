@@ -5,6 +5,7 @@ package entity
 // Table: placements
 type Placement struct {
 	BaseModel
-	Name        string `gorm:"size:255"  json:"name"`
-	Description string `gorm:"type:text" json:"description"`
+	Name        string `gorm:"size:255"   json:"name"`
+	Description string `gorm:"type:text"  json:"description"`
+	MaxResults  int    `gorm:"default:10" json:"maxResults"`
 }

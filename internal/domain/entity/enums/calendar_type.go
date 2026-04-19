@@ -25,12 +25,12 @@ func (c CalendarType) IsValid() bool {
 	return false
 }
 
-// ParseCalendarType parses a raw string into a CalendarType.
+// Parse parses a raw string into a CalendarType.
 // Returns an error if the value is not a valid type.
-func ParseCalendarType(s string) (CalendarType, error) {
-	v := CalendarType(s)
+func (c CalendarType) Parse(val string) (CalendarType, error) {
+	v := CalendarType(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid CalendarType %q: must be one of HOLIDAY, PERSONAL, CUSTOM", s)
+		return "", fmt.Errorf("invalid CalendarType %q: must be one of HOLIDAY, PERSONAL, CUSTOM", val)
 	}
 	return v, nil
 }

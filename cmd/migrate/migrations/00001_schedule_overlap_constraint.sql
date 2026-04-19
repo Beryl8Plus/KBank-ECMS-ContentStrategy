@@ -12,10 +12,10 @@ BEGIN
     ALTER TABLE schedules
     ADD CONSTRAINT no_overlap_active_schedule_per_rule_placement
     EXCLUDE USING gist (
-      decision_rule_id WITH =,
-      placement_id WITH =,
-      tstzrange(effective_from, effective_until) WITH &&
-    ) WHERE (is_active = true AND deleted_at IS NULL);
+      "DECISION_RULE_ID" WITH =,
+      "PLACEMENT_ID" WITH =,
+      tstzrange("EFFECTIVE_FROM", "EFFECTIVE_UNTIL") WITH &&
+    ) WHERE ("IS_ACTIVE" = true AND "DELETED_AT" IS NULL);
   END IF;
 END $$;
 -- +goose StatementEnd

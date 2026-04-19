@@ -14,28 +14,28 @@ import (
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
+	"kbank-ecms/pkg/util"
 	"os"
 
-	ecmsdocs "kbank-ecms/docs/swagger"
+	ecmsdocs "kbank-ecms/docs/swagger/server"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
+	deliveryhandler "kbank-ecms/internal/delivery/http/handler"
 
-	"github.com/goccy/go-yaml"
 	"github.com/joho/godotenv"
 )
 
 func main() {
 
+	ctx := context.Background()
+
 	// Load .env file if present (ignored in production where env vars are injected)
-	err := godotenv.Load()
-	if err != nil {
-		logger.LStartup(entity.StartupLog{
+	if loadErr := godotenv.Load(); loadErr != nil {
+		logger.LStartup(ctx, entity.StartupLog{
 			Service: "MAIN",
 			Level:   "WARN",
 			Message: "No .env file found, relying on environment variables",
 		})
 	}
-
-	ctx := context.Background()
 
 	// Override swagger host from environment (e.g. staging.example.com)
 	if swaggerHost := os.Getenv("SWAGGER_HOST"); swaggerHost != "" {
@@ -43,8 +43,8 @@ func main() {
 	}
 
 	// Setup logger
-	logger.LStartup(entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Start App"})
-	logger.LStartup(entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Loading runtime settings for new service"})
+	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Start App"})
+	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Loading runtime settings for new service"})
 
 	REDIS := entity.RedisConfig{
 		Host:     os.Getenv("REDIS_HOST"),
@@ -53,7 +53,7 @@ func main() {
 	}
 
 	rateLimit := entity.RateLimit{RPS: 50, Burst: 100, MCR: 10}
-	if cfgRateLimit, err := loadNewServiceRateLimit("./configs/newservice_inbound_config.yaml"); err == nil {
+	if cfgRateLimit, err := util.LoadNewServiceRateLimit("./configs/newservice_inbound_config.yaml"); err == nil {
 		rateLimit = cfgRateLimit
 	}
 
@@ -71,7 +71,7 @@ func main() {
 
 	// Initialize Redis Repository
 	if _, err := repository.NewRedisRepository(ctx, REDIS); err != nil {
-		logger.LSystem(entity.SystemLog{
+		logger.LSystem(ctx, entity.SystemLog{
 			Service: "MAIN",
 			Level:   "ERROR",
 			Message: "Failed to initialize Redis: " + err.Error(),
@@ -81,7 +81,7 @@ func main() {
 	// Initialize Postgres DB
 	db, err := database.NewPostgresDB(POSTGRES)
 	if err != nil {
-		logger.LSystem(entity.SystemLog{
+		logger.LSystem(ctx, entity.SystemLog{
 			Service: "MAIN",
 			Level:   "FATAL",
 			Message: "Failed to initialize Postgres: " + err.Error(),
@@ -90,38 +90,21 @@ func main() {
 	}
 
 	// Build router — wires service → handler → middleware → router
-	r := deliveryhttp.NewRouter(db, rateLimit)
+	r := deliveryhttp.InitNewRouter(db, rateLimit)
+	deliveryhandler.RegisterRoutes(r, db)
 
 	// Start Server
 	port := "8081" // Default port or from config
-	logger.LStartup(entity.StartupLog{
+	logger.LStartup(ctx, entity.StartupLog{
 		Service: "MAIN",
 		Level:   "INFO",
 		Message: "Starting server on port " + port,
 	})
 	if err := r.Run(":" + port); err != nil {
-		logger.LStartup(entity.StartupLog{
+		logger.LStartup(ctx, entity.StartupLog{
 			Service: "MAIN",
 			Level:   "FATAL",
 			Message: "Failed to start server: " + err.Error(),
 		})
 	}
-}
-
-func loadNewServiceRateLimit(path string) (entity.RateLimit, error) {
-	var cfg entity.InboundConfig
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return entity.RateLimit{}, err
-	}
-
-	if err := yaml.Unmarshal(body, &cfg); err != nil {
-		return entity.RateLimit{}, err
-	}
-
-	if len(cfg.Server) == 0 {
-		return entity.RateLimit{}, os.ErrNotExist
-	}
-
-	return cfg.Server[0].RateLimit, nil
 }

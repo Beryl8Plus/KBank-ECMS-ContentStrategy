@@ -43,4 +43,9 @@ type ScheduleRepository interface {
 
 	// DeleteSchedule soft-deletes the schedule with the given ID.
 	DeleteSchedule(ctx context.Context, id uuid.UUID) error
+
+	// ListActiveSchedulesInWindow returns all active schedules whose time window
+	// contains `at`: effective_from <= at AND effective_until > at.
+	// Each schedule is preloaded with its DecisionRule and Placement associations.
+	ListActiveSchedulesInWindow(ctx context.Context, at time.Time) ([]*entity.Schedule, error)
 }

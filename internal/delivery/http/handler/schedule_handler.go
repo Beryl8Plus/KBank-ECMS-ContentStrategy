@@ -65,13 +65,13 @@ func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 	var req dto.CreateScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: err.Error()})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	if req.EffectiveFrom.After(req.EffectiveUntil) || req.EffectiveFrom.Equal(req.EffectiveUntil) {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "effectiveFrom must be before effectiveUntil"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "effectiveFrom must be before effectiveUntil"})
 		return
 	}
 
@@ -101,12 +101,12 @@ func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 
 	if err := h.service.CreateSchedule(c.Request.Context(), schedule); err != nil {
 		setScheduleResponseHeaders(c, "422", "Unprocessable Entity")
-		c.JSON(http.StatusUnprocessableEntity, dto.APIResponse{Code: "422", Error: err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	setScheduleResponseHeaders(c, "201", "Created")
-	c.JSON(http.StatusCreated, dto.APIResponse{Code: "201", Data: dto.ToScheduleResponse(schedule)})
+	c.JSON(http.StatusCreated, dto.APIResponse{Data: dto.ToScheduleResponse(schedule)})
 }
 
 // ListSchedules handles GET /schedules.
@@ -132,7 +132,7 @@ func (h *ScheduleHandler) ListSchedules(c *gin.Context) {
 	schedules, total, err := h.service.ListSchedulesPaginated(c.Request.Context(), page, limit)
 	if err != nil {
 		setScheduleResponseHeaders(c, "500", "Internal Server Error")
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Code: "500", Error: "failed to retrieve schedules"})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve schedules"})
 		return
 	}
 
@@ -145,7 +145,6 @@ func (h *ScheduleHandler) ListSchedules(c *gin.Context) {
 
 	setScheduleResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{
-		Code: "200",
 		Data: responses,
 		Pagination: &dto.Pagination{
 			Page:       page,
@@ -170,7 +169,7 @@ func parsePaginationParams(c *gin.Context) (page, limit int, ok bool) {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
 			setScheduleResponseHeaders(c, "400", "Bad Request")
-			c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "page must be a positive integer"})
+			c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "page must be a positive integer"})
 			return 0, 0, false
 		}
 		page = v
@@ -180,7 +179,7 @@ func parsePaginationParams(c *gin.Context) (page, limit int, ok bool) {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
 			setScheduleResponseHeaders(c, "400", "Bad Request")
-			c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "limit must be a positive integer"})
+			c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "limit must be a positive integer"})
 			return 0, 0, false
 		}
 		if v > maxLimit {
@@ -210,24 +209,24 @@ func (h *ScheduleHandler) GetSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "invalid schedule ID"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid schedule ID"})
 		return
 	}
 
 	schedule, err := h.service.GetScheduleByID(c.Request.Context(), id)
 	if err != nil {
 		setScheduleResponseHeaders(c, "500", "Internal Server Error")
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Code: "500", Error: "failed to retrieve schedule"})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve schedule"})
 		return
 	}
 	if schedule == nil {
 		setScheduleResponseHeaders(c, "404", "Not Found")
-		c.JSON(http.StatusNotFound, dto.APIResponse{Code: "404", Error: "schedule not found"})
+		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "schedule not found"})
 		return
 	}
 
 	setScheduleResponseHeaders(c, "200", "OK")
-	c.JSON(http.StatusOK, dto.APIResponse{Code: "200", Data: dto.ToScheduleResponse(schedule)})
+	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToScheduleResponse(schedule)})
 }
 
 // UpdateSchedule handles PUT /schedules/:id.
@@ -251,38 +250,38 @@ func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "invalid schedule ID"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid schedule ID"})
 		return
 	}
 
 	existing, err := h.service.GetScheduleByID(c.Request.Context(), id)
 	if err != nil {
 		setScheduleResponseHeaders(c, "500", "Internal Server Error")
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Code: "500", Error: "failed to retrieve schedule"})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve schedule"})
 		return
 	}
 	if existing == nil {
 		setScheduleResponseHeaders(c, "404", "Not Found")
-		c.JSON(http.StatusNotFound, dto.APIResponse{Code: "404", Error: "schedule not found"})
+		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "schedule not found"})
 		return
 	}
 
 	var req dto.UpdateScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: err.Error()})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	if !req.RecurrenceType.IsValid() {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "invalid recurrenceType: must be ONCE, RRULE, or CALENDAR"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid recurrenceType: must be ONCE, RRULE, or CALENDAR"})
 		return
 	}
 
 	if req.EffectiveFrom.After(req.EffectiveUntil) || req.EffectiveFrom.Equal(req.EffectiveUntil) {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "effectiveFrom must be before effectiveUntil"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "effectiveFrom must be before effectiveUntil"})
 		return
 	}
 
@@ -305,12 +304,12 @@ func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 
 	if err := h.service.UpdateSchedule(c.Request.Context(), existing); err != nil {
 		setScheduleResponseHeaders(c, "422", "Unprocessable Entity")
-		c.JSON(http.StatusUnprocessableEntity, dto.APIResponse{Code: "422", Error: err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	setScheduleResponseHeaders(c, "200", "OK")
-	c.JSON(http.StatusOK, dto.APIResponse{Code: "200", Data: dto.ToScheduleResponse(existing)})
+	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToScheduleResponse(existing)})
 }
 
 // DeleteSchedule handles DELETE /schedules/:id.
@@ -330,13 +329,13 @@ func (h *ScheduleHandler) DeleteSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		setScheduleResponseHeaders(c, "400", "Bad Request")
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Code: "400", Error: "invalid schedule ID"})
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid schedule ID"})
 		return
 	}
 
 	if err := h.service.DeleteSchedule(c.Request.Context(), id); err != nil {
 		setScheduleResponseHeaders(c, "500", "Internal Server Error")
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Code: "500", Error: "failed to delete schedule"})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to delete schedule"})
 		return
 	}
 

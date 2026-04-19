@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package cms_runtime.v1;
+
+option go_package = "kbank-ecms/internal/grpc/pb/cms_runtime/v1;cmsruntimev1";
+
+// CMSRuntimeService exposes cms-runtime's rule evaluation engine over gRPC.
+// cms-delivery calls this on a cache miss to trigger on-demand evaluation.
+service CMSRuntimeService {
+  // Evaluate returns cached logic entries when user attrs are empty.
+  // With user attrs present, it resolves ranked results and keeps the
+  // legacy rule.Score fallback when no variation matches.
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+}
+
+// EvaluateRequest carries all data needed for evaluation.
+// The caller (cms-delivery) is responsible for querying the database.
+message EvaluateRequest {
+  // Placement name being evaluated, e.g. "hero" or "banner_top".
+  string placement_name = 1;
+
+  // JSON-serialised []entity.Schedule with preloaded DecisionRule,
+  // Placement, RuleConditions (+ Attribute), and Rules (+ RuleAttributes).
+  // JSON bytes avoid duplicating the complex entity graph in proto.
+  bytes schedules_json = 2;
+
+  // JSON-serialised live user attrs: attributeID -> compact JSON value.
+  // Non-empty means resolve ranked results. Empty means return logic
+  // entries for delivery-time evaluation.
+  bytes user_attrs_json = 3;
+}
+
+// Campaign carries campaign metadata for AUDIENCE / SALES_TARGET rule types.
+message Campaign {
+  string code       = 1;
+  string start_date = 2;
+  string end_date   = 3;
+}
+
+// ContentResult is a single evaluated and ranked content item.
+message ContentResult {
+  string            content_path     = 1;
+  string            decision_rule_id = 2;
+  string            rule_set_type    = 3;
+  string            source           = 4;
+  double            score            = 5;
+  optional string   variation        = 6;
+  string            start_date_time  = 7;
+  string            end_date_time    = 8;
+  optional Campaign campaign         = 9;
+}
+
+// EvaluateResponse carries JSON-serialised PlacementLogicEntry
+// records. Using bytes avoids duplicating the full domain model in proto.
+message EvaluateResponse {
+  // JSON-serialised []domainservice.PlacementLogicEntry.
+  bytes logic_entries_json = 1;
+}

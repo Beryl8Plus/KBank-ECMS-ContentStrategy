@@ -22,7 +22,7 @@ import (
 //	})
 func GetSet[T any](
 	ctx context.Context,
-	cache domainrepo.CacheRepository,
+	cache domainrepo.RedisCacheRepository,
 	key string,
 	expiration time.Duration,
 	loader func(ctx context.Context) (T, error),

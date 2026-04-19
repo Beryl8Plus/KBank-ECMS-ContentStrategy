@@ -7,9 +7,14 @@ import "github.com/google/uuid"
 // Table: rules
 type Rule struct {
 	BaseModel
-	DecisionRuleID uuid.UUID     `gorm:"type:uuid"                 json:"decisionRuleId"`
-	DecisionRule   *DecisionRule `gorm:"foreignKey:DecisionRuleID" json:"decisionRule,omitempty"`
-	VariationName  string        `gorm:"size:255"                  json:"variationName"`
-	Score          int           `gorm:"type:integer"              json:"score"`
-	OrderNo        int           `gorm:"type:integer"              json:"orderNo"`
+	DecisionRuleID uuid.UUID       `gorm:"type:uuid;not null"                                                      json:"decisionRuleId"`
+	DecisionRule   *DecisionRule   `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"decisionRule,omitempty"`
+	VariationName  string          `gorm:"size:255"                                                                json:"variationName"`
+	Score          float64         `gorm:"type:float"                                                              json:"score"`
+	OrderNo        int             `gorm:"type:integer"                                                            json:"orderNo"`
+	RuleAttributes []RuleAttribute `gorm:"foreignKey:RuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"         json:"ruleAttributes,omitempty"`
+}
+
+func (Rule) TableName() string {
+	return "rules"
 }

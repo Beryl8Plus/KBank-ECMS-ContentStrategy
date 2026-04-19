@@ -25,7 +25,7 @@ func DBMiddleware(db *gorm.DB) gin.HandlerFunc {
 		timeoutContext, cancel := context.WithTimeout(c.Request.Context(), dbTimeout)
 		defer func() {
 			if err := timeoutContext.Err(); err != nil {
-				logger.LSystem(entity.SystemLog{
+				logger.LSystem(timeoutContext, entity.SystemLog{
 					Service:       "DB-MIDDLEWARE",
 					Level:         "ERROR",
 					CorrelationID: c.GetHeader("requestID"),

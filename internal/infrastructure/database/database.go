@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/logger"
@@ -8,6 +9,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 // NewPostgresDB creates and returns a new GORM DB connection for PostgreSQL.
@@ -19,12 +21,15 @@ func NewPostgresDB(cfg entity.PostgresConfig) (*gorm.DB, error) {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+		NamingStrategy: UpperSnakeColumnNamingStrategy{
+			NamingStrategy: schema.NamingStrategy{},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
-	logger.LStartup(entity.StartupLog{
+	logger.LStartup(context.Background(), entity.StartupLog{
 		Service: "POSTGRES",
 		Level:   "INFO",
 		Message: fmt.Sprintf("Connected to PostgreSQL (%s:%s/%s)", cfg.Host, cfg.Port, cfg.DBName),

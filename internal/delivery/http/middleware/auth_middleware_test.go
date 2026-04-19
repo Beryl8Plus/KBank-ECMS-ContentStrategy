@@ -25,7 +25,7 @@ func TestUserIDMiddleware(t *testing.T) {
 		r.Use(UserIDMiddleware())
 		r.GET("/", func(c *gin.Context) {
 			// Check Gin context
-			ginUid, exists := c.Get(string(ctxconsts.UserIDKey))
+			ginUid, exists := c.Get(ctxconsts.UserIDKey)
 			assert.True(t, exists)
 			assert.Equal(t, uid, ginUid)
 
@@ -50,7 +50,7 @@ func TestUserIDMiddleware(t *testing.T) {
 		r := gin.New()
 		r.Use(UserIDMiddleware())
 		r.GET("/", func(c *gin.Context) {
-			_, exists := c.Get(string(ctxconsts.UserIDKey))
+			_, exists := c.Get(ctxconsts.UserIDKey)
 			assert.False(t, exists)
 
 			reqUid := c.Request.Context().Value(ctxconsts.UserIDKey)
@@ -71,7 +71,7 @@ func TestUserIDMiddleware(t *testing.T) {
 		r := gin.New()
 		r.Use(UserIDMiddleware())
 		r.GET("/", func(c *gin.Context) {
-			_, exists := c.Get(string(ctxconsts.UserIDKey))
+			_, exists := c.Get(ctxconsts.UserIDKey)
 			assert.False(t, exists)
 
 			reqUid := c.Request.Context().Value(ctxconsts.UserIDKey)

@@ -25,9 +25,9 @@ func (o OccurrenceStatus) IsValid() bool {
 	return false
 }
 
-// ParseOccurrenceStatus parses a raw string into an OccurrenceStatus.
+// Parse parses a raw string into an OccurrenceStatus.
 // Returns an error if the value is not a valid status.
-func ParseOccurrenceStatus(s string) (OccurrenceStatus, error) {
+func (o OccurrenceStatus) Parse(s string) (OccurrenceStatus, error) {
 	v := OccurrenceStatus(s)
 	if !v.IsValid() {
 		return "", fmt.Errorf("invalid OccurrenceStatus %q: must be one of ACTIVE, CANCELLED, MODIFIED", s)

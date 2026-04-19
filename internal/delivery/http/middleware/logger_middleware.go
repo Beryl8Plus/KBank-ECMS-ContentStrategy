@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/infrastructure/logger"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 // LoggerMiddleware logs request and response details.
@@ -35,14 +38,23 @@ func LoggerMiddleware() gin.HandlerFunc {
 			reqPayload = strings.ReplaceAll(reqPayload, " ", "")
 		}
 
-		logger.LRequest(entity.RequestLog{
+		correlationID := c.GetHeader("requestID")
+		if correlationID == "" {
+			correlationID = uuid.New().String()
+		}
+
+		// Propagate correlation ID through the request context so downstream
+		// callers (e.g. the gRPC client) can forward it without re-reading headers.
+		c.Request = c.Request.WithContext(ctxconsts.SetCorrelationID(c.Request.Context(), correlationID))
+
+		logger.LRequest(c.Request.Context(), entity.RequestLog{
 			Service:        "Content-gateway",
 			Level:          "REQUEST",
 			Method:         c.Request.Method,
 			URL:            c.Request.RequestURI,
 			RequestPayload: reqPayload,
 			ClientIP:       c.ClientIP(),
-			CorrelationID:  c.GetHeader("requestID"),
+			CorrelationID:  correlationID,
 			Headers:        fmt.Sprintf("%v", c.Request.Header),
 		})
 

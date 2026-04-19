@@ -28,9 +28,9 @@ func (r *PermissionPostgresRepository) HasPermission(ctx context.Context, userID
 	var count int64
 	err := r.db.WithContext(ctx).
 		Table("profile_permissions AS pp").
-		Joins("INNER JOIN permissions AS p ON p.id = pp.permission_id AND p.deleted_at IS NULL").
-		Joins("INNER JOIN users AS u ON u.profile_id = pp.profile_id AND u.deleted_at IS NULL").
-		Where("u.id = ? AND p.source = ? AND p.action = ? AND pp.deleted_at IS NULL AND u.is_active = TRUE",
+		Joins("INNER JOIN permissions AS p ON p.\"ID\" = pp.\"PERMISSION_ID\" AND p.\"DELETED_AT\" IS NULL").
+		Joins("INNER JOIN users AS u ON u.\"PROFILE_ID\" = pp.\"PROFILE_ID\" AND u.\"DELETED_AT\" IS NULL").
+		Where("u.\"ID\" = ? AND p.\"SOURCE\" = ? AND p.\"ACTION\" = ? AND pp.\"DELETED_AT\" IS NULL AND u.\"IS_ACTIVE\" = TRUE",
 			userID, source, action).
 		Count(&count).Error
 	if err != nil {

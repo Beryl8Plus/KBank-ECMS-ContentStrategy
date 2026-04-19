@@ -8,7 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -26,11 +26,55 @@ func parseTags(tagStr string) []Tag {
 	if tagStr == "" {
 		return nil
 	}
+
 	var tags []Tag
-	re := regexp.MustCompile(`(\w+):"([^"]*)"`)
-	matches := re.FindAllStringSubmatch(tagStr, -1)
-	for _, match := range matches {
-		tags = append(tags, Tag{Key: match[1], Value: match[2]})
+	for i := 0; i < len(tagStr); {
+		for i < len(tagStr) && tagStr[i] == ' ' {
+			i++
+		}
+		if i >= len(tagStr) {
+			break
+		}
+
+		keyStart := i
+		for i < len(tagStr) && tagStr[i] != ':' && tagStr[i] != ' ' {
+			i++
+		}
+		if i >= len(tagStr) || tagStr[i] != ':' {
+			return tags
+		}
+
+		key := tagStr[keyStart:i]
+		i++
+		if i >= len(tagStr) || tagStr[i] != '"' {
+			return tags
+		}
+
+		valueStart := i
+		i++
+		escaped := false
+		for i < len(tagStr) {
+			switch {
+			case escaped:
+				escaped = false
+			case tagStr[i] == '\\':
+				escaped = true
+			case tagStr[i] == '"':
+				rawValue := tagStr[valueStart : i+1]
+				value, err := strconv.Unquote(rawValue)
+				if err != nil {
+					return tags
+				}
+				tags = append(tags, Tag{Key: key, Value: value})
+				i++
+				goto nextTag
+			}
+			i++
+		}
+
+		return tags
+
+	nextTag:
 	}
 	return tags
 }

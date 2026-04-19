@@ -2,6 +2,7 @@ package logger_test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -58,7 +59,7 @@ func TestLRequestWritesExpectedFields(t *testing.T) {
 		ResponsePayload: "resp",
 	}
 
-	out := captureStdout(func() { logger.LRequest(rlog) })
+	out := captureStdout(func() { logger.LRequest(context.Background(), rlog) })
 
 	if !strings.Contains(out, "my-service") || !strings.Contains(out, "GET") || !strings.Contains(out, "/test") || !strings.Contains(out, "hello") {
 		t.Fatalf("unexpected stdout: %q", out)
@@ -72,7 +73,7 @@ func TestLErrorWritesToStderr(t *testing.T) {
 		Message:   "something failed",
 	}
 
-	out := captureStderr(func() { logger.LError(elog) })
+	out := captureStderr(func() { logger.LError(context.Background(), elog) })
 
 	if !strings.Contains(out, "E001") || !strings.Contains(out, "something failed") || !strings.Contains(out, "err-svc") {
 		t.Fatalf("unexpected stderr: %q", out)

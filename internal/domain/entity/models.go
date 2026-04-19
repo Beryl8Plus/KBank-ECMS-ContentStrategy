@@ -8,7 +8,7 @@ func AllModels() []interface{} {
 		&Role{},
 		&Profile{},
 		&Placement{},
-		&MDPSchemaRegistry{},
+		&CLENSchemaRegistry{},
 		&Calendar{},
 		// 2. Tables with FK to independent tables
 		&User{},
@@ -21,6 +21,7 @@ func AllModels() []interface{} {
 		&DecisionRule{},
 		&Rule{},
 		&RuleCondition{},
+		&RuleAttribute{},
 		&Schedule{},
 		&ScheduleOccurrence{},
 	}

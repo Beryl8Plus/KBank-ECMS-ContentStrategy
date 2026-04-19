@@ -26,6 +26,7 @@ func (m *mockCache) Set(_ context.Context, _ string, _ string, _ time.Duration) 
 func (m *mockCache) HGet(_ context.Context, _ string, _ string) (string, error) { return "", nil }
 func (m *mockCache) HSet(_ context.Context, _ string, _ string, _ string) error { return nil }
 func (m *mockCache) FlushDB(_ context.Context) error                            { return nil }
+func (m *mockCache) Delete(_ context.Context, _ string) error                   { return nil }
 func (m *mockCache) GetSet(ctx context.Context, key string, expiration time.Duration, loader func(context.Context) (string, error)) (string, error) {
 	return m.getSetFn(ctx, key, expiration, loader)
 }

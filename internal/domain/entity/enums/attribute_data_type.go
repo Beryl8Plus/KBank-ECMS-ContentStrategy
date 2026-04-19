@@ -26,12 +26,12 @@ func (t AttributeDataType) IsValid() bool {
 	return false
 }
 
-// ParseAttributeDataType parses a raw string into an AttributeDataType.
+// Parse parses a raw string into an AttributeDataType.
 // Returns an error if the value is not a valid data type.
-func ParseAttributeDataType(s string) (AttributeDataType, error) {
-	v := AttributeDataType(s)
+func (t AttributeDataType) Parse(val string) (AttributeDataType, error) {
+	v := AttributeDataType(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid AttributeDataType %q: must be one of Text, Date, Number, Boolean", s)
+		return "", fmt.Errorf("invalid AttributeDataType %q: must be one of Text, Date, Number, Boolean", val)
 	}
 	return v, nil
 }

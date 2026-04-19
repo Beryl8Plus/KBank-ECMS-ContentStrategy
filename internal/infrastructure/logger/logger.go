@@ -1,8 +1,8 @@
 package logger
 
 import (
+	"context"
 	"fmt"
-	"kbank-ecms/internal/domain/entity"
 	"os"
 	"strings"
 	"sync"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity"
 )
 
 var (
@@ -29,7 +31,7 @@ func generateLogID() string {
 }
 
 // LError writes an error-level log entry to stderr.
-func LError(e entity.ErrorLog) {
+func LError(ctx context.Context, e entity.ErrorLog) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -55,7 +57,7 @@ func LError(e entity.ErrorLog) {
 }
 
 // LReqResClient logs request or response from the client perspective.
-func LReqResClient(r entity.RequestLog, isResponse bool) {
+func LReqResClient(ctx context.Context, r entity.RequestLog, isResponse bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -76,12 +78,12 @@ func LReqResClient(r entity.RequestLog, isResponse bool) {
 }
 
 // LRequest is a convenience wrapper to log incoming client requests.
-func LRequest(r entity.RequestLog) {
-	LReqResClient(r, false)
+func LRequest(ctx context.Context, r entity.RequestLog) {
+	LReqResClient(ctx, r, false)
 }
 
 // LReqResApp logs application-level request or response events (e.g., Redis/AEM interactions).
-func LReqResApp(r entity.ResponseLog, isResponse bool) {
+func LReqResApp(ctx context.Context, r entity.ResponseLog, isResponse bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -97,13 +99,13 @@ func LReqResApp(r entity.ResponseLog, isResponse bool) {
 
 // LResponse is a compatibility wrapper used across the codebase to log
 // application-level request/response events (e.g., Redis/AEM interactions).
-func LResponse(r entity.ResponseLog) {
+func LResponse(ctx context.Context, r entity.ResponseLog) {
 	// default to response-style log
-	LReqResApp(r, true)
+	LReqResApp(ctx, r, true)
 }
 
 // LSystem writes a system-level log entry to stdout.
-func LSystem(s entity.SystemLog) {
+func LSystem(ctx context.Context, s entity.SystemLog) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -141,7 +143,7 @@ func LSystem(s entity.SystemLog) {
 }
 
 // LStartup writes a startup-level log entry to stderr.
-func LStartup(s entity.StartupLog) {
+func LStartup(ctx context.Context, s entity.StartupLog) {
 	mu.Lock()
 	defer mu.Unlock()
 

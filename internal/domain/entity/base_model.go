@@ -30,8 +30,8 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
 	if uid := b.getUserID(tx.Statement.Context); uid != nil {
 		b.CreatedBy = uid
 		b.UpdatedBy = uid
-		tx.Statement.SetColumn("created_by", uid)
-		tx.Statement.SetColumn("updated_by", uid)
+		tx.Statement.SetColumn("CreatedBy", uid)
+		tx.Statement.SetColumn("UpdatedBy", uid)
 	}
 	return nil
 }
@@ -40,7 +40,7 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
 func (b *BaseModel) BeforeUpdate(tx *gorm.DB) error {
 	if uid := b.getUserID(tx.Statement.Context); uid != nil {
 		b.UpdatedBy = uid
-		tx.Statement.SetColumn("updated_by", uid)
+		tx.Statement.SetColumn("UpdatedBy", uid)
 	}
 	return nil
 }
@@ -49,7 +49,7 @@ func (b *BaseModel) BeforeUpdate(tx *gorm.DB) error {
 func (b *BaseModel) BeforeDelete(tx *gorm.DB) error {
 	if uid := b.getUserID(tx.Statement.Context); uid != nil {
 		b.UpdatedBy = uid
-		tx.Statement.SetColumn("updated_by", uid)
+		tx.Statement.SetColumn("UpdatedBy", uid)
 	}
 	return nil
 }

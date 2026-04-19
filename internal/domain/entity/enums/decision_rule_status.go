@@ -3,6 +3,10 @@ package enums
 import "fmt"
 
 // DecisionRuleStatus represents the lifecycle status of a decision rule.
+// Valid values are:
+//   - DRAFT: The rule is being created or modified and is not yet active.
+//   - ACTIVE: The rule is active and can be evaluated.
+//   - INACTIVE: The rule is inactive and will not be evaluated.
 type DecisionRuleStatus string
 
 const (
@@ -25,10 +29,10 @@ func (s DecisionRuleStatus) IsValid() bool {
 	return false
 }
 
-// ParseDecisionRuleStatus parses a raw string into a DecisionRuleStatus.
+// Parse parses a raw string into a DecisionRuleStatus.
 // Returns an error if the value is not a valid status.
-func ParseDecisionRuleStatus(s string) (DecisionRuleStatus, error) {
-	v := DecisionRuleStatus(s)
+func (s DecisionRuleStatus) Parse(val string) (DecisionRuleStatus, error) {
+	v := DecisionRuleStatus(val)
 	if !v.IsValid() {
 		return "", fmt.Errorf("invalid DecisionRuleStatus %q: must be one of DRAFT, ACTIVE, INACTIVE", s)
 	}
