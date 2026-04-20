@@ -9,7 +9,7 @@ GOOSE_DB_DSN := "host=$${DB_HOST:-localhost} port=$${DB_PORT:-5432} user=$${DB_U
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset test vet lint fmt clean install-hooks swagger swagger-server swagger-cms-delivery proto proto-install redis-set redis-seed-user-attrs
+.PHONY: init build run dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset test vet lint fmt clean install-hooks swagger swagger-server swagger-cms-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
 
 ## Install protoc Go plugins
 proto-install:
@@ -50,6 +50,10 @@ init:
 ## Build the server binary
 build: swagger
 	go build -o bin/server ./cmd/server/
+
+## Generate wire dependencies
+wire-gen:
+	wire gen ./cmd/server/...
 
 ## Run the server locally
 run:

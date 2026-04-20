@@ -18,8 +18,6 @@ import (
 	"os"
 
 	ecmsdocs "kbank-ecms/docs/swagger/server"
-	deliveryhttp "kbank-ecms/internal/delivery/http"
-	deliveryhandler "kbank-ecms/internal/delivery/http/handler"
 
 	"github.com/joho/godotenv"
 )
@@ -89,9 +87,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build router — wires service → handler → middleware → router
-	r := deliveryhttp.InitNewRouter(db, rateLimit)
-	deliveryhandler.RegisterRoutes(r, db)
+	// Build router — wires service → handler → middleware → router via Google Wire
+	r, err := InitializeApp(db, rateLimit)
+	if err != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "MAIN",
+			Level:   "FATAL",
+			Message: "Failed to initialize app via Wire: " + err.Error(),
+		})
+		os.Exit(1)
+	}
 
 	// Start Server
 	port := "8081" // Default port or from config
