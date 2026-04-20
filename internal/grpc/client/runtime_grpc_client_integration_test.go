@@ -15,9 +15,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"gorm.io/datatypes"
 
+	grpcserver "kbank-ecms/cmd/cms-runtime/testserver"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
-	grpcserver "kbank-ecms/internal/grpc/server"
 )
 
 const bufConnSize = 1024 * 1024

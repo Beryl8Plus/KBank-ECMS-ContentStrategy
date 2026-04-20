@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"kbank-ecms/cmd/cms-runtime/internal/evaluator"
 	"kbank-ecms/internal/domain/entity"
 	domainservice "kbank-ecms/internal/domain/service"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"
-	"kbank-ecms/internal/service/evaluator"
 )
 
 // Ensure interface is satisfied at compile time.

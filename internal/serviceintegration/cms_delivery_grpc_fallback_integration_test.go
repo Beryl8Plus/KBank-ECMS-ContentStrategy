@@ -16,11 +16,11 @@ import (
 	"google.golang.org/grpc"
 	"gorm.io/datatypes"
 
+	grpcserver "kbank-ecms/cmd/cms-runtime/testserver"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	grpcclient "kbank-ecms/internal/grpc/client"
-	grpcserver "kbank-ecms/internal/grpc/server"
 	deliveryservice "kbank-ecms/internal/service"
 )
 

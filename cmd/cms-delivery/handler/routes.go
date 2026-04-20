@@ -16,5 +16,10 @@ func RegisterRoutes(
 	handler := NewHandler(svc)
 
 	r.GET("/content", handler.getContent)
-	r.POST("/flush", handler.flushCache)
+
+	purges := r.Group("/purge_requests")
+	{
+		purges.GET("", handler.getStatus)
+		purges.POST("", handler.flushCache)
+	}
 }

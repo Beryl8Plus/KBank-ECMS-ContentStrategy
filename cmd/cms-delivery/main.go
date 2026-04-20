@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	cmshandler "kbank-ecms/cmd/cms-delivery/handler"
 	ecmsdocs "kbank-ecms/docs/swagger/cmsdelivery"
-	cmshandler "kbank-ecms/internal/cms-delivery/handler"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 
 	"github.com/joho/godotenv"

@@ -13,7 +13,6 @@ import (
 	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
-	"kbank-ecms/internal/service/evaluator"
 	"kbank-ecms/pkg/util"
 )
 
@@ -221,9 +220,6 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		); cacheErr == nil {
 			// Cache hit for logic entries.
 			entries = cacheEntries
-		} else if localEntries, localOK := s.evaluateLocallyFromSchedules(ctx, name, filtered[name], resolvedUserAttrs); localOK {
-			// UC1: all rules were cached — evaluate locally without gRPC.
-			entries = localEntries
 		} else if s.evaluator != nil && s.scheduleRepo != nil {
 			// gRPC fallback — one or more rules were missing from cache.
 			grpcEntries, grpcErr := s.evaluatePlacementLogicViaGRPC(ctx, name, filtered[name], resolvedUserAttrs)
@@ -308,64 +304,6 @@ func (s *CMSDeliveryService) evaluatePlacementLogicViaGRPC(
 	}
 
 	return entries, nil
-}
-
-// evaluateLocallyFromSchedules builds and evaluates placement logic entries using
-// the DecisionRule cached on each schedule, without a gRPC round-trip (UC1).
-//
-// Returns (entries, true) when all schedules have DecisionRule populated.
-// LogicEval is set on every returned entry (true = passes conditions, false = no match),
-// which lets the caller cache both positive and negative eval results per user+hash.
-//
-// Returns (nil, false) when any schedule is missing its DecisionRule; the caller
-// should fall back to gRPC in that case.
-func (s *CMSDeliveryService) evaluateLocallyFromSchedules(
-	ctx context.Context,
-	placementName string,
-	schedules []*entity.Schedule,
-	userAttrs map[string]json.RawMessage,
-) ([]domainservice.ContentResult, bool) {
-	if len(schedules) == 0 {
-		return nil, false
-	}
-
-	var entries []domainservice.ContentResult
-	for _, sched := range schedules {
-		if sched.DecisionRule == nil {
-			return nil, false // missing rule data — caller must fall back to gRPC
-		}
-		rule := *sched.DecisionRule
-		source, campaign := buildPlacementRuleSource(rule)
-		logicEntries := evaluator.BuildPlacementLogicEntries(rule, sched, source, campaign)
-		for i := range logicEntries {
-			pass, err := evaluator.EvaluateLogicConditions(logicEntries[i].Conditions, userAttrs)
-			if err != nil {
-				pass = false
-			}
-			logicEntries[i].LogicEval = pass
-		}
-		entries = append(entries, logicEntries...)
-	}
-
-	logger.LSystem(ctx, entity.SystemLog{
-		Service: "CMS-DELIVERY",
-		Level:   "INFO",
-		Message: fmt.Sprintf("evaluateLocallyFromSchedules: %d entries for placement %q", len(entries), placementName),
-	})
-	return entries, true
-}
-
-// buildPlacementRuleSource derives the source label and campaign metadata from a
-// decision rule. Mirrors the same logic used in the cms-runtime gRPC server.
-func buildPlacementRuleSource(rule entity.DecisionRule) (string, *domainservice.Campaign) {
-	if rule.Type.IsCampaign() {
-		return "LEAD_LIST", &domainservice.Campaign{
-			Code:      "Test",
-			StartDate: "2026-01-01",
-			EndDate:   "2026-12-31",
-		}
-	}
-	return "DECISION_RULE", nil
 }
 
 // ---------------------------------------------------------------------------

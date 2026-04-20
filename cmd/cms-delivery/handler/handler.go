@@ -82,7 +82,24 @@ func (h *Handler) getContent(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.APIResponse{Data: responseData})
 }
 
-// flushCache handles POST /flush
+// getCacheStatus handles GET /purge_requests
+//
+// @Summary Get cache status
+// @Description Returns list purge request status.
+// @Tags CmsDelivery
+// @Accept json
+// @Produce json
+// @Success 200 {object} dto.APIResponse{data=map[string]string}
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /purge_requests [get]
+func (h *Handler) getStatus(c *gin.Context) {
+	// TODO: Implement actual status retrieval logic. For now, return a placeholder response.
+
+	c.JSON(http.StatusOK, dto.APIResponse{})
+}
+
+// flushCache handles POST /purge_requests
 //
 // @Summary Flush content cache
 // @Description Flushes the cache for specified placements. An empty or missing body flushes all placements.
@@ -93,7 +110,7 @@ func (h *Handler) getContent(c *gin.Context) {
 // @Success 200 {object} dto.APIResponse{data=dto.FlushResponse}
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
-// @Router /flush [post]
+// @Router /purge_requests [post]
 func (h *Handler) flushCache(c *gin.Context) {
 	var req dto.FlushRequest
 	// Ignore bind errors — missing/empty body means flush all (req.Placements stays nil).

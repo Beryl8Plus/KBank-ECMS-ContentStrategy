@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 var (
@@ -38,6 +39,9 @@ func LError(ctx context.Context, e entity.ErrorLog) {
 	id := e.LogID
 	if id == "" {
 		id = generateLogID()
+	}
+	if e.CorrelationID == "" {
+		e.CorrelationID = ctxconsts.GetCorrelationID(ctx)
 	}
 
 	logLine := fmt.Sprintf("%slog_id: %s|ERROR|service_module: %s|client_ip: %s|correlation_id: %s|url: %s|request_payload: %s|error_code: %s|message: %s|stack_trace: %s\n",
@@ -108,6 +112,10 @@ func LResponse(ctx context.Context, r entity.ResponseLog) {
 func LSystem(ctx context.Context, s entity.SystemLog) {
 	mu.Lock()
 	defer mu.Unlock()
+
+	if s.CorrelationID == "" {
+		s.CorrelationID = ctxconsts.GetCorrelationID(ctx)
+	}
 
 	base := fmt.Sprintf("%s%s|%s|%s|", formatTime(), s.Level, s.CorrelationID, s.Service)
 	var logLine string

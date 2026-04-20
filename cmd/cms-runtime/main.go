@@ -10,9 +10,9 @@ import (
 	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
 
+	grpcserver "kbank-ecms/cmd/cms-runtime/internal/server"
 	"kbank-ecms/internal/domain/entity"
 	grpcmiddleware "kbank-ecms/internal/grpc/middleware"
-	grpcserver "kbank-ecms/internal/grpc/server"
 	"kbank-ecms/internal/infrastructure/logger"
 )
 

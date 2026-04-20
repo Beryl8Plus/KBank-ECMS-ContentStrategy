@@ -12,7 +12,7 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
 
 # Generate Swagger Documentation
-RUN swag init -g cmd/server/main.go --exclude internal/cms-delivery,cmd/cms-delivery,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/server --parseDependency --parseInternal
+RUN swag init -g cmd/server/main.go --exclude cmd/cms-delivery,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/server --parseDependency --parseInternal
 RUN swag init -g cmd/cms-delivery/main.go --exclude internal/delivery/http/handler,cmd/server,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/cmsdelivery --parseDependency --parseInternal
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kbank-ecms ./cmd/server/
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o cms-delivery ./cmd/cms-delivery/
