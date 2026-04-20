@@ -16,17 +16,13 @@ import (
 	"syscall"
 	"time"
 
-	cmshandler "kbank-ecms/cmd/cms-delivery/handler"
 	ecmsdocs "kbank-ecms/docs/swagger/cmsdelivery"
-	deliveryhttp "kbank-ecms/internal/delivery/http"
 
 	"github.com/joho/godotenv"
 
-	"kbank-ecms/cmd/cms-delivery/service"
 	"kbank-ecms/internal/domain/entity"
 	domainservice "kbank-ecms/internal/domain/service"
 	grpcclient "kbank-ecms/internal/grpc/client"
-	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
@@ -92,8 +88,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	scheduleRepo := repository.NewSchedulePostgresRepository(db)
-
 	// gRPC client to cms-runtime (optional — graceful degradation)
 	var evaluator domainservice.RuntimeEvaluator
 	if grpcAddr := os.Getenv("CMS_RUNTIME_GRPC_ADDR"); grpcAddr != "" {
@@ -110,36 +104,22 @@ func main() {
 		}
 	}
 
-	// Local rule cache (L1).
-	cacheMemory := cache.NewCacheMemory[any]("cms_rule", 0.60)
-	defer cacheMemory.Stop()
-
-	// Parse ticker config from env.
-	resultTTL := parseDurationEnv("CMS_RUNTIME_TTL", 15*time.Minute)
-	tickInterval := parseDurationEnv("CMS_RUNTIME_INTERVAL", 5*time.Minute)
-
-	// Construct the delivery service.
-	svc := service.NewCMSDeliveryService(
-		redisRepo, scheduleRepo, evaluator,
-		cacheMemory, resultTTL, tickInterval,
-	)
+	// Build app — wires service → handler → middleware → router
+	app, cleanup := InitializeApp(db, rateLimit, redisRepo, evaluator)
+	defer cleanup()
 
 	// Start background ticker (no-op if tickInterval <= 0).
-	if err := svc.Start(ctx); err != nil {
+	if err := app.Service.Start(ctx); err != nil {
 		logger.LSystem(ctx, entity.SystemLog{Service: "CMS-DELIVERY", Level: "FATAL", Message: "svc.Start failed: " + err.Error()})
 		os.Exit(1)
 	}
-
-	// Build router — wires service → handler → middleware → router
-	r := deliveryhttp.InitNewRouter(db, rateLimit)
-	cmshandler.RegisterRoutes(r, svc)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8082"
 	}
 
-	httpSrv := &http.Server{Addr: ":" + port, Handler: r}
+	httpSrv := &http.Server{Addr: ":" + port, Handler: app.Router}
 
 	// Run HTTP server in a background goroutine so main can wait on signal.
 	go func() {
@@ -158,7 +138,7 @@ func main() {
 	logger.LSystem(ctx, entity.SystemLog{Service: "CMS-DELIVERY", Level: "INFO", Message: "Shutdown signal received"})
 
 	// Stop the background ticker first, then drain the HTTP server.
-	_ = svc.Stop()
+	_ = app.Service.Stop()
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

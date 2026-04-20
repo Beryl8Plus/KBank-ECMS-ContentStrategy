@@ -43,6 +43,8 @@ init:
 	go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing goose..."
 	go install github.com/pressly/goose/v3/cmd/goose@latest
+	@echo "Installing wire..."
+	go install github.com/google/wire/cmd/wire@latest
 	@echo "Installing git hooks..."
 	make install-hooks
 	@echo "Workspace initialization complete."
@@ -53,7 +55,8 @@ build: swagger
 
 ## Generate wire dependencies
 wire-gen:
-	wire gen ./cmd/server/...
+	wire gen ./cmd/server
+	wire gen ./cmd/cms-delivery
 
 ## Run the server locally
 run:
