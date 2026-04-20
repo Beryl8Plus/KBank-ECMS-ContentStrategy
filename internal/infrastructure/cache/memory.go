@@ -97,15 +97,31 @@ func (rc *CacheMemory[T]) Stop() {
 }
 
 // Get retrieves a value from local memory.
+// If an entry is found but has expired, it is lazily deleted from the map.
 func (rc *CacheMemory[T]) Get(ctx context.Context, key string) (T, bool) {
 	rc.mu.RLock()
 	entry, found := rc.entries[key]
 	rc.mu.RUnlock()
 
-	if found && time.Now().Before(entry.expiredAt) {
+	if !found {
+		rc.mCacheMisses.Inc()
+		var zero T
+		return zero, false
+	}
+
+	if time.Now().Before(entry.expiredAt) {
 		rc.mCacheHits.Inc()
 		return entry.value, true
 	}
+
+	// Lazy eviction: expired entry found — acquire write lock and delete.
+	// Re-check after acquiring the write lock to guard against a concurrent delete.
+	rc.mu.Lock()
+	if e, ok := rc.entries[key]; ok && !time.Now().Before(e.expiredAt) {
+		delete(rc.entries, key)
+		rc.updateMetrics()
+	}
+	rc.mu.Unlock()
 
 	rc.mCacheMisses.Inc()
 	var zero T
@@ -170,13 +186,15 @@ func (rc *CacheMemory[T]) monitorMemory() {
 			usedPct := float64(m.HeapAlloc) / float64(m.HeapSys)
 
 			rc.mu.Lock()
+
+			// Always purge expired entries on every tick, regardless of memory pressure.
+			rc.purgeExpired()
+
 			if usedPct > rc.maxMemoryPct {
-				// Purge stale entries on every pressure tick.
-				rc.purgeExpired()
 				rc.isMemPressure = true
 				rc.mMemPressureGauge.Set(1)
 
-				// Critical pressure: wipe all entries.
+				// Critical pressure: wipe all remaining entries.
 				if usedPct > 0.8 {
 					rc.entries = make(map[string]cachedEntry[T])
 				}
