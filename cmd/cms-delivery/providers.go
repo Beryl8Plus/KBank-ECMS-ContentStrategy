@@ -32,6 +32,7 @@ func ProvideRouter(
 func ProvideCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	scheduleRepo domainrepo.ScheduleRepository,
+	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator domainservice.RuntimeEvaluator,
 	cacheMemory *cache.CacheMemory[any],
 ) *service.CMSDeliveryService {
@@ -39,8 +40,8 @@ func ProvideCMSDeliveryService(
 	tickInterval := parseDurationEnv("CMS_RUNTIME_INTERVAL", 5*time.Minute)
 
 	return service.NewCMSDeliveryService(
-		cacheRepo, scheduleRepo, evaluator,
-		cacheMemory, resultTTL, tickInterval,
+		cacheRepo, scheduleRepo, decisionRuleRepo,
+		evaluator, cacheMemory, resultTTL, tickInterval,
 	)
 }
 

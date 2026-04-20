@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 
 	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 )
 
@@ -144,12 +143,6 @@ func (r *SchedulePostgresRepository) ListActiveSchedulesInWindow(ctx context.Con
 	var atStr = at.Format(time.RFC3339)
 	var schedules []*entity.Schedule
 	err := r.db.WithContext(ctx).
-		Preload("DecisionRule", func(db *gorm.DB) *gorm.DB {
-			return db.Where("\"STATUS\" = ?", enums.DecisionRuleStatusActive)
-		}).
-		Preload("DecisionRule.RuleConditions").
-		Preload("DecisionRule.RuleConditions.Attribute").
-		Preload("DecisionRule.Rules.RuleAttributes").
 		Preload("Placement").
 		Where("\"IS_ACTIVE\" = true").
 		Where("\"EFFECTIVE_FROM\" <= ? AND \"EFFECTIVE_UNTIL\" > ?", atStr, atStr).

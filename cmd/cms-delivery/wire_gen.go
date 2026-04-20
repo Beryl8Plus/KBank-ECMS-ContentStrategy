@@ -19,8 +19,9 @@ import (
 // InitializeApp wires all dependencies to construct the delivery service and Gin engine.
 func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit, redisRepo repository.RedisCacheRepository, evaluator service.RuntimeEvaluator) (*App, func()) {
 	schedulePostgresRepository := repository2.NewSchedulePostgresRepository(db)
+	decisionRulePostgresRepository := repository2.NewDecisionRulePostgresRepository(db)
 	cacheMemory, cleanup := ProvideCacheMemory()
-	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, schedulePostgresRepository, evaluator, cacheMemory)
+	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, schedulePostgresRepository, decisionRulePostgresRepository, evaluator, cacheMemory)
 	engine := ProvideRouter(db, rateLimit, cmsDeliveryService)
 	app := ProvideApp(engine, cmsDeliveryService)
 	return app, func() {

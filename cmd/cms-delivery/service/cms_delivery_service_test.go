@@ -22,7 +22,7 @@ import (
 
 // newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no gRPC).
 func newSvcCacheOnly(cacheRepo *mockCacheRepo) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, &mockScheduleRepo{}, nil, nil, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, &mockScheduleRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0)
 }
 
 // newSvcWithFallback builds a CMSDeliveryService with cache, schedule repo, and evaluator.
@@ -31,7 +31,7 @@ func newSvcWithFallback(
 	schedRepo *mockScheduleRepo,
 	eval domainservice.RuntimeEvaluator,
 ) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, schedRepo, eval, nil, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, schedRepo, &mockDecisionRuleRepo{}, eval, nil, time.Hour, 0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ func TestCMSDeliveryService_FlushCache_Selective(t *testing.T) {
 			flushDBCalled = true
 			return nil
 		},
-	}, nil, nil, mem, time.Hour, 0)
+	}, nil, nil, nil, mem, time.Hour, 0)
 
 	err := svc.FlushCache(context.Background(), []string{"hero", "sidebar"}, true)
 
@@ -196,7 +196,7 @@ func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
 			flushDBCalled = true
 			return nil
 		},
-	}, nil, nil, mem, time.Hour, 0)
+	}, nil, nil, nil, mem, time.Hour, 0)
 
 	// nil placements
 	require.NoError(t, svc.FlushCache(context.Background(), nil, false))
@@ -300,6 +300,18 @@ func (m *mockScheduleRepo) ListSchedulesPaginated(_ context.Context, _, _ int) (
 }
 func (m *mockScheduleRepo) UpdateSchedule(_ context.Context, _ *entity.Schedule) error { return nil }
 func (m *mockScheduleRepo) DeleteSchedule(_ context.Context, _ uuid.UUID) error        { return nil }
+
+// mockDecisionRuleRepo is a minimal mock for domainrepo.DecisionRuleRepository.
+type mockDecisionRuleRepo struct {
+	getFn func(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error)
+}
+
+func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleID(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, scheduleID)
+	}
+	return nil, nil
+}
 
 // mockRuntimeEvaluator is a minimal mock for domainservice.RuntimeEvaluator.
 type mockRuntimeEvaluator struct {

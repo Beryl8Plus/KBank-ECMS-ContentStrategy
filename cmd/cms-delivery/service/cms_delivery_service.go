@@ -14,6 +14,8 @@ import (
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/pkg/util"
+
+	"github.com/google/uuid"
 )
 
 // cmsPlacementKey returns the Redis key for the given placement name.
@@ -53,8 +55,9 @@ var _ domainservice.DeliveryService = (*CMSDeliveryService)(nil)
 // and writes L1/L2/L3 caches for all active placements.
 type CMSDeliveryService struct {
 	cacheRepo    domainrepo.RedisCacheRepository
-	scheduleRepo domainrepo.ScheduleRepository  // nil disables fallback
-	evaluator    domainservice.RuntimeEvaluator // nil disables fallback
+	scheduleRepo domainrepo.ScheduleRepository     // nil disables fallback
+	decisionRepo domainrepo.DecisionRuleRepository // nil disables fallback
+	evaluator    domainservice.RuntimeEvaluator    // nil disables fallback
 	cacheMemory  *cache.CacheMemory[any]
 	resultTTL    time.Duration
 	tickInterval time.Duration
@@ -74,6 +77,7 @@ type CMSDeliveryService struct {
 func NewCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	scheduleRepo domainrepo.ScheduleRepository,
+	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator domainservice.RuntimeEvaluator,
 	cacheMemory *cache.CacheMemory[any],
 	resultTTL time.Duration,
@@ -82,6 +86,7 @@ func NewCMSDeliveryService(
 	return &CMSDeliveryService{
 		cacheRepo:    cacheRepo,
 		scheduleRepo: scheduleRepo,
+		decisionRepo: decisionRuleRepo,
 		evaluator:    evaluator,
 		cacheMemory:  cacheMemory,
 		resultTTL:    resultTTL,
@@ -197,9 +202,23 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	// cache when the schedule was stored lean (UC2 strips DecisionRule on write).
 	filtered := make(map[string][]*entity.Schedule)
 	for _, sched := range schedules {
-		if sched.DecisionRule == nil {
-			if rule, err := getCache[*entity.DecisionRule](ctx, s.cacheMemory, s.cacheRepo, ruleDecisionCacheKey(sched.DecisionRuleID.String())); err == nil {
+		if sched.DecisionRule == nil && sched.DecisionRuleID != uuid.Nil {
+			decisionRuleKey := ruleDecisionCacheKey(sched.DecisionRuleID.String())
+			if rule, err := getCache[*entity.DecisionRule](ctx, s.cacheMemory, s.cacheRepo, decisionRuleKey); err == nil && rule != nil {
 				sched.DecisionRule = rule
+			} else {
+				// miss cache, try to query DB directly to avoid stale cache.
+				if rule, err := util.GetSet(ctx, s.cacheRepo, decisionRuleKey, s.resultTTL, func(ctx context.Context) (*entity.DecisionRule, error) {
+					return s.decisionRepo.GetDecisionRuleByScheduleID(ctx, sched.ID)
+				}); err == nil && rule != nil {
+					sched.DecisionRule = rule
+				} else {
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "CMS-DELIVERY",
+						Level:   "WARN",
+						Message: fmt.Sprintf("Failed to query rule for sched %q: %v", sched.DecisionRuleID.String(), err),
+					})
+				}
 			}
 		}
 		if sched.Placement != nil && slices.Contains(placementNames, sched.Placement.Name) {
@@ -238,7 +257,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			continue
 		}
 
-		// 3. Evaluate each entry against user attrs.
+		// 4. Evaluate each entry against user attrs.
 		var passing []domainservice.ContentResult
 		now := time.Now().UTC().Format(time.RFC3339)
 		for _, entry := range entries {
@@ -444,13 +463,7 @@ func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
 	// ruleDecisionCacheKey, so embedding it in every schedule would duplicate it
 	// once per schedule that shares the same rule.
 	for placementName, g := range groups {
-		leanSchedules := make([]*entity.Schedule, len(g.schedules))
-		for i, sched := range g.schedules {
-			lean := *sched
-			lean.DecisionRule = nil
-			leanSchedules[i] = &lean
-		}
-		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, cmsPlacementSchedulesKey(placementName), leanSchedules, s.resultTTL)
+		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, cmsPlacementSchedulesKey(placementName), g.schedules, s.resultTTL)
 	}
 }
 

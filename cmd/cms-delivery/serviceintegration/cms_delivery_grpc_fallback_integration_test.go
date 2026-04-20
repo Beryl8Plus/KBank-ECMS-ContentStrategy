@@ -54,6 +54,7 @@ func TestCMSDeliveryServiceGRPCFallbackEndToEnd(t *testing.T) {
 	svc := deliveryservice.NewCMSDeliveryService(
 		cacheRepo,
 		&scheduleRepoStub{}, // non-nil guard enables gRPC fallback; not called directly
+		&decisionRuleRepoStub{},
 		evaluator,
 		nil,
 		time.Hour,
@@ -205,6 +206,14 @@ func (s *scheduleRepoStub) UpdateSchedule(context.Context, *entity.Schedule) err
 func (s *scheduleRepoStub) DeleteSchedule(context.Context, uuid.UUID) error        { return nil }
 
 var _ domainrepo.ScheduleRepository = (*scheduleRepoStub)(nil)
+
+type decisionRuleRepoStub struct{}
+
+func (s *decisionRuleRepoStub) GetDecisionRuleByScheduleID(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error) {
+	return nil, nil
+}
+
+var _ domainrepo.DecisionRuleRepository = (*decisionRuleRepoStub)(nil)
 
 func buildScheduleFixture(
 	decisionRuleID uuid.UUID,
