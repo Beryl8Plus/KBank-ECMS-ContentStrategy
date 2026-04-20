@@ -22,6 +22,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"kbank-ecms/cmd/cms-delivery/service"
 	"kbank-ecms/internal/domain/entity"
 	domainservice "kbank-ecms/internal/domain/service"
 	grpcclient "kbank-ecms/internal/grpc/client"
@@ -29,7 +30,6 @@ import (
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
-	"kbank-ecms/internal/service"
 	"kbank-ecms/pkg/util"
 )
 
