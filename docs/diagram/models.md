@@ -5,261 +5,271 @@ documentation for database models used in the system. This includes tables for m
 The system's database schema is organized into several key areas, each serving a specific purpose in the overall architecture. Below is an overview of the main tables and their relationships.
 [https://dbdiagram.io/d/](https://dbdiagram.io/d/)
 
-```
-// --- 1. Management & Auth ---
-Table login_token_histories {
-    id uuid [primary key]
-    username varchar [unique]
-    access_token varchar
-    expire_date timestamptz
-
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+```sql
+TABLE LOGIN_TOKEN_HISTORIES {
+    LOGIN_TOKEN_HISTORY_ID UUID [PRIMARY KEY]
+    USER_NAME VARCHAR(100) [UNIQUE]
+    ACCESS_TOKEN VARCHAR(2048)
+    EXPIRE_DATE TIMESTAMPTZ
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table users {
-    id uuid [primary key]
-    role_id uuid [ref: > roles.id]
-    profile_id uuid [ref: - profiles.id]
-    email varchar [unique]
-    name_th varchar
-    name_en varchar
-    is_active boolean [default: true]
+TABLE USERS {
+    USER_ID UUID [PRIMARY KEY]
+    ROLE_ID UUID [REF: > ROLES.ROLE_ID]
+    PROFILE_ID UUID [REF: - PROFILES.PROFILE_ID]
+    EMAIL VARCHAR(255) [UNIQUE]
+    NAME_TH VARCHAR(255)
+    NAME_EN VARCHAR(255)
+    IS_ACTIVE BOOLEAN [DEFAULT: TRUE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table roles {
-    id uuid [primary key]
-    name varchar
-    code varchar [unique]
+TABLE ROLES {
+    ROLE_ID UUID [PRIMARY KEY]
+    NAME VARCHAR(255)
+    CODE VARCHAR(100) [UNIQUE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table profiles {
-    id uuid [primary key]
-    name varchar
-    code varchar [unique]
+TABLE PROFILES {
+    PROFILE_ID UUID [PRIMARY KEY]
+    NAME VARCHAR(255)
+    CODE VARCHAR(100) [UNIQUE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table permissions {
-    id uuid [primary key]
-    name varchar
-    permission_type enum [note: 'ACCESS_CONTROL, FEATURE_FLAG, etc.']
-    feature_code varchar [note: 'e.g., Content_Decision_Rule']
-    action varchar [note: 'CREATE, EDIT, DELETE, VIEW ALL, EDIT ALL, DELETE ALL']
+TABLE PERMISSIONS {
+    PERMISSION_ID UUID [PRIMARY KEY]
+    NAME VARCHAR(255)
+    PERMISSION_TYPE ENUM [NOTE: 'ACCESS_CONTROL, FEATURE_FLAG, ETC.']
+    FEATURE_CODE VARCHAR(100) [NOTE: 'E.G., CONTENT_DECISION_RULE']
+    ACTION VARCHAR(100) [NOTE: 'CREATE, EDIT, DELETE, VIEW ALL, EDIT ALL, DELETE ALL']
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 
-    indexes {
-        (feature_code, action) [unique]
+    INDEXES {
+        (FEATURE_CODE, ACTION) [UNIQUE]
     }
 }
 
-Table profile_permissions {
-    id uuid [primary key]
-    profile_id uuid [ref: > profiles.id]
-    permission_id uuid [ref: > permissions.id]
+TABLE PROFILE_PERMISSIONS {
+    PROFILE_PERMISSION_ID UUID [PRIMARY KEY]
+    PROFILE_ID UUID [REF: > PROFILES.PROFILE_ID]
+    PERMISSION_ID UUID [REF: > PERMISSIONS.PERMISSION_ID]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 
-    indexes {
-        (profile_id, permission_id) [unique]
+    INDEXES {
+        (PROFILE_ID, PERMISSION_ID) [UNIQUE]
     }
 }
 
-// --- 2. Decision Rule Core ---
-Table decision_rules {
-    id uuid [primary key]
-    name varchar
-    type enum [note: 'SCORING, SEGMENT, ELIGIBLE']
-    content_path varchar
-    score float
-    status enum [note: 'DRAFT, ACTIVE, INACTIVE']
+TABLE DECISION_RULES {
+    DECISION_RULE_ID UUID [PRIMARY KEY]
+    NAME VARCHAR(255)
+    TYPE ENUM [NOTE: 'SCORING, SEGMENT, ELIGIBLE']
+    CONTENT_PATH VARCHAR(500)
+    SCORE DECIMAL(11,2)
+    STATUS ENUM [NOTE: 'DRAFT, ACTIVE, INACTIVE']
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
-
-    inactive_by uuid [ref: > users.id]
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID [REF: > USERS.USER_ID]
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID [REF: > USERS.USER_ID]
+    INACTIVE_BY UUID [REF: > USERS.USER_ID]
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table rules {
-    id uuid [primary key]
-    decision_rule_id uuid [ref: > decision_rules.id]
-    variation_name varchar
-    score integer
-    order_no integer // asc น้อยไปมาก
+TABLE RULES {
+    RULE_ID UUID [PRIMARY KEY]
+    DECISION_RULE_ID UUID [REF: > DECISION_RULES.DECISION_RULE_ID]
+    VARIATION_NAME VARCHAR(255)
+    SCORE DECIMAL(11,2)
+    ORDER_NO INTEGER // ASC น้อยไปมาก
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table rule_attriutes {
-  ruld_id uuid [ref: > rules.id]
-  attribute_id uuid [ref: > attributes.id]
-  value jsonb
+TABLE RULE_ATTRIBUTES {
+    RULE_ATTRIBUTE_ID UUID [PRIMARY KEY]
+    RULE_ID UUID [REF: > RULES.RULE_ID]
+    ATTRIBUTE_ID UUID [REF: > ATTRIBUTES.ATTRIBUTE_ID]
+    VALUE JSONB
+
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-// --- 3. Advanced Logic Engine ---
-Table rule_conditions {
-    id uuid [primary key]
-    sequence integer
-    decision_rule_id uuid [ref: > decision_rules.id]
-    parent_rule_condition_id uuid [ref: > rule_conditions.id]
-    attribute_id uuid [ref: > attributes.id]
-    logical_operator enum // <,>,=,IN,BETWEEN
-    connector_operator enum [note: 'AND, OR — connects this condition to the next item in sequence. null for last item in group.']
+TABLE RULE_CONDITIONS {
+    RULE_CONDITION_ID UUID [PRIMARY KEY]
+    SEQUENCE INTEGER
+    DECISION_RULE_ID UUID [REF: > DECISION_RULES.DECISION_RULE_ID]
+    PARENT_RULE_CONDITION_ID UUID [REF: > RULE_CONDITIONS.RULE_CONDITION_ID]
+    ATTRIBUTE_ID UUID [REF: > ATTRIBUTES.ATTRIBUTE_ID]
+    LOGICAL_OPERATOR ENUM // <,>,=,IN,BETWEEN
+    CONNECTOR_OPERATOR ENUM [NOTE: 'AND, OR — CONNECTS THIS CONDITION TO THE NEXT ITEM IN SEQUENCE. NULL FOR LAST ITEM IN GROUP.']
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-// --- 5. Attributes & Sources ---
-Table attributes {
-    id uuid [primary key]
-    field_name varchar
-    display_name varchar // display name of attribute
-    data_type enum // Text, Date, Number, Boolean
-    value varchar // Possible value
-    description text // optional
-    source_system varchar
-    is_active boolean [default: true]
+TABLE SCHEDULES {
+    SCHEDULE_ID UUID [PRIMARY KEY]
+    DECISION_RULE_ID UUID [REF: > DECISION_RULES.DECISION_RULE_ID]
+    PLACEMENT_ID UUID [REF: > PLACEMENTS.PLACEMENT_ID]
+    CALENDAR_ID UUID [REF: > CALENDARS.CALENDAR_ID]
+    RECURRENCE_TYPE ENUM [NOTE: 'ONCE, RRULE, CALENDAR']
+    RECURRENCE_RULE TEXT [NOTE: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']
+    EFFECTIVE_FROM TIMESTAMPTZ
+    EFFECTIVE_UNTIL TIMESTAMPTZ
+    TIME_OF_DAY_START VARCHAR(5) [NOTE: 'HH:MM']
+    TIME_OF_DAY_END VARCHAR(5) [NOTE: 'HH:MM']
+    ALL_DAY BOOLEAN [DEFAULT: FALSE]
+    TIMEZONE VARCHAR(50) [DEFAULT: 'ASIA/BANGKOK']
+    IS_ACTIVE BOOLEAN [DEFAULT: FALSE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
-}
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 
-// --- 6. Delivery & Scheduling ---
-Table placements { // masters data
-    id uuid [primary key]
-    name varchar
-    description text
-
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
-}
-
-Table schedules {
-    id uuid [primary key]
-    decision_rule_id uuid [ref: > decision_rules.id]
-    placement_id uuid [ref: > placements.id]
-    calendar_id uuid [ref: > calendars.id]
-    recurrence_type enum [note: 'ONCE, RRULE, CALENDAR']
-    recurrence_rule text
-    effective_from timestamptz
-    effective_until timestamptz
-    time_of_day_start varchar [note: 'HH:mm']
-    time_of_day_end varchar [note: 'HH:mm']
-    all_day boolean [default: false]
-    timezone varchar [default: 'Asia/Bangkok']
-    is_active boolean [default: false]
-
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
-
-    indexes {
-        (decision_rule_id, placement_id) [unique]
+    INDEXES {
+        (DECISION_RULE_ID, PLACEMENT_ID) [UNIQUE]
     }
 }
 
-Table schedule_occurrences {
-    id uuid [primary key]
-    schedule_id uuid [ref: > schedules.id]
-    occurrence_start timestamptz
-    occurrence_end timestamptz
-    status enum [note: 'ACTIVE, CANCELLED, MODIFIED']
-    source enum [note: 'RECURRENCE, CALENDAR, MANUAL']
+TABLE SCHEDULE_OCCURRENCES {
+    SCHEDULE_OCCURRENCE_ID UUID [PRIMARY KEY]
+    SCHEDULE_ID UUID [REF: > SCHEDULES.SCHEDULE_ID]
+    OCCURRENCE_START TIMESTAMPTZ
+    OCCURRENCE_END TIMESTAMPTZ
+    STATUS ENUM [NOTE: 'ACTIVE, CANCELLED, MODIFIED']
+    SOURCE ENUM [NOTE: 'RECURRENCE, CALENDAR, MANUAL']
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table calendars {
-    id uuid [primary key]
-    name varchar
-    type enum [note: 'HOLIDAY, PERSONAL, CUSTOM']
-    is_active boolean [default: true]
+TABLE CALENDARS {
+    CALENDAR_ID UUID [PRIMARY KEY]
+    NAME VARCHAR(255)
+    TYPE ENUM [NOTE: 'HOLIDAY, PERSONAL, CUSTOM']
+    IS_ACTIVE BOOLEAN [DEFAULT: TRUE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-Table calendar_dates {
-    id uuid [primary key]
-    calendar_id uuid [ref: > calendars.id]
-    date date
-    name varchar
-    is_recurring boolean [default: false]
+TABLE CALENDAR_DATES {
+    CALENDAR_DATE_ID UUID [PRIMARY KEY]
+    CALENDAR_ID UUID [REF: > CALENDARS.CALENDAR_ID]
+    DATE DATE
+    NAME VARCHAR(255)
+    IS_RECURRING BOOLEAN [DEFAULT: FALSE]
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 
-// possible value for display frontend
-Table mdp_schema_registry {
-    id uuid [primary key]
-    schema_name varchar
-    version varchar
-    schema_definition jsonb
-    is_active boolean
+TABLE ATTRIBUTES {
+    ATTRIBUTE_ID UUID [PRIMARY KEY]
+    FIELD_NAME VARCHAR(100)
+    DISPLAY_NAME VARCHAR(255)
+    DATA_TYPE VARCHAR(50) // TEXT, DATE, NUMBER, BOOLEAN
+    VALUE VARCHAR(255)
+    SOURCE_SYSTEM VARCHAR(100)
+    IS_ACTIVE BOOLEAN [DEFAULT: TRUE]
+    SCHEMA_REGISTRY_ID UUID [REF: > CLEN_SCHEMA_REGISTRIES.SCHEMA_REGISTRY_ID] 
 
-    created_at timestamptz
-    created_by uuid [ref: > users.id]
-    updated_at timestamptz
-    updated_by uuid [ref: > users.id]
-    deleted_at timestamptz
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
+}
+
+TABLE PLACEMENTS {
+    PLACEMENT_ID UUID [PRIMARY KEY]
+    PLACEMENT_NAME VARCHAR(255)
+    CHANNEL_ID UUID [REF: > CHANNELS.CHANNEL_ID]
+
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID 
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
+}
+
+TABLE CHANNELS {
+    CHANNEL_ID UUID [PRIMARY KEY]
+    CHANNEL_NAME VARCHAR(255)
+
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
+}
+
+TABLE CLEN_SCHEMA_REGISTRIES {
+    SCHEMA_REGISTRY_ID UUID [PRIMARY KEY]
+    SCHEMA_NAME VARCHAR(255)
+    VERSION VARCHAR(50)
+    SCHEMA_DEFINITION JSONB
+    IS_ACTIVE BOOLEAN
+
+    CREATED_AT TIMESTAMPTZ
+    CREATED_BY UUID
+    UPDATED_AT TIMESTAMPTZ
+    UPDATED_BY UUID
+    DELETED_AT TIMESTAMPTZ
 }
 ```

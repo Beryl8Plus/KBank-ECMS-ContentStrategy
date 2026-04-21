@@ -110,20 +110,21 @@
 
 ตารางหลักที่เก็บข้อมูลกฎการตัดสินใจ (Decision Rule Entity)
 
-| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                          |
-| :------------ | :------------------ | :---------------------------------------------- |
-| id            | uuid                | ไอดีหลักของกฎการตัดสินใจ                        |
-| name          | varchar(255)        | ชื่อของกฎการตัดสินใจ                            |
-| type          | enum                | ประเภทของกฎ (กำหนดตาม Enum ในระบบ)              |
-| content_path  | varchar(255)        | เส้นทางที่เก็บไฟล์หรือข้อมูลเนื้อหาของกฎ        |
-| score         | integer             | คะแนนรวมหรือน้ำหนักของกฎ                        |
-| status        | enum                | สถานะของกฎ (DRAFT, ACTIVE, INACTIVE)            |
-| inactive_by   | uuid                | ไอดีผู้ที่ทำการระงับการใช้งานกฎ (FK → users.id) |
-| created_at    | timestamptz         | วันที่และเวลาที่สร้างกฎ                         |
-| created_by    | uuid                | ไอดีผู้สร้างกฎ (FK → users.id)                  |
-| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                     |
-| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด (FK → users.id)              |
-| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)          |
+| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                                               |
+| :------------ | :------------------ | :------------------------------------------------------------------- |
+| id            | uuid                | ไอดีหลักของกฎการตัดสินใจ                                             |
+| name          | varchar(255)        | ชื่อของกฎการตัดสินใจ                                                 |
+| type          | enum                | ประเภทของกฎ (กำหนดตาม Enum ในระบบ)                                   |
+| evaluate_type | enum                | รูปแบบการประเมินผล (SCORING = ให้คะแนน, SEGMENT = แบ่งกลุ่ม, ELIGIBLE = คัดกรอง) |
+| content_path  | varchar(255)        | เส้นทางที่เก็บไฟล์หรือข้อมูลเนื้อหาของกฎ                            |
+| score         | float               | คะแนนรวมหรือน้ำหนักของกฎ                                             |
+| status        | enum                | สถานะของกฎ (DRAFT, ACTIVE, INACTIVE)                                 |
+| inactive_by   | uuid                | ไอดีผู้ที่ทำการระงับการใช้งานกฎ (FK → users.id)                      |
+| created_at    | timestamptz         | วันที่และเวลาที่สร้างกฎ                                              |
+| created_by    | uuid                | ไอดีผู้สร้างกฎ (FK → users.id)                                       |
+| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                                          |
+| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด (FK → users.id)                                   |
+| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)                               |
 
 ### ตาราง: rules
 
@@ -134,13 +135,29 @@
 | id               | uuid                | ไอดีหลักของรูปแบบกฎย่อย                    |
 | decision_rule_id | uuid                | ไอดีอ้างอิงกฎหลัก (FK → decision_rules.id) |
 | variation_name   | varchar(255)        | ชื่อเรียกรูปแบบหรือตัวแปรของกฎ             |
-| score            | integer             | คะแนนเฉพาะสำหรับรูปแบบนี้                  |
+| score            | float               | คะแนนเฉพาะสำหรับรูปแบบนี้                  |
 | order_no         | integer             | ลำดับการประมวลผล (เรียงจากน้อยไปมาก)       |
 | created_at       | timestamptz         | วันที่และเวลาที่สร้างข้อมูล                |
 | created_by       | uuid                | ไอดีผู้สร้างข้อมูล                         |
 | updated_at       | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                |
 | updated_by       | uuid                | ไอดีผู้แก้ไขล่าสุด                         |
 | deleted_at       | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)     |
+
+### ตาราง: rule_attributes
+
+ตารางเก็บค่าแอตทริบิวต์สำหรับแต่ละรูปแบบกฎย่อย (Rule Attribute Entity)
+
+| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                     |
+| :------------ | :------------------ | :----------------------------------------- |
+| id            | uuid                | ไอดีหลักของรายการแอตทริบิวต์               |
+| rule_id       | uuid                | ไอดีอ้างอิงกฎย่อย (FK → rules.id)          |
+| attribute_id  | uuid                | ไอดีแอตทริบิวต์ (FK → attributes.id)       |
+| value         | jsonb               | ค่าที่กำหนดสำหรับแอตทริบิวต์นี้ (รูปแบบ JSON) |
+| created_at    | timestamptz         | วันที่และเวลาที่สร้างข้อมูล                |
+| created_by    | uuid                | ไอดีผู้สร้างข้อมูล                         |
+| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                |
+| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด                         |
+| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)     |
 
 ---
 
@@ -155,11 +172,9 @@
 | id                       | uuid                | ไอดีหลักของเงื่อนไข                                       |
 | sequence                 | integer             | ลำดับของเงื่อนไขภายในกลุ่ม                                |
 | decision_rule_id         | uuid                | ไอดีอ้างอิงกฎหลัก (FK → decision_rules.id)                |
-| rule_id                  | uuid                | ไอดีอ้างอิงกฎย่อย (FK → rules.id) (Nullable)              |
 | parent_rule_condition_id | uuid                | ไอดีเงื่อนไขแม่ สำหรับการทำเงื่อนไขแบบซ้อน (Recursive FK) |
 | attribute_id             | uuid                | ไอดีแอตทริบิวต์ที่ใช้ตรวจสอบ (FK → attributes.id)         |
 | logical_operator         | enum                | ตัวดำเนินการเปรียบเทียบ (เช่น LT, GT, EQ, IN, BETWEEN)    |
-| value                    | jsonb               | ค่าที่ใช้ในการเปรียบเทียบ (จัดเก็บในรูปแบบ JSON)          |
 | connector_operator       | enum                | ตัวเชื่อมความสัมพันธ์กับเงื่อนไขถัดไป (AND, OR)           |
 | created_at               | timestamptz         | วันที่และเวลาที่สร้างเงื่อนไข                             |
 | created_by               | uuid                | ไอดีผู้สร้างเงื่อนไข                                      |
@@ -175,21 +190,22 @@
 
 ตารางกำหนดคุณสมบัติข้อมูลที่นำมาใช้ในเงื่อนไข (Attribute Entity)
 
-| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                     |
-| :------------ | :------------------ | :----------------------------------------- |
-| id            | uuid                | ไอดีหลักของแอตทริบิวต์                     |
-| field_name    | varchar(255)        | ชื่อฟิลด์ทางเทคนิคของข้อมูล                |
-| display_name  | varchar(255)        | ชื่อที่ใช้แสดงผลให้ผู้ใช้งานเห็น           |
-| data_type     | enum                | ประเภทข้อมูล (Text, Date, Number, Boolean) |
-| value         | varchar(255)        | ค่าที่เป็นไปได้หรือรายการ Enum (ถ้ามี)     |
-| description   | text                | รายละเอียดอธิบายความหมายของแอตทริบิวต์     |
-| source_system | varchar(255)        | ระบบต้นทางที่ให้ข้อมูลนี้มา                |
-| is_active     | boolean             | สถานะการใช้งานแอตทริบิวต์                  |
-| created_at    | timestamptz         | วันที่และเวลาที่สร้างข้อมูล                |
-| created_by    | uuid                | ไอดีผู้สร้างข้อมูล                         |
-| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                |
-| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด                         |
-| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)     |
+| ฟิลด์ (Field)           | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                                         |
+| :---------------------- | :------------------ | :------------------------------------------------------------- |
+| id                      | uuid                | ไอดีหลักของแอตทริบิวต์                                         |
+| clen_schema_registry_id | uuid                | ไอดีอ้างอิง Schema ที่กำหนดโครงสร้างข้อมูล (FK → clen_schema_registry.id) |
+| field_name              | varchar(255)        | ชื่อฟิลด์ทางเทคนิคของข้อมูล                                    |
+| display_name            | varchar(255)        | ชื่อที่ใช้แสดงผลให้ผู้ใช้งานเห็น                               |
+| data_type               | enum                | ประเภทข้อมูล (Text, Date, Number, Boolean)                      |
+| value                   | jsonb               | ค่าที่เป็นไปได้หรือรายการตัวเลือก (จัดเก็บในรูปแบบ JSON)       |
+| description             | text                | รายละเอียดอธิบายความหมายของแอตทริบิวต์                         |
+| source_system           | varchar(255)        | ระบบต้นทางที่ให้ข้อมูลนี้มา                                    |
+| is_active               | boolean             | สถานะการใช้งานแอตทริบิวต์                                      |
+| created_at              | timestamptz         | วันที่และเวลาที่สร้างข้อมูล                                    |
+| created_by              | uuid                | ไอดีผู้สร้างข้อมูล                                             |
+| updated_at              | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                                    |
+| updated_by              | uuid                | ไอดีผู้แก้ไขล่าสุด                                             |
+| deleted_at              | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)                         |
 
 ---
 
@@ -199,16 +215,17 @@
 
 ตารางมาสเตอร์สำหรับกำหนดตำแหน่งการแสดงผล (Placement Entity)
 
-| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                    |
-| :------------ | :------------------ | :---------------------------------------- |
-| id            | uuid                | ไอดีหลักของตำแหน่งการวาง                  |
-| name          | varchar(255)        | ชื่อตำแหน่งการวาง                         |
-| description   | text                | รายละเอียดหรือหมายเหตุเกี่ยวกับตำแหน่งนี้ |
-| created_at    | timestamptz         | วันที่และเวลาที่สร้างข้อมูล               |
-| created_by    | uuid                | ไอดีผู้สร้างข้อมูล                        |
-| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด               |
-| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด                        |
-| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)    |
+| ฟิลด์ (Field) | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                              |
+| :------------ | :------------------ | :-------------------------------------------------- |
+| id            | uuid                | ไอดีหลักของตำแหน่งการวาง                            |
+| name          | varchar(255)        | ชื่อตำแหน่งการวาง                                   |
+| description   | text                | รายละเอียดหรือหมายเหตุเกี่ยวกับตำแหน่งนี้           |
+| max_results   | integer             | จำนวน content สูงสุดที่ส่งคืนในตำแหน่งนี้ (default: 10) |
+| created_at    | timestamptz         | วันที่และเวลาที่สร้างข้อมูล                         |
+| created_by    | uuid                | ไอดีผู้สร้างข้อมูล                                  |
+| updated_at    | timestamptz         | วันที่และเวลาที่แก้ไขล่าสุด                         |
+| updated_by    | uuid                | ไอดีผู้แก้ไขล่าสุด                                  |
+| deleted_at    | timestamptz         | วันที่และเวลาที่ลบข้อมูล (Soft-delete)              |
 
 ### ตาราง: schedules
 
@@ -290,9 +307,9 @@
 
 ## 6. ข้อมูลโครงสร้างส่วนกลาง (Schema Domain)
 
-### ตาราง: mdp_schema_registry
+### ตาราง: clen_schema_registry
 
-ระบบลงทะเบียนโครงสร้างข้อมูลสำหรับ Frontend และการประมวลผล (Registry Entity)
+ระบบลงทะเบียนโครงสร้างข้อมูลสำหรับ Frontend และการประมวลผล (CLEN Schema Registry Entity)
 
 | ฟิลด์ (Field)     | ประเภทข้อมูล (Type) | คำอธิบาย (Description)                 |
 | :---------------- | :------------------ | :------------------------------------- |

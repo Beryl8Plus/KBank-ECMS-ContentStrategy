@@ -1,274 +1,242 @@
 # DDL Scripts (Data Definition Language)
 ```sql
--- ==========================================
--- 0. CREATE ENUM TYPES
--- ==========================================
-CREATE TYPE permission_type AS ENUM ('ACCESS_CONTROL', 'FEATURE_FLAG');
-CREATE TYPE decision_rule_type AS ENUM ('SCORING', 'SEGMENT', 'ELIGIBLE');
-CREATE TYPE decision_rule_status AS ENUM ('DRAFT', 'ACTIVE', 'INACTIVE');
-CREATE TYPE logical_operator AS ENUM ('<', '>', '=', '!=', '<=', '>=', 'IN', 'BETWEEN');
-CREATE TYPE connector_operator AS ENUM ('AND', 'OR');
-CREATE TYPE attribute_data_type AS ENUM ('TEXT', 'DATE', 'NUMBER', 'BOOLEAN');
-CREATE TYPE recurrence_type AS ENUM ('NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY');
-CREATE TYPE schedule_status AS ENUM ('SCHEDULED', 'COMPLETED', 'CANCELLED');
-CREATE TYPE schedule_source AS ENUM ('GENERATED', 'MANUAL');
-CREATE TYPE calendar_type AS ENUM ('HOLIDAY', 'SPECIAL_DATE');
+CREATE TYPE permission_type_enum AS ENUM ('ACCESS_CONTROL', 'FEATURE_FLAG');
+CREATE TYPE rule_type_enum AS ENUM ('SCORING', 'SEGMENT', 'ELIGIBLE');
+CREATE TYPE rule_status_enum AS ENUM ('DRAFT', 'ACTIVE', 'INACTIVE');
+CREATE TYPE logical_operator_enum AS ENUM ('<', '>', '=', '!=', '<=', '>=', 'IN', 'BETWEEN');
+CREATE TYPE connector_operator_enum AS ENUM ('AND', 'OR');
+CREATE TYPE recurrence_type_enum AS ENUM ('ONCE', 'RRULE', 'CALENDAR');
+CREATE TYPE occurrence_status_enum AS ENUM ('ACTIVE', 'CANCELLED', 'MODIFIED');
+CREATE TYPE occurrence_source_enum AS ENUM ('RECURRENCE', 'CALENDAR', 'MANUAL');
+CREATE TYPE calendar_type_enum AS ENUM ('HOLIDAY', 'PERSONAL', 'CUSTOM');
 
--- ==========================================
--- 1. MANAGEMENT & AUTHENTICATION
--- ==========================================
-CREATE TABLE login_token_histories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(255) UNIQUE,
-    access_token VARCHAR(1000),
-    expire_date TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE USERS (
+    USER_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ROLE_ID UUID,
+    PROFILE_ID UUID,
+    EMAIL VARCHAR(255) UNIQUE NOT NULL,
+    NAME_TH VARCHAR(255),
+    NAME_EN VARCHAR(255),
+    IS_ACTIVE BOOLEAN DEFAULT TRUE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    role_id UUID,
-    profile_id UUID,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    name_th VARCHAR(255),
-    name_en VARCHAR(255),
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE LOGIN_TOKEN_HISTORIES (
+    LOGIN_TOKEN_HISTORY_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    USERNAME VARCHAR(100) UNIQUE,
+    ACCESS_TOKEN VARCHAR(2048),
+    EXPIRE_DATE TIMESTAMPTZ,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE roles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    code VARCHAR(100) UNIQUE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE ROLES (
+    ROLE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    NAME VARCHAR(255),
+    CODE VARCHAR(100) UNIQUE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    code VARCHAR(100) UNIQUE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE PROFILES (
+    PROFILE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    NAME VARCHAR(255),
+    CODE VARCHAR(100) UNIQUE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    permission_type permission_type,
-    feature_code VARCHAR(255),
-    action VARCHAR(100),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE PERMISSIONS (
+    PERMISSION_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    NAME VARCHAR(255),
+    PERMISSION_TYPE permission_type_enum,
+    FEATURE_CODE VARCHAR(100),
+    ACTION VARCHAR(100),
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE profile_permissions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    profile_id UUID,
-    permission_id UUID,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE PROFILE_PERMISSIONS (
+    PROFILE_PERMISSION_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    PROFILE_ID UUID,
+    PERMISSION_ID UUID,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
--- ==========================================
--- 2. MDP SCHEMA REGISTRY (สร้างก่อนเพราะ Attributes อ้างอิง)
--- ==========================================
-CREATE TABLE mdp_schema_registry (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    schema_name VARCHAR(255),
-    version VARCHAR(50),
-    schema_definition JSONB,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE DECISION_RULES (
+    DECISION_RULE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    NAME VARCHAR(255),
+    TYPE rule_type_enum,
+    CONTENT_PATH VARCHAR(500),
+    SCORE DECIMAL(11,2),
+    STATUS rule_status_enum,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID,
+    INACTIVE_BY UUID
 );
 
--- ==========================================
--- 3. ATTRIBUTES & SOURCES
--- ==========================================
-CREATE TABLE attributes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    field_name VARCHAR(255),
-    display_name VARCHAR(255),
-    data_type attribute_data_type,
-    value JSONB,
-    description TEXT,
-    source_system VARCHAR(255),
-    is_active BOOLEAN DEFAULT true,
-    mdp_schema_registry_id UUID,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE RULES (
+    RULE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    DECISION_RULE_ID UUID,
+    VARIATION_NAME VARCHAR(255),
+    SCORE DECIMAL(11,2),
+    ORDER_NO INTEGER,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
--- ==========================================
--- 4. DECISION RULE CORE & ADVANCED LOGIC
--- ==========================================
-CREATE TABLE decision_rules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    type decision_rule_type,
-    content_path VARCHAR(500),
-    score DECIMAL(11,2),
-    status decision_rule_status DEFAULT 'DRAFT',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ,
-    inactive_by UUID
+CREATE TABLE CLEN_SCHEMA_REGISTRY (
+    SCHEMA_REGISTRY_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    SCHEMA_NAME VARCHAR(255),
+    VERSION VARCHAR(50),
+    SCHEMA_DEFINITION JSONB,
+    IS_ACTIVE BOOLEAN,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE rules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    decision_rule_id UUID,
-    variation_name VARCHAR(255),
-    score INTEGER,
-    order_no INTEGER,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE ATTRIBUTES (
+    ATTRIBUTE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    FIELD_NAME VARCHAR(100),
+    DISPLAY_NAME VARCHAR(255),
+    DATA_TYPE VARCHAR(50),
+    VALUE VARCHAR(255),
+    SOURCE_SYSTEM VARCHAR(100),
+    IS_ACTIVE BOOLEAN DEFAULT TRUE,
+    SCHEMA_REGISTRY_ID UUID,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE rule_conditions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sequence INTEGER,
-    decision_rule_id UUID,
-    rule_id UUID,
-    parent_rule_condition_id UUID,
-    attribute_id UUID,
-    logical_operator logical_operator,
-    value JSONB,
-    connector_operator connector_operator,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE RULE_ATTRIBUTES (
+    RULE_ATTRIBUTE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    RULE_ID UUID,
+    ATTRIBUTE_ID UUID,
+    VALUE JSONB
 );
 
--- ==========================================
--- 5. DELIVERY & SCHEDULING
--- ==========================================
-CREATE TABLE placements (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    description TEXT,
-    source VARCHAR(255),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE RULE_CONDITIONS (
+    RULE_CONDITION_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    SEQUENCE INTEGER,
+    DECISION_RULE_ID UUID,
+    PARENT_RULE_CONDITION_ID UUID,
+    ATTRIBUTE_ID UUID,
+    LOGICAL_OPERATOR logical_operator_enum,
+    CONNECTOR_OPERATOR connector_operator_enum,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE calendars (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255),
-    type calendar_type,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE CHANNELS (
+    CHANNEL_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    CHANNEL_NAME VARCHAR(255),
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE calendar_dates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    calendar_id UUID,
-    date DATE,
-    name VARCHAR(255),
-    is_recurring BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE PLACEMENTS (
+    PLACEMENT_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    PLACEMENT_NAME VARCHAR(255),
+    CHANNEL_ID UUID,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE schedules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    decision_rule_id UUID,
-    placement_id UUID,
-    calendar_id UUID,
-    recurrence_type recurrence_type,
-    recurrence_rule TEXT,
-    effective_from TIMESTAMPTZ,
-    effective_until TIMESTAMPTZ,
-    time_of_day_start VARCHAR(5),
-    time_of_day_end VARCHAR(5),
-    all_day BOOLEAN DEFAULT false,
-    timezone VARCHAR(50) DEFAULT 'Asia/Bangkok',
-    is_active BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE CALENDARS (
+    CALENDAR_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    NAME VARCHAR(255),
+    TYPE calendar_type_enum,
+    IS_ACTIVE BOOLEAN DEFAULT TRUE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
-CREATE TABLE schedule_occurrences (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    schedule_id UUID,
-    occurrence_start TIMESTAMPTZ,
-    occurrence_end TIMESTAMPTZ,
-    status schedule_status,
-    source schedule_source,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID,
-    updated_at TIMESTAMPTZ,
-    updated_by UUID,
-    deleted_at TIMESTAMPTZ
+CREATE TABLE CALENDAR_DATES (
+    CALENDAR_DATE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    CALENDAR_ID UUID,
+    DATE DATE,
+    NAME VARCHAR(255),
+    IS_RECURRING BOOLEAN DEFAULT FALSE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
 );
 
--- Management & Auth
-ALTER TABLE users ADD CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL;
-ALTER TABLE users ADD CONSTRAINT fk_users_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL;
-ALTER TABLE profile_permissions ADD CONSTRAINT fk_pp_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE;
-ALTER TABLE profile_permissions ADD CONSTRAINT fk_pp_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE;
+CREATE TABLE SCHEDULES (
+    SCHEDULE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    DECISION_RULE_ID UUID,
+    PLACEMENT_ID UUID,
+    CALENDAR_ID UUID,
+    RECURRENCE_TYPE recurrence_type_enum,
+    RECURRENCE_RULE TEXT,
+    EFFECTIVE_FROM TIMESTAMPTZ,
+    EFFECTIVE_UNTIL TIMESTAMPTZ,
+    TIME_OF_DAY_START VARCHAR(5),
+    TIME_OF_DAY_END VARCHAR(5),
+    ALL_DAY BOOLEAN DEFAULT FALSE,
+    TIMEZONE VARCHAR(50) DEFAULT 'ASIA/BANGKOK',
+    IS_ACTIVE BOOLEAN DEFAULT FALSE,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
+);
 
--- Attributes & MDP
-ALTER TABLE attributes ADD CONSTRAINT fk_attributes_mdp FOREIGN KEY (mdp_schema_registry_id) REFERENCES mdp_schema_registry(id);
+CREATE TABLE SCHEDULE_OCCURRENCES (
+    SCHEDULE_OCCURRENCE_ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    SCHEDULE_ID UUID,
+    OCCURRENCE_START TIMESTAMPTZ,
+    OCCURRENCE_END TIMESTAMPTZ,
+    STATUS occurrence_status_enum,
+    SOURCE occurrence_source_enum,
+    CREATED_AT TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CREATED_BY UUID,
+    UPDATED_AT TIMESTAMPTZ,
+    UPDATED_BY UUID
+);
 
--- Decision Rule Core & Logic
-ALTER TABLE rules ADD CONSTRAINT fk_rules_decision_rule FOREIGN KEY (decision_rule_id) REFERENCES decision_rules(id) ON DELETE CASCADE;
-ALTER TABLE rule_conditions ADD CONSTRAINT fk_rc_decision_rule FOREIGN KEY (decision_rule_id) REFERENCES decision_rules(id) ON DELETE CASCADE;
-ALTER TABLE rule_conditions ADD CONSTRAINT fk_rc_rule FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE;
-ALTER TABLE rule_conditions ADD CONSTRAINT fk_rc_parent FOREIGN KEY (parent_rule_condition_id) REFERENCES rule_conditions(id) ON DELETE CASCADE;
-ALTER TABLE rule_conditions ADD CONSTRAINT fk_rc_attribute FOREIGN KEY (attribute_id) REFERENCES attributes(id);
+ALTER TABLE USERS ADD CONSTRAINT FK_USERS_ROLES FOREIGN KEY (ROLE_ID) REFERENCES ROLES(ROLE_ID);
+ALTER TABLE USERS ADD CONSTRAINT FK_USERS_PROFILES FOREIGN KEY (PROFILE_ID) REFERENCES PROFILES(PROFILE_ID);
 
--- Delivery & Scheduling
-ALTER TABLE calendar_dates ADD CONSTRAINT fk_cd_calendar FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE;
-ALTER TABLE schedules ADD CONSTRAINT fk_schedules_decision_rule FOREIGN KEY (decision_rule_id) REFERENCES decision_rules(id) ON DELETE CASCADE;
-ALTER TABLE schedules ADD CONSTRAINT fk_schedules_placement FOREIGN KEY (placement_id) REFERENCES placements(id) ON DELETE CASCADE;
-ALTER TABLE schedules ADD CONSTRAINT fk_schedules_calendar FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE SET NULL;
-ALTER TABLE schedule_occurrences ADD CONSTRAINT fk_so_schedule FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE;
+ALTER TABLE RULES ADD CONSTRAINT FK_RULES_DR FOREIGN KEY (DECISION_RULE_ID) REFERENCES DECISION_RULES(DECISION_RULE_ID);
+ALTER TABLE RULE_ATTRIBUTES ADD CONSTRAINT FK_RA_RULES FOREIGN KEY (RULE_ID) REFERENCES RULES(RULE_ID);
+ALTER TABLE RULE_ATTRIBUTES ADD CONSTRAINT FK_RA_ATTR FOREIGN KEY (ATTRIBUTE_ID) REFERENCES ATTRIBUTES(ATTRIBUTE_ID);
+ALTER TABLE RULE_CONDITIONS ADD CONSTRAINT FK_RC_DR FOREIGN KEY (DECISION_RULE_ID) REFERENCES DECISION_RULES(DECISION_RULE_ID);
+ALTER TABLE RULE_CONDITIONS ADD CONSTRAINT FK_RC_PARENT FOREIGN KEY (PARENT_RULE_CONDITION_ID) REFERENCES RULE_CONDITIONS(RULE_CONDITION_ID);
+ALTER TABLE RULE_CONDITIONS ADD CONSTRAINT FK_RC_ATTR FOREIGN KEY (ATTRIBUTE_ID) REFERENCES ATTRIBUTES(ATTRIBUTE_ID);
+
+ALTER TABLE SCHEDULES ADD CONSTRAINT FK_SCH_DR FOREIGN KEY (DECISION_RULE_ID) REFERENCES DECISION_RULES(DECISION_RULE_ID);
+ALTER TABLE SCHEDULES ADD CONSTRAINT FK_SCH_PL FOREIGN KEY (PLACEMENT_ID) REFERENCES PLACEMENTS(PLACEMENT_ID);
+ALTER TABLE SCHEDULES ADD CONSTRAINT FK_SCH_CAL FOREIGN KEY (CALENDAR_ID) REFERENCES CALENDARS(CALENDAR_ID);
 ```
