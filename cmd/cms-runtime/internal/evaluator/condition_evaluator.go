@@ -6,9 +6,9 @@ import (
 	"sort"
 	"time"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
-	domainservice "kbank-ecms/internal/domain/service"
 
 	"github.com/google/uuid"
 )
@@ -422,7 +422,7 @@ func compareBoolean(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMes
 // The Attribute stub carries only DataType (needed by compareValues).
 // EvaluateLogicConditions always passes a non-nil userAttrs map, so the actual
 // comparison value comes from there — never from the Attribute entity.
-func logicConditionToRuleCondition(lc domainservice.LogicCondition) entity.RuleCondition {
+func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
 		BaseModel:         entity.BaseModel{ID: id},
@@ -454,7 +454,7 @@ func mustParseUUID(s string) uuid.UUID {
 // the "expected" value is taken from LogicCondition.ExpectedValue.
 //
 // Returns false (not an error) when a required attribute is absent from userAttrs.
-func EvaluateLogicConditions(conditions []domainservice.LogicCondition, userAttrs map[string]json.RawMessage) (bool, error) {
+func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[string]json.RawMessage) (bool, error) {
 	if len(conditions) == 0 {
 		return true, nil
 	}

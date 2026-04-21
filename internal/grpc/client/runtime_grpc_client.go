@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	domainservice "kbank-ecms/internal/domain/service"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"
@@ -113,7 +114,7 @@ func (c *RuntimeGRPCClient) Evaluate(
 	placementName string,
 	schedules []*entity.Schedule,
 	userAttrs map[string]json.RawMessage,
-) ([]domainservice.ContentResult, error) {
+) ([]dto.ContentResult, error) {
 	req, err := c.buildEvaluateRequest(placementName, schedules, userAttrs)
 	if err != nil {
 		return nil, err
@@ -131,7 +132,7 @@ func (c *RuntimeGRPCClient) Evaluate(
 		return nil, nil
 	}
 
-	var entries []domainservice.ContentResult
+	var entries []dto.ContentResult
 	if err := json.Unmarshal(resp.LogicEntriesJson, &entries); err != nil {
 		return nil, fmt.Errorf("cms-delivery gRPC: unmarshal logic entries: %w", err)
 	}

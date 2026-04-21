@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
-	domainservice "kbank-ecms/internal/domain/service"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"
 )
 
@@ -174,10 +174,10 @@ func buildRuleVariation(name string, orderNo int, score float64, attrID uuid.UUI
 	}
 }
 
-func decodeEvaluateResponse(t *testing.T, resp *cmsruntimev1.EvaluateResponse) []domainservice.ContentResult {
+func decodeEvaluateResponse(t *testing.T, resp *cmsruntimev1.EvaluateResponse) []dto.ContentResult {
 	t.Helper()
 
-	var entries []domainservice.ContentResult
+	var entries []dto.ContentResult
 	require.NoError(t, json.Unmarshal(resp.LogicEntriesJson, &entries))
 	return entries
 }

@@ -26,15 +26,15 @@ func init() {
 // ---- mock ----------------------------------------------------------------
 
 type mockDeliveryService struct {
-	getPersonalizedFn func(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]service.ContentResult, error)
+	getPersonalizedFn func(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error)
 	flushFn           func(ctx context.Context, placements []string, isEvaluate bool) error
 }
 
-func (m *mockDeliveryService) GetPersonalizedContent(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]service.ContentResult, error) {
+func (m *mockDeliveryService) GetPersonalizedContent(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
 	if m.getPersonalizedFn != nil {
 		return m.getPersonalizedFn(ctx, cisID, userID, placements, userAttrs)
 	}
-	return []service.ContentResult{}, nil
+	return []dto.ContentResult{}, nil
 }
 
 func (m *mockDeliveryService) FlushCache(ctx context.Context, placements []string, isEvaluate bool) error {
@@ -74,11 +74,11 @@ func doRequest(t *testing.T, r *gin.Engine, method, path, body string) *httptest
 func TestHandler_GetContent_OK(t *testing.T) {
 	t.Parallel()
 
-	expected := []service.ContentResult{
+	expected := []dto.ContentResult{
 		{ContentPath: "/a", Score: 0.9, RuleSetType: "Mass"},
 	}
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, cisID, _ string, placements []string, _ map[string]json.RawMessage) ([]service.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, cisID, _ string, placements []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 			assert.Equal(t, "cis-123", cisID)
 			assert.Equal(t, []string{"hero"}, placements)
 			return expected, nil
@@ -92,7 +92,7 @@ func TestHandler_GetContent_OK(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
 	dataBytes, err := json.Marshal(apiResp.Data)
 	require.NoError(t, err)
-	var body []service.ContentResult
+	var body []dto.ContentResult
 	require.NoError(t, json.Unmarshal(dataBytes, &body))
 	assert.Equal(t, "/a", body[0].ContentPath)
 }
@@ -102,7 +102,7 @@ func TestHandler_GetContent_ServiceError(t *testing.T) {
 	t.Parallel()
 
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, _, _ string, _ []string, _ map[string]json.RawMessage) ([]service.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, _, _ string, _ []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 			return nil, errors.New("redis down")
 		},
 	})
@@ -167,11 +167,11 @@ func TestHandler_GetContent_ArticleCategory(t *testing.T) {
 
 	called := false
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, cisID, _ string, placements []string, _ map[string]json.RawMessage) ([]service.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, cisID, _ string, placements []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 			called = true
 			assert.Equal(t, "cis-123", cisID)
 			assert.Equal(t, []string{"hero"}, placements)
-			return []service.ContentResult{}, nil
+			return []dto.ContentResult{}, nil
 		},
 	})
 
@@ -227,9 +227,9 @@ func TestHandler_GetContent_CISID_UsesCustomerId(t *testing.T) {
 
 	var capturedCISID string
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, cisID, _ string, _ []string, _ map[string]json.RawMessage) ([]service.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, cisID, _ string, _ []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 			capturedCISID = cisID
-			return []service.ContentResult{}, nil
+			return []dto.ContentResult{}, nil
 		},
 	})
 

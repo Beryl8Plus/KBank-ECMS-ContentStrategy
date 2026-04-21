@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"kbank-ecms/cmd/cms-runtime/internal/evaluator"
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
-	domainservice "kbank-ecms/internal/domain/service"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"
 )
 
@@ -42,11 +42,11 @@ func Register(srv *grpc.Server) {
 type scheduleEvaluation struct {
 	schedule     *entity.Schedule
 	rule         entity.DecisionRule
-	logicEntries []domainservice.ContentResult
+	logicEntries []dto.ContentResult
 }
 
-func flattenPlacementLogicEntries(evaluations []scheduleEvaluation) []domainservice.ContentResult {
-	entries := make([]domainservice.ContentResult, 0)
+func flattenPlacementLogicEntries(evaluations []scheduleEvaluation) []dto.ContentResult {
+	entries := make([]dto.ContentResult, 0)
 	for _, evaluation := range evaluations {
 		entries = append(entries, evaluation.logicEntries...)
 	}
@@ -92,11 +92,11 @@ func buildScheduleEvaluations(schedules []*entity.Schedule) []scheduleEvaluation
 	return evaluations
 }
 
-func buildRuleSourceAndCampaign(rule entity.DecisionRule) (string, *domainservice.Campaign) {
-	campaign := &domainservice.Campaign{}
+func buildRuleSourceAndCampaign(rule entity.DecisionRule) (string, *dto.Campaign) {
+	campaign := &dto.Campaign{}
 	source := "DECISION_RULE"
 	if rule.Type.IsCampaign() {
-		campaign = &domainservice.Campaign{
+		campaign = &dto.Campaign{
 			Code:      "Test",
 			StartDate: "2026-01-01",
 			EndDate:   "2026-12-31",
@@ -106,12 +106,12 @@ func buildRuleSourceAndCampaign(rule entity.DecisionRule) (string, *domainservic
 	return source, campaign
 }
 
-func resolveScheduleResult(evaluation scheduleEvaluation, userAttrs map[string]json.RawMessage, evaluatedAt string) ([]domainservice.ContentResult, bool) {
+func resolveScheduleResult(evaluation scheduleEvaluation, userAttrs map[string]json.RawMessage, evaluatedAt string) ([]dto.ContentResult, bool) {
 	if len(evaluation.logicEntries) == 0 {
 		return nil, false
 	}
 
-	var candidates []domainservice.ContentResult
+	var candidates []dto.ContentResult
 	if len(evaluation.rule.RuleConditions) > 0 {
 		candidates = allMatchingLogicEntries(evaluation.logicEntries, userAttrs)
 	} else {
@@ -122,7 +122,7 @@ func resolveScheduleResult(evaluation scheduleEvaluation, userAttrs map[string]j
 		return nil, false
 	}
 
-	results := make([]domainservice.ContentResult, 0, len(candidates))
+	results := make([]dto.ContentResult, 0, len(candidates))
 	for _, c := range candidates {
 		score := evaluation.rule.Score
 		var variation *string
@@ -144,8 +144,8 @@ func resolveScheduleResult(evaluation scheduleEvaluation, userAttrs map[string]j
 	return results, true
 }
 
-func allMatchingLogicEntries(entries []domainservice.ContentResult, userAttrs map[string]json.RawMessage) []domainservice.ContentResult {
-	var matched []domainservice.ContentResult
+func allMatchingLogicEntries(entries []dto.ContentResult, userAttrs map[string]json.RawMessage) []dto.ContentResult {
+	var matched []dto.ContentResult
 	for i := range entries {
 		pass, err := evaluator.EvaluateLogicConditions(entries[i].Conditions, userAttrs)
 		entries[i].LogicEval = pass
@@ -184,7 +184,7 @@ func (s *RuntimeGRPCServer) Evaluate(
 
 	// 1. Resolve each schedule to its best-ranked result.
 	now := time.Now().UTC().Format(time.RFC3339)
-	best := make(map[string]domainservice.ContentResult)
+	best := make(map[string]dto.ContentResult)
 	evaluations := buildScheduleEvaluations(schedules)
 	if len(userAttrs) == 0 {
 		data, err := json.Marshal(flattenPlacementLogicEntries(evaluations))
@@ -208,7 +208,7 @@ func (s *RuntimeGRPCServer) Evaluate(
 	}
 
 	// 2. Collect, sort, and cap the results.
-	items := make([]domainservice.ContentResult, 0, len(best))
+	items := make([]dto.ContentResult, 0, len(best))
 	for _, r := range best {
 		items = append(items, r)
 	}

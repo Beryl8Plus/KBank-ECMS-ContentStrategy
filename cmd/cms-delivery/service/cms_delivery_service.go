@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	domainservice "kbank-ecms/internal/domain/service"
@@ -162,7 +163,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	userID string,
 	placementNames []string,
 	userAttrs map[string]json.RawMessage,
-) ([]domainservice.ContentResult, error) {
+) ([]dto.ContentResult, error) {
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
@@ -171,7 +172,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	if cisID == "" || userID == "" {
 		return nil, fmt.Errorf("GetPersonalizedContent: cisID and userID must not be empty")
 	}
-	result := make([]domainservice.ContentResult, 0)
+	result := make([]dto.ContentResult, 0)
 	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, cisID, userAttrs)
 	if resolveErr != nil {
 		logger.LSystem(ctx, entity.SystemLog{
@@ -228,10 +229,10 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 	for _, name := range placementNames {
 		personalKey := cmsPersonalizedPlacementKey(cisID, name)
-		var entries []domainservice.ContentResult
+		var entries []dto.ContentResult
 
 		// Check the personalized cache first (L3). This should hit when the same user requests the same placement multiple times within resultTTL.
-		if cacheEntries, cacheErr := getCache[[]domainservice.ContentResult](
+		if cacheEntries, cacheErr := getCache[[]dto.ContentResult](
 			ctx,
 			s.cacheMemory,
 			s.cacheRepo,
@@ -258,7 +259,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		}
 
 		// 4. Evaluate each entry against user attrs.
-		var passing []domainservice.ContentResult
+		var passing []dto.ContentResult
 		now := time.Now().UTC().Format(time.RFC3339)
 		for _, entry := range entries {
 			if entry.LogicHash == "" {
@@ -315,7 +316,7 @@ func (s *CMSDeliveryService) evaluatePlacementLogicViaGRPC(
 	placementName string,
 	filtered []*entity.Schedule,
 	userAttrs map[string]json.RawMessage,
-) ([]domainservice.ContentResult, error) {
+) ([]dto.ContentResult, error) {
 	// Delegate evaluation to cms-runtime via gRPC.
 	entries, err := s.evaluator.Evaluate(ctx, placementName, filtered, userAttrs)
 	if err != nil {

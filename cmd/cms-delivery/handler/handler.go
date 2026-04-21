@@ -33,7 +33,7 @@ func NewHandler(svc service.DeliveryService) *Handler {
 // @Param placement query []string true "One or more placement names" collectionFormat(multi) default(wsaHomeBanner, wsaPortBanner, wsaTransaction)
 // @Param customerId query string false "Customer identifier value (required when customerIdType=CIS_ID)"
 // @Param customerIdType query string false "Customer identifier scheme" Enums(CIS_ID)
-// @Success 200 {object} dto.APIResponse{data=[]service.ContentResult}
+// @Success 200 {object} dto.APIResponse{data=[]dto.ContentResult}
 // @Failure 400 {object} dto.APIResponse
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
@@ -58,7 +58,7 @@ func (h *Handler) getContent(c *gin.Context) {
 		}
 	}
 
-	var results []service.ContentResult
+	var results []dto.ContentResult
 	var err error
 	if cisID == "" {
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "customerId is required for personalized content"})
@@ -75,10 +75,7 @@ func (h *Handler) getContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
 		return
 	}
-	responseData := make([]service.ContentResult, len(results))
-	for i, result := range results {
-		responseData[i] = result.ToResponse()
-	}
+	responseData := dto.ToContentResultResponses(results)
 	c.JSON(http.StatusOK, dto.APIResponse{Data: responseData})
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
@@ -44,14 +45,14 @@ func newSvcWithFallback(
 func TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback(t *testing.T) {
 	t.Parallel()
 
-	logicEntry := domainservice.ContentResult{
+	logicEntry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/content/hero",
 		RuleSetType:    "MASS",
 		Score:          0.8,
 		LogicHash:      "hero-hash",
 		LogicEval:      true, // server evaluated this entry as matching
-		Conditions:     []domainservice.LogicCondition{},
+		Conditions:     []dto.LogicCondition{},
 	}
 
 	// Pre-populate the schedule cache so filtered["hero"] has 1 entry.
@@ -76,11 +77,11 @@ func TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
+			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				assert.Equal(t, "hero", name)
 				require.Len(t, schedules, 1)
 				assert.Empty(t, userAttrs) // service passes resolved (empty) user attrs
-				return []domainservice.ContentResult{logicEntry}, nil
+				return []dto.ContentResult{logicEntry}, nil
 			},
 		},
 	)
@@ -113,7 +114,7 @@ func TestGetPersonalizedContent_LogicCacheMiss_GRPCFails(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return nil, errors.New("rpc error: unavailable")
 			},
 		},
@@ -315,7 +316,7 @@ func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleID(ctx context.Context, 
 
 // mockRuntimeEvaluator is a minimal mock for domainservice.RuntimeEvaluator.
 type mockRuntimeEvaluator struct {
-	evaluateFn func(ctx context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]domainservice.ContentResult, error)
+	evaluateFn func(ctx context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error)
 }
 
 func (m *mockRuntimeEvaluator) Evaluate(
@@ -324,7 +325,7 @@ func (m *mockRuntimeEvaluator) Evaluate(
 	schedules []*entity.Schedule,
 
 	userAttrs map[string]json.RawMessage,
-) ([]domainservice.ContentResult, error) {
+) ([]dto.ContentResult, error) {
 	if m.evaluateFn != nil {
 		return m.evaluateFn(ctx, name, schedules, userAttrs)
 	}
@@ -343,7 +344,7 @@ var _ domainservice.RuntimeEvaluator = (*mockRuntimeEvaluator)(nil)
 func TestGetPersonalizedContent_PersonalizedCacheHit(t *testing.T) {
 	t.Parallel()
 
-	cached := []domainservice.ContentResult{{ContentPath: "/hero", Score: 0.9}}
+	cached := []dto.ContentResult{{ContentPath: "/hero", Score: 0.9}}
 	data, _ := json.Marshal(cached)
 
 	svc := newSvcCacheOnly(&mockCacheRepo{
@@ -368,13 +369,13 @@ func TestGetPersonalizedContent_UserEvalCacheHit_True(t *testing.T) {
 	t.Parallel()
 
 	logicHash := "abc123"
-	entry := domainservice.ContentResult{
+	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/product",
 		RuleSetType:    "Mass",
 		Score:          0.8,
 		LogicHash:      logicHash,
-		Conditions:     []domainservice.LogicCondition{},
+		Conditions:     []dto.LogicCondition{},
 	}
 
 	// gRPC returns entry; per-user eval cache is pre-populated as "true".
@@ -396,8 +397,8 @@ func TestGetPersonalizedContent_UserEvalCacheHit_True(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
-				return []domainservice.ContentResult{entry}, nil
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				return []dto.ContentResult{entry}, nil
 			},
 		},
 	)
@@ -415,12 +416,12 @@ func TestGetPersonalizedContent_UserEvalCacheHit_False(t *testing.T) {
 	t.Parallel()
 
 	logicHash := "def456"
-	entry := domainservice.ContentResult{
+	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/product",
 		LogicHash:      logicHash,
 		LogicEval:      true, // LogicEval is true but cached eval says "false" — cached result wins
-		Conditions:     []domainservice.LogicCondition{},
+		Conditions:     []dto.LogicCondition{},
 	}
 
 	// gRPC returns entry; per-user eval cache is pre-populated as "false".
@@ -438,8 +439,8 @@ func TestGetPersonalizedContent_UserEvalCacheHit_False(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
-				return []domainservice.ContentResult{entry}, nil
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				return []dto.ContentResult{entry}, nil
 			},
 		},
 	)
@@ -457,13 +458,13 @@ func TestGetPersonalizedContent_LiveEval_PassAndCache(t *testing.T) {
 	t.Parallel()
 
 	logicHash := "live-pass-hash"
-	entry := domainservice.ContentResult{
+	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/offer",
 		Score:          1.0,
 		LogicHash:      logicHash,
 		LogicEval:      true, // server evaluated this entry as matching
-		Conditions:     []domainservice.LogicCondition{},
+		Conditions:     []dto.LogicCondition{},
 	}
 
 	stored := map[string]string{}
@@ -482,8 +483,8 @@ func TestGetPersonalizedContent_LiveEval_PassAndCache(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
-				return []domainservice.ContentResult{entry}, nil
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				return []dto.ContentResult{entry}, nil
 			},
 		},
 	)
@@ -512,7 +513,7 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 
 	condAttrID := uuid.New()
 	logicHash := "cis-redis-hash"
-	entry := domainservice.ContentResult{
+	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/wealth/vip",
 		Score:          9.5,
@@ -543,11 +544,11 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				// Verify the user attr from Redis was resolved and passed to the evaluator.
 				_, ok := userAttrs[condAttrID.String()]
 				assert.True(t, ok, "expected resolved user attr to be passed to evaluator")
-				return []domainservice.ContentResult{entry}, nil
+				return []dto.ContentResult{entry}, nil
 			},
 		},
 	)
@@ -570,7 +571,7 @@ func TestGetPersonalizedContent_EvalFalse_ExcludedAndCached(t *testing.T) {
 	t.Parallel()
 
 	logicHash := "eval-false-hash"
-	entry := domainservice.ContentResult{
+	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/restricted",
 		LogicHash:      logicHash,
@@ -593,8 +594,8 @@ func TestGetPersonalizedContent_EvalFalse_ExcludedAndCached(t *testing.T) {
 		},
 		&mockScheduleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]domainservice.ContentResult, error) {
-				return []domainservice.ContentResult{entry}, nil
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				return []dto.ContentResult{entry}, nil
 			},
 		},
 	)

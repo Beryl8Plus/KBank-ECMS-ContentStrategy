@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 )
 
@@ -23,5 +24,5 @@ type RuntimeEvaluator interface {
 		placementName string,
 		schedules []*entity.Schedule,
 		userAttrs map[string]json.RawMessage,
-	) ([]ContentResult, error)
+	) ([]dto.ContentResult, error)
 }

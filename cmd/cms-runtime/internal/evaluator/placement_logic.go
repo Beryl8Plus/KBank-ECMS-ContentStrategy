@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
-	domainservice "kbank-ecms/internal/domain/service"
 )
 
 // BuildPlacementLogicEntries constructs one ContentResult per variation of a
@@ -18,15 +18,15 @@ func BuildPlacementLogicEntries(
 	rule entity.DecisionRule,
 	sched *entity.Schedule,
 	source string,
-	campaign *domainservice.Campaign,
-) []domainservice.ContentResult {
+	campaign *dto.Campaign,
+) []dto.ContentResult {
 	if len(rule.Rules) == 0 {
 		// No variations — single entry with base score, empty expected values.
 		entry := buildLogicEntry(rule, sched, nil, rule.Score, source, campaign, nil)
-		return []domainservice.ContentResult{entry}
+		return []dto.ContentResult{entry}
 	}
 
-	results := make([]domainservice.ContentResult, 0, len(rule.Rules))
+	results := make([]dto.ContentResult, 0, len(rule.Rules))
 	for _, v := range sortedVariations(rule.Rules) {
 		expectedValues := make(map[string]json.RawMessage, len(v.RuleAttributes))
 		for _, ra := range v.RuleAttributes {
@@ -46,15 +46,15 @@ func buildLogicEntry(
 	variation *string,
 	score float64,
 	source string,
-	campaign *domainservice.Campaign,
+	campaign *dto.Campaign,
 	expectedValues map[string]json.RawMessage,
-) domainservice.ContentResult {
+) dto.ContentResult {
 	logicHash, _ := GenerateLogicHash(rule.RuleConditions, expectedValues)
 	logicExpr := BuildLogicExpression(rule.RuleConditions, expectedValues)
 
-	conditions := make([]domainservice.LogicCondition, 0, len(rule.RuleConditions))
+	conditions := make([]dto.LogicCondition, 0, len(rule.RuleConditions))
 	for _, rc := range rule.RuleConditions {
-		lc := domainservice.LogicCondition{
+		lc := dto.LogicCondition{
 			ConditionID:       rc.ID.String(),
 			AttributeID:       rc.AttributeID.String(),
 			LogicalOperator:   string(rc.LogicalOperator),
@@ -71,7 +71,7 @@ func buildLogicEntry(
 		conditions = append(conditions, lc)
 	}
 
-	return domainservice.ContentResult{
+	return dto.ContentResult{
 		DecisionRuleId: sched.DecisionRuleID.String(),
 		ContentPath:    rule.ContentPath,
 		RuleSetType:    rule.Type.String(),
