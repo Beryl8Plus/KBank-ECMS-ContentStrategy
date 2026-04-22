@@ -28,3 +28,6 @@ bin/*
 
 # Serena files
 .serena/*
+
+# Claude files
+.claude/*
