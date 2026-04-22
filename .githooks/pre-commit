@@ -27,6 +27,7 @@ fi
 # 2. Run linting
 echo "2/2: Linting code..."
 if command -v golangci-lint >/dev/null 2>&1; then
+    make swagger
     make lint
     RESULT=$?
 else
