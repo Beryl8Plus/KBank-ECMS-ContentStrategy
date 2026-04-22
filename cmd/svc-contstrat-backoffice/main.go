@@ -10,9 +10,11 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -105,27 +107,44 @@ func main() {
 	// It runs until ctx is cancelled (on SIGINT / SIGTERM below).
 	go app.OccurrenceWorker.Start(ctx)
 
-	// Cancel ctx (and stop the worker) on OS shutdown signals.
-	go func() {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		<-quit
-		logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Shutdown signal received"})
-		cancel()
-	}()
+	port := "8081"
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: app.Router,
+	}
 
-	// Start Server
-	port := "8081" // Default port or from config
-	logger.LStartup(ctx, entity.StartupLog{
-		Service: "MAIN",
-		Level:   "INFO",
-		Message: "Starting server on port " + port,
-	})
-	if err := app.Router.Run(":" + port); err != nil {
+	go func() {
 		logger.LStartup(ctx, entity.StartupLog{
 			Service: "MAIN",
-			Level:   "FATAL",
-			Message: "Failed to start server: " + err.Error(),
+			Level:   "INFO",
+			Message: "Starting server on port " + port,
+		})
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.LStartup(ctx, entity.StartupLog{
+				Service: "MAIN",
+				Level:   "FATAL",
+				Message: "Failed to start server: " + err.Error(),
+			})
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Shutdown signal received"})
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.LStartup(ctx, entity.StartupLog{
+			Service: "MAIN",
+			Level:   "ERROR",
+			Message: "Server forced to shutdown: " + err.Error(),
 		})
 	}
+	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Server stopped"})
 }
