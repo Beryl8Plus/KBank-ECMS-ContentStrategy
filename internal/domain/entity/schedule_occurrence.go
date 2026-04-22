@@ -11,6 +11,11 @@ import (
 // ScheduleOccurrence stores a materialized instance of a Schedule.
 //
 // Table: schedule_occurrences
+//
+// Unique constraint: idx_occurrence_schedule_start_end
+//
+//	(SCHEDULE_ID, OCCURRENCE_START, OCCURRENCE_END) — enforced via goose migration
+//	#00004_schedule_occurrence_unique_index.sql
 type ScheduleOccurrence struct {
 	BaseModel
 	ScheduleID      uuid.UUID              `gorm:"type:uuid;not null"    json:"scheduleId"`

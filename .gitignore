@@ -31,3 +31,4 @@ bin/*
 
 # Claude files
 .claude/*
+CLAUDE.md

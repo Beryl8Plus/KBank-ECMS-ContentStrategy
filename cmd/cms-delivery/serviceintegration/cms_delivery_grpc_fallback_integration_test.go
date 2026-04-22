@@ -53,7 +53,7 @@ func TestCMSDeliveryServiceGRPCFallbackEndToEnd(t *testing.T) {
 
 	svc := deliveryservice.NewCMSDeliveryService(
 		cacheRepo,
-		&scheduleRepoStub{}, // non-nil guard enables gRPC fallback; not called directly
+		&occurrenceRepoStub{}, // non-nil guard enables gRPC fallback; not called directly
 		&decisionRuleRepoStub{},
 		evaluator,
 		nil,
@@ -173,39 +173,23 @@ func (m *memoryCacheRepo) mustGet(key string) string {
 
 var _ domainrepo.RedisCacheRepository = (*memoryCacheRepo)(nil)
 
-type scheduleRepoStub struct {
-	listActiveFn func(ctx context.Context, at time.Time) ([]*entity.Schedule, error)
-}
+type occurrenceRepoStub struct{}
 
-func (s *scheduleRepoStub) ListActiveSchedulesInWindow(ctx context.Context, at time.Time) ([]*entity.Schedule, error) {
-	if s.listActiveFn != nil {
-		return s.listActiveFn(ctx, at)
-	}
+func (s *occurrenceRepoStub) ListActiveAt(context.Context, time.Time) ([]*entity.ScheduleOccurrence, error) {
 	return nil, nil
 }
-
-func (s *scheduleRepoStub) CheckScheduleOverlap(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, *uuid.UUID) (*entity.Schedule, error) {
-	return nil, nil
+func (s *occurrenceRepoStub) UpsertOccurrences(context.Context, []*entity.ScheduleOccurrence) error {
+	return nil
 }
-
-func (s *scheduleRepoStub) CreateSchedule(context.Context, *entity.Schedule) error { return nil }
-
-func (s *scheduleRepoStub) GetScheduleByID(context.Context, uuid.UUID) (*entity.Schedule, error) {
-	return nil, nil
+func (s *occurrenceRepoStub) DeleteFutureByScheduleID(context.Context, uuid.UUID, time.Time) error {
+	return nil
 }
-
-func (s *scheduleRepoStub) ListSchedules(context.Context) ([]*entity.Schedule, error) {
-	return nil, nil
-}
-
-func (s *scheduleRepoStub) ListSchedulesPaginated(context.Context, int, int) ([]*entity.Schedule, int64, error) {
+func (s *occurrenceRepoStub) DeletePastOccurrences(context.Context, time.Time) error { return nil }
+func (s *occurrenceRepoStub) ListByScheduleID(context.Context, uuid.UUID, int, int) ([]*entity.ScheduleOccurrence, int64, error) {
 	return nil, 0, nil
 }
 
-func (s *scheduleRepoStub) UpdateSchedule(context.Context, *entity.Schedule) error { return nil }
-func (s *scheduleRepoStub) DeleteSchedule(context.Context, uuid.UUID) error        { return nil }
-
-var _ domainrepo.ScheduleRepository = (*scheduleRepoStub)(nil)
+var _ domainrepo.ScheduleOccurrenceRepository = (*occurrenceRepoStub)(nil)
 
 type decisionRuleRepoStub struct{}
 

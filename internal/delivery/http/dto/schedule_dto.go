@@ -9,6 +9,32 @@ import (
 	"kbank-ecms/internal/domain/entity/enums"
 )
 
+// ScheduleOccurrenceResponse is the response body for schedule occurrence endpoints.
+type ScheduleOccurrenceResponse struct {
+	ID              uuid.UUID              `json:"id"`
+	ScheduleID      uuid.UUID              `json:"scheduleId"`
+	OccurrenceStart time.Time              `json:"occurrenceStart"`
+	OccurrenceEnd   time.Time              `json:"occurrenceEnd"`
+	Status          enums.OccurrenceStatus `json:"status"`
+	Source          enums.OccurrenceSource `json:"source"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+}
+
+// ToScheduleOccurrenceResponse converts a ScheduleOccurrence entity to a ScheduleOccurrenceResponse DTO.
+func ToScheduleOccurrenceResponse(o *entity.ScheduleOccurrence) ScheduleOccurrenceResponse {
+	return ScheduleOccurrenceResponse{
+		ID:              o.ID,
+		ScheduleID:      o.ScheduleID,
+		OccurrenceStart: o.OccurrenceStart,
+		OccurrenceEnd:   o.OccurrenceEnd,
+		Status:          o.Status,
+		Source:          o.Source,
+		CreatedAt:       o.CreatedAt,
+		UpdatedAt:       o.UpdatedAt,
+	}
+}
+
 // CreateScheduleRequest is the request body for POST /schedules.
 type CreateScheduleRequest struct {
 	DecisionRuleID uuid.UUID            `json:"decisionRuleId" binding:"required"`

@@ -10,21 +10,24 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/joho/godotenv"
+
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/util"
-	"os"
 
 	ecmsdocs "kbank-ecms/docs/swagger/svc-contstrat-backoffice"
-
-	"github.com/joho/godotenv"
 )
 
 func main() {
-
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Load .env file if present (ignored in production where env vars are injected)
 	if loadErr := godotenv.Load(); loadErr != nil {
@@ -87,8 +90,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build router — wires service → handler → middleware → router via Google Wire
-	r, err := InitializeApp(db, rateLimit)
+	// Build router + occurrence worker via Google Wire
+	app, err := InitializeApp(db, rateLimit)
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "MAIN",
@@ -98,6 +101,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start the occurrence materialization background worker.
+	// It runs until ctx is cancelled (on SIGINT / SIGTERM below).
+	go app.OccurrenceWorker.Start(ctx)
+
+	// Cancel ctx (and stop the worker) on OS shutdown signals.
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Shutdown signal received"})
+		cancel()
+	}()
+
 	// Start Server
 	port := "8081" // Default port or from config
 	logger.LStartup(ctx, entity.StartupLog{
@@ -105,7 +121,7 @@ func main() {
 		Level:   "INFO",
 		Message: "Starting server on port " + port,
 	})
-	if err := r.Run(":" + port); err != nil {
+	if err := app.Router.Run(":" + port); err != nil {
 		logger.LStartup(ctx, entity.StartupLog{
 			Service: "MAIN",
 			Level:   "FATAL",

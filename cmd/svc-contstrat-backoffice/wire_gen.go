@@ -7,7 +7,6 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	"kbank-ecms/internal/domain/entity"
@@ -17,8 +16,9 @@ import (
 
 // Injectors from wire.go:
 
-// InitializeApp wires all dependencies to construct the Gin engine.
-func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit) (*gin.Engine, error) {
+// InitializeApp wires all dependencies and returns the Application bundle
+// (Gin engine + background occurrence worker).
+func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit) (*Application, error) {
 	ruleManagementService := service.NewRuleManagementService()
 	ruleManagementHandler := handler.NewRuleManagementHandler(ruleManagementService)
 	schedulePostgresRepository := repository.NewSchedulePostgresRepository(db)
@@ -27,6 +27,14 @@ func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit) (*gin.Engine, error)
 	decisionRulePostgresRepository := repository.NewDecisionRulePostgresRepository(db)
 	decisionRuleService := service.NewDecisionRuleService(decisionRulePostgresRepository)
 	decisionRuleHandler := handler.NewDecisionRuleHandler(decisionRuleService)
-	engine := ProvideRouter(db, rateLimit, ruleManagementHandler, scheduleHandler, decisionRuleHandler)
-	return engine, nil
+	scheduleOccurrencePostgresRepository := repository.NewScheduleOccurrencePostgresRepository(db)
+	scheduleOccurrenceService := service.NewScheduleOccurrenceService(scheduleOccurrencePostgresRepository)
+	scheduleOccurrenceHandler := handler.NewScheduleOccurrenceHandler(scheduleOccurrenceService)
+	engine := ProvideRouter(db, rateLimit, ruleManagementHandler, scheduleHandler, decisionRuleHandler, scheduleOccurrenceHandler)
+	materializationConfig := ProvideMatConfig()
+	scheduleMaterializationService := service.NewScheduleMaterializationService(schedulePostgresRepository, scheduleOccurrencePostgresRepository, materializationConfig)
+	occurrenceWorkerConfig := ProvideWorkerConfig()
+	occurrenceWorker := service.NewOccurrenceWorker(scheduleMaterializationService, occurrenceWorkerConfig)
+	application := NewApplication(engine, occurrenceWorker)
+	return application, nil
 }

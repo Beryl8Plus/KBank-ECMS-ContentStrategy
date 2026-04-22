@@ -23,16 +23,16 @@ import (
 
 // newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no gRPC).
 func newSvcCacheOnly(cacheRepo *mockCacheRepo) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, &mockScheduleRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, &mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0)
 }
 
-// newSvcWithFallback builds a CMSDeliveryService with cache, schedule repo, and evaluator.
+// newSvcWithFallback builds a CMSDeliveryService with cache, occurrence repo, and evaluator.
 func newSvcWithFallback(
 	cacheRepo *mockCacheRepo,
-	schedRepo *mockScheduleRepo,
+	occurrenceRepo *mockOccurrenceRepo,
 	eval domainservice.RuntimeEvaluator,
 ) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, schedRepo, &mockDecisionRuleRepo{}, eval, nil, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, nil, time.Hour, 0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ func TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback(t *testing.T) {
 				return nil
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				assert.Equal(t, "hero", name)
@@ -112,7 +112,7 @@ func TestGetPersonalizedContent_LogicCacheMiss_GRPCFails(t *testing.T) {
 				return "", errors.New("miss")
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return nil, errors.New("rpc error: unavailable")
@@ -274,33 +274,27 @@ func (m *mockCacheRepo) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// mockScheduleRepo is a minimal mock for domainrepo.ScheduleRepository.
-type mockScheduleRepo struct {
-	listActiveFn func(ctx context.Context, at time.Time) ([]*entity.Schedule, error)
+// mockOccurrenceRepo is a minimal mock for domainrepo.ScheduleOccurrenceRepository.
+type mockOccurrenceRepo struct {
+	listActiveAtFn func(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
 }
 
-func (m *mockScheduleRepo) ListActiveSchedulesInWindow(ctx context.Context, at time.Time) ([]*entity.Schedule, error) {
-	if m.listActiveFn != nil {
-		return m.listActiveFn(ctx, at)
+func (m *mockOccurrenceRepo) ListActiveAt(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error) {
+	if m.listActiveAtFn != nil {
+		return m.listActiveAtFn(ctx, at)
 	}
 	return nil, nil
 }
-
-func (m *mockScheduleRepo) CheckScheduleOverlap(_ context.Context, _ uuid.UUID, _ uuid.UUID, _, _ time.Time, _ *uuid.UUID) (*entity.Schedule, error) {
-	return nil, nil
+func (m *mockOccurrenceRepo) UpsertOccurrences(_ context.Context, _ []*entity.ScheduleOccurrence) error {
+	return nil
 }
-func (m *mockScheduleRepo) CreateSchedule(_ context.Context, _ *entity.Schedule) error { return nil }
-func (m *mockScheduleRepo) GetScheduleByID(_ context.Context, _ uuid.UUID) (*entity.Schedule, error) {
-	return nil, nil
+func (m *mockOccurrenceRepo) DeleteFutureByScheduleID(_ context.Context, _ uuid.UUID, _ time.Time) error {
+	return nil
 }
-func (m *mockScheduleRepo) ListSchedules(_ context.Context) ([]*entity.Schedule, error) {
-	return nil, nil
-}
-func (m *mockScheduleRepo) ListSchedulesPaginated(_ context.Context, _, _ int) ([]*entity.Schedule, int64, error) {
+func (m *mockOccurrenceRepo) DeletePastOccurrences(_ context.Context, _ time.Time) error { return nil }
+func (m *mockOccurrenceRepo) ListByScheduleID(_ context.Context, _ uuid.UUID, _, _ int) ([]*entity.ScheduleOccurrence, int64, error) {
 	return nil, 0, nil
 }
-func (m *mockScheduleRepo) UpdateSchedule(_ context.Context, _ *entity.Schedule) error { return nil }
-func (m *mockScheduleRepo) DeleteSchedule(_ context.Context, _ uuid.UUID) error        { return nil }
 
 // mockDecisionRuleRepo is a minimal mock for domainrepo.DecisionRuleRepository.
 type mockDecisionRuleRepo struct {
@@ -395,7 +389,7 @@ func TestGetPersonalizedContent_UserEvalCacheHit_True(t *testing.T) {
 				return nil
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return []dto.ContentResult{entry}, nil
@@ -437,7 +431,7 @@ func TestGetPersonalizedContent_UserEvalCacheHit_False(t *testing.T) {
 				return "", errors.New("miss")
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return []dto.ContentResult{entry}, nil
@@ -481,7 +475,7 @@ func TestGetPersonalizedContent_LiveEval_PassAndCache(t *testing.T) {
 				return nil
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return []dto.ContentResult{entry}, nil
@@ -542,7 +536,7 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 				return nil
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				// Verify the user attr from Redis was resolved and passed to the evaluator.
@@ -592,7 +586,7 @@ func TestGetPersonalizedContent_EvalFalse_ExcludedAndCached(t *testing.T) {
 				return nil
 			},
 		},
-		&mockScheduleRepo{},
+		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 				return []dto.ContentResult{entry}, nil

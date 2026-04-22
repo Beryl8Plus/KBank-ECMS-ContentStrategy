@@ -1,0 +1,144 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"kbank-ecms/internal/domain/entity"
+	domainrepo "kbank-ecms/internal/domain/repository"
+)
+
+// ScheduleOccurrencePostgresRepository implements
+// domainrepo.ScheduleOccurrenceRepository using GORM.
+type ScheduleOccurrencePostgresRepository struct {
+	db *gorm.DB
+}
+
+// Compile-time interface check.
+var _ domainrepo.ScheduleOccurrenceRepository = (*ScheduleOccurrencePostgresRepository)(nil)
+
+// NewScheduleOccurrencePostgresRepository creates a new
+// ScheduleOccurrencePostgresRepository.
+func NewScheduleOccurrencePostgresRepository(db *gorm.DB) *ScheduleOccurrencePostgresRepository {
+	return &ScheduleOccurrencePostgresRepository{db: db}
+}
+
+// UpsertOccurrences inserts or updates schedule occurrences in bulk.
+// The ON CONFLICT clause targets the unique index on
+// (schedule_id, occurrence_start, occurrence_end) and updates the status,
+// source, and updated_at timestamp on conflict so that the operation is
+// idempotent — re-running the materialisation job for the same window
+// produces no duplicate rows.
+func (r *ScheduleOccurrencePostgresRepository) UpsertOccurrences(
+	ctx context.Context,
+	occurrences []*entity.ScheduleOccurrence,
+) error {
+	if len(occurrences) == 0 {
+		return nil
+	}
+
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "SCHEDULE_ID"},
+				{Name: "OCCURRENCE_START"},
+				{Name: "OCCURRENCE_END"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"STATUS",
+				"SOURCE",
+				"UPDATED_AT",
+			}),
+		}).
+		Create(&occurrences).Error; err != nil {
+		return fmt.Errorf("upserting schedule occurrences: %w", err)
+	}
+	return nil
+}
+
+// DeleteFutureByScheduleID removes all occurrences for the given schedule
+// whose occurrence_start is strictly after `after`.
+// This is called before re-materialising when a Schedule has been updated
+// or deleted so that no stale future windows remain.
+func (r *ScheduleOccurrencePostgresRepository) DeleteFutureByScheduleID(
+	ctx context.Context,
+	scheduleID uuid.UUID,
+	after time.Time,
+) error {
+	if err := r.db.WithContext(ctx).
+		Unscoped(). // hard-delete: occurrences don't need soft-delete semantics
+		Where("\"SCHEDULE_ID\" = ? AND \"OCCURRENCE_START\" > ?", scheduleID, after).
+		Delete(&entity.ScheduleOccurrence{}).Error; err != nil {
+		return fmt.Errorf("deleting future occurrences for schedule %s: %w", scheduleID, err)
+	}
+	return nil
+}
+
+// DeletePastOccurrences removes all occurrences whose occurrence_end is
+// strictly before `before`. This is the cleanup job entry point and
+// performs a hard delete to reclaim storage.
+func (r *ScheduleOccurrencePostgresRepository) DeletePastOccurrences(
+	ctx context.Context,
+	before time.Time,
+) error {
+	if err := r.db.WithContext(ctx).
+		Unscoped(). // hard-delete for cleanup
+		Where("\"OCCURRENCE_END\" < ?", before).
+		Delete(&entity.ScheduleOccurrence{}).Error; err != nil {
+		return fmt.Errorf("deleting past occurrences before %s: %w", before.Format(time.RFC3339), err)
+	}
+	return nil
+}
+
+// ListByScheduleID returns a paginated list of occurrences for a given schedule,
+// ordered by occurrence_start ascending.
+func (r *ScheduleOccurrencePostgresRepository) ListByScheduleID(
+	ctx context.Context,
+	scheduleID uuid.UUID,
+	page, limit int,
+) ([]*entity.ScheduleOccurrence, int64, error) {
+	var occurrences []*entity.ScheduleOccurrence
+	var total int64
+
+	base := r.db.WithContext(ctx).Model(&entity.ScheduleOccurrence{}).
+		Where("\"SCHEDULE_ID\" = ?", scheduleID)
+
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("counting occurrences for schedule %s: %w", scheduleID, err)
+	}
+
+	offset := (page - 1) * limit
+	if err := base.Order("\"OCCURRENCE_START\" ASC").
+		Offset(offset).Limit(limit).
+		Find(&occurrences).Error; err != nil {
+		return nil, 0, fmt.Errorf("listing occurrences for schedule %s: %w", scheduleID, err)
+	}
+
+	return occurrences, total, nil
+}
+
+// ListActiveAt returns all ACTIVE occurrences whose window contains `at`:
+//
+//	occurrence_start <= at AND occurrence_end > at
+//
+// Each occurrence is preloaded with its parent Schedule.
+func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
+	ctx context.Context,
+	at time.Time,
+) ([]*entity.ScheduleOccurrence, error) {
+	var occurrences []*entity.ScheduleOccurrence
+	atStr := at.Format(time.RFC3339)
+	if err := r.db.WithContext(ctx).
+		Preload("Schedule").
+		Where("\"STATUS\" = ?", "ACTIVE").
+		Where("\"OCCURRENCE_START\" <= ? AND \"OCCURRENCE_END\" > ?", atStr, atStr).
+		Find(&occurrences).Error; err != nil {
+		return nil, fmt.Errorf("listing active occurrences at %s: %w", atStr, err)
+	}
+	return occurrences, nil
+}

@@ -55,13 +55,13 @@ var _ domainservice.DeliveryService = (*CMSDeliveryService)(nil)
 // Background ticker: periodically queries DB, delegates evaluation to gRPC,
 // and writes L1/L2/L3 caches for all active placements.
 type CMSDeliveryService struct {
-	cacheRepo    domainrepo.RedisCacheRepository
-	scheduleRepo domainrepo.ScheduleRepository     // nil disables fallback
-	decisionRepo domainrepo.DecisionRuleRepository // nil disables fallback
-	evaluator    domainservice.RuntimeEvaluator    // nil disables fallback
-	cacheMemory  *cache.CacheMemory[any]
-	resultTTL    time.Duration
-	tickInterval time.Duration
+	cacheRepo      domainrepo.RedisCacheRepository
+	occurrenceRepo domainrepo.ScheduleOccurrenceRepository // nil disables fallback
+	decisionRepo   domainrepo.DecisionRuleRepository       // nil disables fallback
+	evaluator      domainservice.RuntimeEvaluator          // nil disables fallback
+	cacheMemory    *cache.CacheMemory[any]
+	resultTTL      time.Duration
+	tickInterval   time.Duration
 
 	mu      sync.Mutex
 	running bool
@@ -70,14 +70,14 @@ type CMSDeliveryService struct {
 }
 
 // NewCMSDeliveryService creates a CMSDeliveryService.
-//   - scheduleRepo may be nil to disable the gRPC fallback.
+//   - occurrenceRepo may be nil to disable the gRPC fallback.
 //   - evaluator may be nil to disable the gRPC fallback.
 //   - cacheMemory may be nil to disable local rule caching.
 //   - resultTTL is the Redis TTL for results written by the fallback path.
 //   - tickInterval is how often the background ticker fires (0 disables ticker).
 func NewCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
-	scheduleRepo domainrepo.ScheduleRepository,
+	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator domainservice.RuntimeEvaluator,
 	cacheMemory *cache.CacheMemory[any],
@@ -85,13 +85,13 @@ func NewCMSDeliveryService(
 	tickInterval time.Duration,
 ) *CMSDeliveryService {
 	return &CMSDeliveryService{
-		cacheRepo:    cacheRepo,
-		scheduleRepo: scheduleRepo,
-		decisionRepo: decisionRuleRepo,
-		evaluator:    evaluator,
-		cacheMemory:  cacheMemory,
-		resultTTL:    resultTTL,
-		tickInterval: tickInterval,
+		cacheRepo:      cacheRepo,
+		occurrenceRepo: occurrenceRepo,
+		decisionRepo:   decisionRuleRepo,
+		evaluator:      evaluator,
+		cacheMemory:    cacheMemory,
+		resultTTL:      resultTTL,
+		tickInterval:   tickInterval,
 	}
 }
 
@@ -240,7 +240,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		); cacheErr == nil {
 			// Cache hit for logic entries.
 			entries = cacheEntries
-		} else if s.evaluator != nil && s.scheduleRepo != nil {
+		} else if s.evaluator != nil && s.occurrenceRepo != nil {
 			// gRPC fallback — one or more rules were missing from cache.
 			grpcEntries, grpcErr := s.evaluatePlacementLogicViaGRPC(ctx, name, filtered[name], resolvedUserAttrs)
 			if grpcErr != nil {
@@ -414,16 +414,28 @@ func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 // On gRPC failure for a single placement the error is logged and the loop
 // continues with the next placement.
 func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
-	schedules, err := util.GetSet(ctx, s.cacheRepo, "schedule:all-active", s.resultTTL, func(ctx context.Context) ([]*entity.Schedule, error) {
-		return s.scheduleRepo.ListActiveSchedulesInWindow(ctx, time.Now())
-	})
+	occurrences, err := s.occurrenceRepo.ListActiveAt(ctx, time.Now())
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "CMS-DELIVERY",
 			Level:   "ERROR",
-			Message: fmt.Sprintf("evaluateAllViaGRPC: list active schedules: %v", err),
+			Message: fmt.Sprintf("evaluateAllViaGRPC: list active occurrences: %v", err),
 		})
 		return
+	}
+
+	// Deduplicate schedules by ScheduleID (a schedule may have multiple active occurrences).
+	seen := make(map[uuid.UUID]struct{})
+	schedules := make([]*entity.Schedule, 0, len(occurrences))
+	for _, occ := range occurrences {
+		if occ.Schedule == nil {
+			continue
+		}
+		if _, dup := seen[occ.ScheduleID]; dup {
+			continue
+		}
+		seen[occ.ScheduleID] = struct{}{}
+		schedules = append(schedules, occ.Schedule)
 	}
 
 	// Group schedules by placement name; derive maxResults per placement.
