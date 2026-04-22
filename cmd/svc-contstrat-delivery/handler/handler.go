@@ -26,7 +26,7 @@ func NewHandler(svc service.DeliveryService) *Handler {
 //
 // @Summary Get content by placements
 // @Description Returns evaluated content results for one or more placement names.
-// @Tags CmsDelivery
+// @Tags svc-contstrat-delivery
 // @Accept json
 // @Produce json
 // @Param requestType query string true "The type of content request" Enums(personalizedContent,staticContent,articleCategory)
@@ -83,7 +83,7 @@ func (h *Handler) getContent(c *gin.Context) {
 //
 // @Summary Get cache status
 // @Description Returns list purge request status.
-// @Tags CmsDelivery
+// @Tags svc-contstrat-delivery
 // @Accept json
 // @Produce json
 // @Success 200 {object} dto.APIResponse{data=map[string]string}
@@ -100,7 +100,7 @@ func (h *Handler) getStatus(c *gin.Context) {
 //
 // @Summary Flush content cache
 // @Description Flushes the cache for specified placements. An empty or missing body flushes all placements.
-// @Tags CmsDelivery
+// @Tags svc-contstrat-delivery
 // @Accept json
 // @Produce json
 // @Param body body dto.FlushRequest false "Placements to flush; omit to flush all"
