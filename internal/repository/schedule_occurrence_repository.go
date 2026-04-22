@@ -135,6 +135,7 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 	atStr := at.Format(time.RFC3339)
 	if err := r.db.WithContext(ctx).
 		Preload("Schedule").
+		Preload("Schedule.Placement").
 		Where("\"STATUS\" = ?", "ACTIVE").
 		Where("\"OCCURRENCE_START\" <= ? AND \"OCCURRENCE_END\" > ?", atStr, atStr).
 		Find(&occurrences).Error; err != nil {
