@@ -5,7 +5,7 @@ import (
 	"github.com/google/wire"
 	"gorm.io/gorm"
 
-	"kbank-ecms/cmd/server/handler"
+	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"

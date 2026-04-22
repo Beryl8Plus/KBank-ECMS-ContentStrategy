@@ -12,9 +12,9 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
 
 # Generate Swagger Documentation
-RUN swag init -g cmd/server/main.go --exclude cmd/cms-delivery,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/server --parseDependency --parseInternal
-RUN swag init -g cmd/cms-delivery/main.go --exclude internal/delivery/http/handler,cmd/server,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/cmsdelivery --parseDependency --parseInternal
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kbank-ecms ./cmd/server/
+RUN swag init -g cmd/svc-contstrat-backoffice/main.go --exclude cmd/cms-delivery,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/svc-contstrat-backoffice --parseDependency --parseInternal
+RUN swag init -g cmd/cms-delivery/main.go --exclude internal/delivery/http/handler,cmd/svc-contstrat-backoffice,cmd/cms-runtime,cmd/migrate,internal/cms-runtime --output docs/swagger/cmsdelivery --parseDependency --parseInternal
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o svc-contstrat-backoffice ./cmd/svc-contstrat-backoffice/
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o cms-delivery ./cmd/cms-delivery/
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o cms-runtime ./cmd/cms-runtime/
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o migrate ./cmd/migrate/

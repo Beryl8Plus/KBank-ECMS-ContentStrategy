@@ -51,16 +51,16 @@ init:
 
 ## Build the server binary
 build: swagger
-	go build -o bin/server ./cmd/server/
+	go build -o bin/svc-contstrat-backoffice ./cmd/svc-contstrat-backoffice/
 
 ## Generate wire dependencies
 wire-gen:
-	wire gen ./cmd/server
+	wire gen ./cmd/svc-contstrat-backoffice
 	wire gen ./cmd/cms-delivery
 
 ## Run the server locally
 run:
-	go run ./cmd/server/
+	go run ./cmd/svc-contstrat-backoffice/
 
 ## Run cms-delivery locally
 run-cms-delivery:
@@ -75,7 +75,7 @@ swagger: swagger-server swagger-cms-delivery
 
 ## Generate Swagger documentation for the server service
 swagger-server:
-	swag init -g cmd/server/main.go --output docs/swagger/server --packageName server --parseDependency --parseInternal
+	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName server --parseDependency --parseInternal
 
 ## Generate Swagger documentation for the cms-delivery service
 swagger-cms-delivery:

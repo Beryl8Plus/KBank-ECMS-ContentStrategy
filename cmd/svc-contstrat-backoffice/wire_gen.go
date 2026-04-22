@@ -9,7 +9,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"kbank-ecms/cmd/server/handler"
+	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"

@@ -17,7 +17,7 @@ import (
 	"kbank-ecms/pkg/util"
 	"os"
 
-	ecmsdocs "kbank-ecms/docs/swagger/server"
+	ecmsdocs "kbank-ecms/docs/swagger/svc-contstrat-backoffice"
 
 	"github.com/joho/godotenv"
 )
