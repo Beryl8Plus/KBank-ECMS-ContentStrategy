@@ -10,6 +10,7 @@ func RegisterRoutes(
 	scheduleHandler *ScheduleHandler,
 	decisionRuleHandler *DecisionRuleHandler,
 	occurrenceHandler *ScheduleOccurrenceHandler,
+	attributeHandler *AttributeHandler,
 ) {
 	r.POST("/rule-management", ruleManagementHandler.IngressRuleManagement)
 
@@ -31,5 +32,14 @@ func RegisterRoutes(
 	scheduleOccurrences := r.Group("/schedule-occurrences")
 	{
 		scheduleOccurrences.GET("/active", occurrenceHandler.ListActiveOccurrences)
+	}
+
+	attributes := r.Group("/attributes")
+	{
+		attributes.POST("", attributeHandler.CreateAttribute)
+		attributes.GET("", attributeHandler.ListAttributes)
+		attributes.GET("/:id", attributeHandler.GetAttribute)
+		attributes.PUT("/:id", attributeHandler.UpdateAttribute)
+		attributes.DELETE("/:id", attributeHandler.DeleteAttribute)
 	}
 }

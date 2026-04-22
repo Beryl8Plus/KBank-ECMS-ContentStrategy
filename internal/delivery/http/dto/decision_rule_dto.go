@@ -10,19 +10,6 @@ import (
 	"kbank-ecms/internal/domain/entity/enums"
 )
 
-// AttributeResponse represents the core attribute fields.
-type AttributeResponse struct {
-	ID                   uuid.UUID               `json:"id"`
-	ClenSchemaRegistryID uuid.UUID               `json:"clenSchemaRegistryId"`
-	FieldName            string                  `json:"fieldName"`
-	DisplayName          string                  `json:"displayName"`
-	DataType             enums.AttributeDataType `json:"dataType"`
-	Value                datatypes.JSON          `json:"value"`
-	Description          string                  `json:"description"`
-	SourceSystem         string                  `json:"sourceSystem"`
-	IsActive             bool                    `json:"isActive"`
-}
-
 // RuleConditionResponse maps the RuleCondition entity.
 type RuleConditionResponse struct {
 	ID                    uuid.UUID               `json:"id"`
@@ -76,21 +63,13 @@ type DecisionRuleResponse struct {
 	UpdatedAt      time.Time                `json:"updatedAt"`
 }
 
-func ToAttributeResponse(a *entity.Attribute) *AttributeResponse {
+func toAttributeResponsePtr(a *entity.Attribute) *AttributeResponse {
 	if a == nil {
 		return nil
 	}
-	return &AttributeResponse{
-		ID:                   a.ID,
-		ClenSchemaRegistryID: a.ClenSchemaRegistryID,
-		FieldName:            a.FieldName,
-		DisplayName:          a.DisplayName,
-		DataType:             a.DataType,
-		Value:                a.Value,
-		Description:          a.Description,
-		SourceSystem:         a.SourceSystem,
-		IsActive:             a.IsActive,
-	}
+
+	resp := ToAttributeResponse(a)
+	return &resp
 }
 
 // ToDecisionRuleResponse maps a complete DecisionRule to a DecisionRuleResponse DTO.
@@ -117,7 +96,7 @@ func ToDecisionRuleResponse(dr *entity.DecisionRule) DecisionRuleResponse {
 				DecisionRuleID:        rc.DecisionRuleID,
 				ParentRuleConditionID: rc.ParentRuleConditionID,
 				AttributeID:           rc.AttributeID,
-				Attribute:             ToAttributeResponse(rc.Attribute),
+				Attribute:             toAttributeResponsePtr(rc.Attribute),
 				LogicalOperator:       rc.LogicalOperator,
 				ConnectorOperator:     rc.ConnectorOperator,
 				CreatedAt:             rc.CreatedAt,
@@ -147,7 +126,7 @@ func ToDecisionRuleResponse(dr *entity.DecisionRule) DecisionRuleResponse {
 						ID:          ra.ID,
 						RuleID:      ra.RuleID,
 						AttributeID: ra.AttributeID,
-						Attribute:   ToAttributeResponse(ra.Attribute),
+						Attribute:   toAttributeResponsePtr(ra.Attribute),
 						Value:       ra.Value,
 						CreatedAt:   ra.CreatedAt,
 						UpdatedAt:   ra.UpdatedAt,
