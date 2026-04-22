@@ -13,6 +13,265 @@ import (
 	"github.com/google/uuid"
 )
 
+// ---------------------------------------------------------------------------
+// parsedEntry — shared lazy-parse cache for a single JSON attribute value.
+//
+// Both ParsedUserAttrs (actual values) and ParsedExpectedValues (expected values)
+// use this struct. Each type caches independently; fields unused by one type
+// are simply left at their zero values.
+//
+// Each concrete type has an independent "attempted" flag so a failed parse is
+// never retried, regardless of which type is requested first.
+// ---------------------------------------------------------------------------
+
+type parsedEntry struct {
+	raw                 json.RawMessage
+	str                 string
+	strOK               bool
+	strAttempted        bool
+	strs                []string
+	strsOK              bool
+	strsAttempted       bool
+	num                 float64
+	numOK               bool
+	numAttempted        bool
+	nums                []float64
+	numsOK              bool
+	numsAttempted       bool
+	boolVal             bool
+	boolOK              bool
+	boolAttempted       bool
+	date                time.Time
+	dateOK              bool
+	dateAttempted       bool
+	dateBounds          [2]time.Time
+	dateBoundsOK        bool
+	dateBoundsAttempted bool
+}
+
+// ---------------------------------------------------------------------------
+// Shared getter helpers — operate on *parsedEntry, nil-safe.
+// Both ParsedUserAttrs and ParsedExpectedValues delegate to these.
+// ---------------------------------------------------------------------------
+
+func getStr(pv *parsedEntry) (string, bool) {
+	if pv == nil {
+		return "", false
+	}
+	if !pv.strAttempted {
+		pv.strAttempted = true
+		if err := json.Unmarshal(pv.raw, &pv.str); err == nil {
+			pv.strOK = true
+		}
+	}
+	return pv.str, pv.strOK
+}
+
+func getStrSlice(pv *parsedEntry) ([]string, bool) {
+	if pv == nil {
+		return nil, false
+	}
+	if !pv.strsAttempted {
+		pv.strsAttempted = true
+		if err := json.Unmarshal(pv.raw, &pv.strs); err == nil {
+			pv.strsOK = true
+		}
+	}
+	return pv.strs, pv.strsOK
+}
+
+func getNum(pv *parsedEntry) (float64, bool) {
+	if pv == nil {
+		return 0, false
+	}
+	if !pv.numAttempted {
+		pv.numAttempted = true
+		if err := json.Unmarshal(pv.raw, &pv.num); err == nil {
+			pv.numOK = true
+		}
+	}
+	return pv.num, pv.numOK
+}
+
+func getNumSlice(pv *parsedEntry) ([]float64, bool) {
+	if pv == nil {
+		return nil, false
+	}
+	if !pv.numsAttempted {
+		pv.numsAttempted = true
+		if err := json.Unmarshal(pv.raw, &pv.nums); err == nil {
+			pv.numsOK = true
+		}
+	}
+	return pv.nums, pv.numsOK
+}
+
+func getBool(pv *parsedEntry) (bool, bool) {
+	if pv == nil {
+		return false, false
+	}
+	if !pv.boolAttempted {
+		pv.boolAttempted = true
+		if err := json.Unmarshal(pv.raw, &pv.boolVal); err == nil {
+			pv.boolOK = true
+		}
+	}
+	return pv.boolVal, pv.boolOK
+}
+
+func getDate(pv *parsedEntry) (time.Time, bool) {
+	if pv == nil {
+		return time.Time{}, false
+	}
+	if !pv.dateAttempted {
+		pv.dateAttempted = true
+		var s string
+		if err := json.Unmarshal(pv.raw, &s); err == nil {
+			if t, err := parseDate(s); err == nil {
+				pv.date = t
+				pv.dateOK = true
+			}
+		}
+	}
+	return pv.date, pv.dateOK
+}
+
+func getDateBounds(pv *parsedEntry) ([2]time.Time, bool) {
+	if pv == nil {
+		return [2]time.Time{}, false
+	}
+	if !pv.dateBoundsAttempted {
+		pv.dateBoundsAttempted = true
+		var bounds []string
+		if err := json.Unmarshal(pv.raw, &bounds); err == nil && len(bounds) == 2 {
+			lo, err1 := parseDate(bounds[0])
+			hi, err2 := parseDate(bounds[1])
+			if err1 == nil && err2 == nil {
+				pv.dateBounds = [2]time.Time{lo, hi}
+				pv.dateBoundsOK = true
+			}
+		}
+	}
+	return pv.dateBounds, pv.dateBoundsOK
+}
+
+// ---------------------------------------------------------------------------
+// ParsedUserAttrs — pre-parsed actual-value cache (user attributes)
+//
+// Not concurrency-safe; intended for single-goroutine use per request
+// (matches ParsedExpectedValues).
+// ---------------------------------------------------------------------------
+
+type ParsedUserAttrs struct {
+	raw   map[string]json.RawMessage
+	cache map[string]*parsedEntry
+}
+
+func NewParsedUserAttrs(attrs map[string]json.RawMessage) *ParsedUserAttrs {
+	if attrs == nil {
+		return nil
+	}
+	return &ParsedUserAttrs{raw: attrs, cache: make(map[string]*parsedEntry, len(attrs))}
+}
+
+func (p *ParsedUserAttrs) Raw(attrID string) (json.RawMessage, bool) {
+	if p == nil {
+		return nil, false
+	}
+	v, ok := p.raw[attrID]
+	return v, ok
+}
+
+func (p *ParsedUserAttrs) Len() int {
+	if p == nil {
+		return 0
+	}
+	return len(p.raw)
+}
+
+func (p *ParsedUserAttrs) get(attrID string) *parsedEntry {
+	if p == nil {
+		return nil
+	}
+	pv, ok := p.cache[attrID]
+	if !ok {
+		raw, exists := p.raw[attrID]
+		if !exists {
+			return nil
+		}
+		pv = &parsedEntry{raw: raw}
+		p.cache[attrID] = pv
+	}
+	return pv
+}
+
+func (p *ParsedUserAttrs) GetString(attrID string) (string, bool)  { return getStr(p.get(attrID)) }
+func (p *ParsedUserAttrs) GetNumber(attrID string) (float64, bool) { return getNum(p.get(attrID)) }
+func (p *ParsedUserAttrs) GetBool(attrID string) (bool, bool)      { return getBool(p.get(attrID)) }
+func (p *ParsedUserAttrs) GetDate(attrID string) (time.Time, bool) { return getDate(p.get(attrID)) }
+
+// ---------------------------------------------------------------------------
+// ParsedExpectedValues — pre-parsed expected-value cache (rule attributes)
+//
+// Not concurrency-safe; intended for single-goroutine use per request.
+// ---------------------------------------------------------------------------
+
+type ParsedExpectedValues struct {
+	raw   map[string]json.RawMessage
+	cache map[string]*parsedEntry
+}
+
+func NewParsedExpectedValues(raw map[string]json.RawMessage) *ParsedExpectedValues {
+	if raw == nil {
+		return nil
+	}
+	return &ParsedExpectedValues{raw: raw, cache: make(map[string]*parsedEntry, len(raw))}
+}
+
+func (p *ParsedExpectedValues) Has(attrID string) bool {
+	if p == nil {
+		return false
+	}
+	_, ok := p.raw[attrID]
+	return ok
+}
+
+func (p *ParsedExpectedValues) get(attrID string) *parsedEntry {
+	if p == nil {
+		return nil
+	}
+	pv, ok := p.cache[attrID]
+	if !ok {
+		raw, exists := p.raw[attrID]
+		if !exists {
+			return nil
+		}
+		pv = &parsedEntry{raw: raw}
+		p.cache[attrID] = pv
+	}
+	return pv
+}
+
+func (p *ParsedExpectedValues) GetString(attrID string) (string, bool) { return getStr(p.get(attrID)) }
+func (p *ParsedExpectedValues) GetStringSlice(attrID string) ([]string, bool) {
+	return getStrSlice(p.get(attrID))
+}
+func (p *ParsedExpectedValues) GetNumber(attrID string) (float64, bool) { return getNum(p.get(attrID)) }
+func (p *ParsedExpectedValues) GetNumberSlice(attrID string) ([]float64, bool) {
+	return getNumSlice(p.get(attrID))
+}
+func (p *ParsedExpectedValues) GetBool(attrID string) (bool, bool) { return getBool(p.get(attrID)) }
+func (p *ParsedExpectedValues) GetDate(attrID string) (time.Time, bool) {
+	return getDate(p.get(attrID))
+}
+func (p *ParsedExpectedValues) GetDateBounds(attrID string) ([2]time.Time, bool) {
+	return getDateBounds(p.get(attrID))
+}
+
+// ---------------------------------------------------------------------------
+// Public evaluation entry points
+// ---------------------------------------------------------------------------
+
 // EvaluateRuleScore resolves the effective score for a DecisionRule by evaluating
 // its RuleConditions against each Rule variation's expected attribute values
 // (sourced from RuleAttributes).
@@ -33,17 +292,17 @@ func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMe
 		return nil, rule.Score, nil
 	}
 
-	// Check each Rule variation in OrderNo order; return first match's score.
+	parsed := NewParsedUserAttrs(userAttrs)
+
 	for _, v := range sortedVariations(rule.Rules) {
-		// Build expected-value map: attributeID → value from this variation's RuleAttributes.
-		expectedValues := make(map[string]json.RawMessage, len(v.RuleAttributes))
+		rawExpected := make(map[string]json.RawMessage, len(v.RuleAttributes))
 		for _, ra := range v.RuleAttributes {
-			expectedValues[ra.AttributeID.String()] = json.RawMessage(ra.Value)
+			rawExpected[ra.AttributeID.String()] = json.RawMessage(ra.Value)
 		}
 
-		pass, err := evaluateConditionGroup(rule.RuleConditions, expectedValues, userAttrs)
+		pass, err := evaluateConditionGroup(rule.RuleConditions, NewParsedExpectedValues(rawExpected), parsed)
 		if err != nil {
-			continue // Skip malformed variation rather than failing the whole rule.
+			continue
 		}
 		if pass {
 			return &v.VariationName, float64(v.Score), nil
@@ -53,24 +312,47 @@ func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMe
 	return nil, rule.Score, nil
 }
 
+// EvaluateLogicConditions evaluates a slice of LogicCondition (from PlacementLogicEntry)
+// against live user attribute values supplied in userAttrs (attr UUID → compact JSON value).
+//
+// It converts the LogicCondition slice into entity.RuleCondition stubs (including an
+// Attribute stub that carries the DataType) and delegates to the unified
+// evaluateConditionGroup chain. The "actual" value for each leaf is read from userAttrs;
+// the "expected" value is taken from LogicCondition.ExpectedValue.
+//
+// Returns false (not an error) when a required attribute is absent from userAttrs.
+func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[string]json.RawMessage) (bool, error) {
+	if len(conditions) == 0 {
+		return true, nil
+	}
+
+	rcs := make([]entity.RuleCondition, 0, len(conditions))
+	for _, lc := range conditions {
+		rcs = append(rcs, logicConditionToRuleCondition(lc))
+	}
+
+	// Only stamp entries where ExpectedValue is a non-nil, non-JSON-null value.
+	// Conditions without a stamped expected value (e.g. parent/grouping nodes or
+	// missing rule_attribute rows) must be skipped so that the Has guard in
+	// evaluateSingleCondition returns non-match rather than comparing against a
+	// zero-value produced by unmarshaling JSON null.
+	rawExpected := make(map[string]json.RawMessage, len(conditions))
+	for _, lc := range conditions {
+		if len(lc.ExpectedValue) > 0 && string(lc.ExpectedValue) != "null" {
+			rawExpected[lc.AttributeID] = lc.ExpectedValue
+		}
+	}
+
+	return evaluateConditionGroup(rcs, NewParsedExpectedValues(rawExpected), NewParsedUserAttrs(userAttrs))
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// maxConditionDepth is the maximum nesting level supported by the condition tree.
 const maxConditionDepth = 3
 
-// evaluateConditionGroup evaluates a flat slice of conditions that may contain
-// parent-child relationships (via ParentRuleConditionID). It builds a tree and
-// evaluates it recursively up to maxConditionDepth levels.
-//
-// Tree structure:
-//
-//	Level 1 — root conditions (ParentRuleConditionID == nil)
-//	Level 2 — children of level-1 nodes
-//	Level 3 — children of level-2 nodes (leaf evaluation forced at this level)
-func evaluateConditionGroup(conditions []entity.RuleCondition, expectedValues map[string]json.RawMessage, userAttrs map[string]json.RawMessage) (bool, error) {
-	// Build parent → children index. Key "" represents root (no parent).
+func evaluateConditionGroup(conditions []entity.RuleCondition, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
 	byParent := make(map[string][]entity.RuleCondition, len(conditions))
 	for _, c := range conditions {
 		key := ""
@@ -79,7 +361,6 @@ func evaluateConditionGroup(conditions []entity.RuleCondition, expectedValues ma
 		}
 		byParent[key] = append(byParent[key], c)
 	}
-	// Sort each sibling group by Sequence.
 	for k := range byParent {
 		sort.Slice(byParent[k], func(i, j int) bool {
 			return byParent[k][i].Sequence < byParent[k][j].Sequence
@@ -89,130 +370,118 @@ func evaluateConditionGroup(conditions []entity.RuleCondition, expectedValues ma
 	if len(roots) == 0 {
 		return true, nil
 	}
-	return evalSiblings(byParent, roots, 1, expectedValues, userAttrs)
+	return evalSiblings(byParent, roots, 1, expectedVals, parsed)
 }
 
-// evalSiblings evaluates a group of sibling conditions left-to-right, combining
-// them with each condition's ConnectorOperator (AND by default, OR when specified).
-// The first condition's ConnectorOperator is ignored.
-func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, depth int, expectedValues map[string]json.RawMessage, userAttrs map[string]json.RawMessage) (bool, error) {
-	result, err := evalNode(byParent, siblings[0], depth, expectedValues, userAttrs)
+func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
+	result, err := evalNode(byParent, siblings[0], depth, expectedVals, parsed)
 	if err != nil {
 		return false, err
 	}
 	for i := 1; i < len(siblings); i++ {
 		c := siblings[i]
-		val, err := evalNode(byParent, c, depth, expectedValues, userAttrs)
+		val, err := evalNode(byParent, c, depth, expectedVals, parsed)
 		if err != nil {
 			return false, err
 		}
 		if c.ConnectorOperator == enums.ConnectorOperatorOR {
 			result = result || val
 		} else {
-			result = result && val // AND is the default
+			result = result && val
 		}
 	}
 	return result, nil
 }
 
-// evalNode evaluates one condition node.
-// If the node has children and the depth limit has not been reached, it recurses
-// into the children group (the node itself acts as a logical bracket).
-// Otherwise it evaluates the condition's own attribute comparison directly.
-func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedValues map[string]json.RawMessage, userAttrs map[string]json.RawMessage) (bool, error) {
+func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
 	if depth < maxConditionDepth {
 		if children := byParent[c.ID.String()]; len(children) > 0 {
-			return evalSiblings(byParent, children, depth+1, expectedValues, userAttrs)
+			return evalSiblings(byParent, children, depth+1, expectedVals, parsed)
 		}
 	}
-	// Leaf node or depth limit reached — evaluate this condition directly.
-	return evaluateSingleCondition(c, expectedValues, userAttrs)
+	return evaluateSingleCondition(c, expectedVals, parsed)
 }
 
-// evaluateSingleCondition checks one RuleCondition against the user's live
-// attribute values.
-//
-// The actual value is always read from userAttrs[attributeID].
-// A nil userAttrs or a missing attribute key is treated as non-match (false, nil).
-//
-// Attribute.DataType (from the preloaded Attribute association) determines which
-// type-specific comparator is used.
-func evaluateSingleCondition(c entity.RuleCondition, expectedValues map[string]json.RawMessage, userAttrs map[string]json.RawMessage) (bool, error) {
-	expectedRaw, ok := expectedValues[c.AttributeID.String()]
-	if !ok {
-		return false, nil // no expected value stamped — non-match
-	}
+func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
+	attrKey := c.AttributeID.String()
 
-	if userAttrs == nil {
-		return false, nil // no user context — non-match
+	if !expectedVals.Has(attrKey) {
+		return false, nil
 	}
-
-	actualRaw, present := userAttrs[c.AttributeID.String()]
-	if !present {
-		return false, nil // missing attr = non-match
+	if parsed == nil {
+		return false, nil
 	}
-
+	if _, present := parsed.Raw(attrKey); !present {
+		return false, nil
+	}
 	if c.Attribute == nil {
 		return false, fmt.Errorf("condition %s: Attribute association not preloaded (need DataType)", c.ID)
 	}
 
-	return compareValues(
-		c.Attribute.DataType,
-		c.LogicalOperator,
-		actualRaw,
-		expectedRaw,
-	)
+	return compareValuesParsed(c.Attribute.DataType, c.LogicalOperator, parsed, attrKey, expectedVals)
 }
 
-// compareValues dispatches to the type-specific comparator.
-func compareValues(
+func compareValuesParsed(
 	dt enums.AttributeDataType,
 	op enums.LogicalOperator,
-	actualRaw, expectedRaw json.RawMessage,
+	parsed *ParsedUserAttrs,
+	attrKey string,
+	expectedVals *ParsedExpectedValues,
 ) (bool, error) {
 	switch dt {
 	case enums.AttributeDataTypeText:
-		return compareText(op, actualRaw, expectedRaw)
+		actual, ok := parsed.GetString(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text actual value for attr %s", attrKey)
+		}
+		return compareTextParsed(op, actual, attrKey, expectedVals)
 	case enums.AttributeDataTypeNumber:
-		return compareNumber(op, actualRaw, expectedRaw)
+		actual, ok := parsed.GetNumber(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse number actual value for attr %s", attrKey)
+		}
+		return compareNumberParsed(op, actual, attrKey, expectedVals)
 	case enums.AttributeDataTypeDate:
-		return compareDate(op, actualRaw, expectedRaw)
+		actual, ok := parsed.GetDate(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse date actual value for attr %s", attrKey)
+		}
+		return compareDateParsed(op, actual, attrKey, expectedVals)
 	case enums.AttributeDataTypeBoolean:
-		return compareBoolean(op, actualRaw, expectedRaw)
+		actual, ok := parsed.GetBool(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse boolean actual value for attr %s", attrKey)
+		}
+		return compareBooleanParsed(op, actual, attrKey, expectedVals)
 	default:
 		return false, fmt.Errorf("unsupported attribute data type %q", dt)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Per-type comparators
+// Comparators
 // ---------------------------------------------------------------------------
 
-// compareText handles Text data type: supports =, !=, IN operators.
-func compareText(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMessage) (bool, error) {
-	var actual string
-	if err := json.Unmarshal(actualRaw, &actual); err != nil {
-		return false, fmt.Errorf("parse text actual value: %w", err)
-	}
+func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
 	switch op {
 	case enums.LogicalOperatorEQ:
-		var expected string
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse text expected value: %w", err)
+		exp, ok := expectedVals.GetString(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual == expected, nil
+		return actual == exp, nil
 	case enums.LogicalOperatorNEQ:
-		var expected string
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse text expected value: %w", err)
+		exp, ok := expectedVals.GetString(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual != expected, nil
+		return actual != exp, nil
 	case enums.LogicalOperatorIN:
-		var expected []string
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse text IN values (want JSON string array): %w", err)
+		exps, ok := expectedVals.GetStringSlice(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
-		for _, v := range expected {
+		for _, v := range exps {
 			if actual == v {
 				return true, nil
 			}
@@ -223,70 +492,47 @@ func compareText(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMessag
 	}
 }
 
-// compareNumber handles Number data type: supports =, !=, <, <=, >, >=, IN, BETWEEN operators.
-//
-//   - IN  — expectedRaw must be a JSON number array, e.g. [1,2,3]
-//   - BETWEEN — expectedRaw must be a 2-element JSON array [min, max] (inclusive)
-func compareNumber(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMessage) (bool, error) {
-	var actual float64
-	if err := json.Unmarshal(actualRaw, &actual); err != nil {
-		return false, fmt.Errorf("parse number actual value: %w", err)
-	}
+func compareNumberParsed(op enums.LogicalOperator, actual float64, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
 	switch op {
-	case enums.LogicalOperatorEQ:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
+	case enums.LogicalOperatorEQ, enums.LogicalOperatorNEQ,
+		enums.LogicalOperatorLT, enums.LogicalOperatorLTE,
+		enums.LogicalOperatorGT, enums.LogicalOperatorGTE:
+		exp, ok := expectedVals.GetNumber(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse number expected value for attr %s", attrKey)
 		}
-		return actual == expected, nil
-	case enums.LogicalOperatorNEQ:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
+		switch op {
+		case enums.LogicalOperatorEQ:
+			return actual == exp, nil
+		case enums.LogicalOperatorNEQ:
+			return actual != exp, nil
+		case enums.LogicalOperatorLT:
+			return actual < exp, nil
+		case enums.LogicalOperatorLTE:
+			return actual <= exp, nil
+		case enums.LogicalOperatorGT:
+			return actual > exp, nil
+		default: // GTE
+			return actual >= exp, nil
 		}
-		return actual != expected, nil
-	case enums.LogicalOperatorLT:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
-		}
-		return actual < expected, nil
-	case enums.LogicalOperatorLTE:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
-		}
-		return actual <= expected, nil
-	case enums.LogicalOperatorGT:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
-		}
-		return actual > expected, nil
-	case enums.LogicalOperatorGTE:
-		var expected float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number expected value: %w", err)
-		}
-		return actual >= expected, nil
 	case enums.LogicalOperatorIN:
-		var expected []float64
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse number IN values (want JSON number array): %w", err)
+		exps, ok := expectedVals.GetNumberSlice(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse number IN values (want JSON number array) for attr %s", attrKey)
 		}
-		for _, v := range expected {
+		for _, v := range exps {
 			if actual == v {
 				return true, nil
 			}
 		}
 		return false, nil
 	case enums.LogicalOperatorBETWEEN:
-		var bounds []float64
-		if err := json.Unmarshal(expectedRaw, &bounds); err != nil {
-			return false, fmt.Errorf("parse number BETWEEN bounds (want [min,max]): %w", err)
+		bounds, ok := expectedVals.GetNumberSlice(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse number BETWEEN bounds (want JSON number array) for attr %s", attrKey)
 		}
 		if len(bounds) != 2 {
-			return false, fmt.Errorf("number BETWEEN expects exactly 2 bounds, got %d", len(bounds))
+			return false, fmt.Errorf("number BETWEEN expects exactly 2 bounds [min,max], got %d for attr %s", len(bounds), attrKey)
 		}
 		return actual >= bounds[0] && actual <= bounds[1], nil
 	default:
@@ -294,134 +540,60 @@ func compareNumber(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMess
 	}
 }
 
-// compareDate handles Date data type: supports =, !=, <, <=, >, >=, BETWEEN operators.
-//
-//   - Dates must be quoted JSON strings in RFC3339 or "YYYY-MM-DD" format.
-//   - BETWEEN — expectedRaw must be a 2-element JSON string array ["from","to"] (inclusive).
-func compareDate(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMessage) (bool, error) {
-	var actualStr string
-	if err := json.Unmarshal(actualRaw, &actualStr); err != nil {
-		return false, fmt.Errorf("parse date actual value: %w", err)
-	}
-	actual, err := parseDate(actualStr)
-	if err != nil {
-		return false, fmt.Errorf("date actual: %w", err)
-	}
-
+func compareDateParsed(op enums.LogicalOperator, actual time.Time, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
 	switch op {
-	case enums.LogicalOperatorEQ:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
+	case enums.LogicalOperatorEQ, enums.LogicalOperatorNEQ,
+		enums.LogicalOperatorLT, enums.LogicalOperatorLTE,
+		enums.LogicalOperatorGT, enums.LogicalOperatorGTE:
+		exp, ok := expectedVals.GetDate(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse date expected value for attr %s", attrKey)
 		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
+		switch op {
+		case enums.LogicalOperatorEQ:
+			return actual.Equal(exp), nil
+		case enums.LogicalOperatorNEQ:
+			return !actual.Equal(exp), nil
+		case enums.LogicalOperatorLT:
+			return actual.Before(exp), nil
+		case enums.LogicalOperatorLTE:
+			return actual.Before(exp) || actual.Equal(exp), nil
+		case enums.LogicalOperatorGT:
+			return actual.After(exp), nil
+		default: // GTE
+			return actual.After(exp) || actual.Equal(exp), nil
 		}
-		return actual.Equal(expected), nil
-	case enums.LogicalOperatorNEQ:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
-		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
-		}
-		return !actual.Equal(expected), nil
-	case enums.LogicalOperatorLT:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
-		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
-		}
-		return actual.Before(expected), nil
-	case enums.LogicalOperatorLTE:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
-		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
-		}
-		return actual.Before(expected) || actual.Equal(expected), nil
-	case enums.LogicalOperatorGT:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
-		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
-		}
-		return actual.After(expected), nil
-	case enums.LogicalOperatorGTE:
-		var s string
-		if err := json.Unmarshal(expectedRaw, &s); err != nil {
-			return false, fmt.Errorf("parse date expected value: %w", err)
-		}
-		expected, err := parseDate(s)
-		if err != nil {
-			return false, fmt.Errorf("date expected: %w", err)
-		}
-		return actual.After(expected) || actual.Equal(expected), nil
 	case enums.LogicalOperatorBETWEEN:
-		var bounds []string
-		if err := json.Unmarshal(expectedRaw, &bounds); err != nil {
-			return false, fmt.Errorf("parse date BETWEEN bounds (want [\"from\",\"to\"]): %w", err)
+		bounds, ok := expectedVals.GetDateBounds(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse date BETWEEN bounds (want [\"from\",\"to\"]) for attr %s", attrKey)
 		}
-		if len(bounds) != 2 {
-			return false, fmt.Errorf("date BETWEEN expects exactly 2 bounds, got %d", len(bounds))
-		}
-		lo, err := parseDate(bounds[0])
-		if err != nil {
-			return false, fmt.Errorf("date BETWEEN lower: %w", err)
-		}
-		hi, err := parseDate(bounds[1])
-		if err != nil {
-			return false, fmt.Errorf("date BETWEEN upper: %w", err)
-		}
-		return (actual.Equal(lo) || actual.After(lo)) && (actual.Equal(hi) || actual.Before(hi)), nil
+		return (actual.Equal(bounds[0]) || actual.After(bounds[0])) &&
+			(actual.Equal(bounds[1]) || actual.Before(bounds[1])), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Date attribute type", op)
 	}
 }
 
-// compareBoolean handles Boolean data type: supports = and != operators.
-func compareBoolean(op enums.LogicalOperator, actualRaw, expectedRaw json.RawMessage) (bool, error) {
-	var actual bool
-	if err := json.Unmarshal(actualRaw, &actual); err != nil {
-		return false, fmt.Errorf("parse boolean actual value: %w", err)
+func compareBooleanParsed(op enums.LogicalOperator, actual bool, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
+	exp, ok := expectedVals.GetBool(attrKey)
+	if !ok {
+		return false, fmt.Errorf("parse boolean expected value for attr %s", attrKey)
 	}
 	switch op {
 	case enums.LogicalOperatorEQ:
-		var expected bool
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse boolean expected value: %w", err)
-		}
-		return actual == expected, nil
+		return actual == exp, nil
 	case enums.LogicalOperatorNEQ:
-		var expected bool
-		if err := json.Unmarshal(expectedRaw, &expected); err != nil {
-			return false, fmt.Errorf("parse boolean expected value: %w", err)
-		}
-		return actual != expected, nil
+		return actual != exp, nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Boolean attribute type", op)
 	}
 }
 
-// logicConditionToRuleCondition converts a stored LogicCondition into a minimal
-// entity.RuleCondition stub used for tree traversal and leaf evaluation via the
-// unified evaluateSingleCondition path.
-//
-// The Attribute stub carries only DataType (needed by compareValues).
-// EvaluateLogicConditions always passes a non-nil userAttrs map, so the actual
-// comparison value comes from there — never from the Attribute entity.
+// ---------------------------------------------------------------------------
+// Logic condition helpers
+// ---------------------------------------------------------------------------
+
 func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
@@ -439,47 +611,9 @@ func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	return rc
 }
 
-// mustParseUUID parses a UUID string and returns uuid.Nil on error.
 func mustParseUUID(s string) uuid.UUID {
 	id, _ := uuid.Parse(s)
 	return id
-}
-
-// EvaluateLogicConditions evaluates a slice of LogicCondition (from PlacementLogicEntry)
-// against live user attribute values supplied in userAttrs (attr UUID → compact JSON value).
-//
-// It converts the LogicCondition slice into entity.RuleCondition stubs (including an
-// Attribute stub that carries the DataType) and delegates to the unified
-// evaluateConditionGroup chain. The "actual" value for each leaf is read from userAttrs;
-// the "expected" value is taken from LogicCondition.ExpectedValue.
-//
-// Returns false (not an error) when a required attribute is absent from userAttrs.
-func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[string]json.RawMessage) (bool, error) {
-	if len(conditions) == 0 {
-		return true, nil
-	}
-
-	// Convert LogicCondition → entity.RuleCondition stubs (includes Attribute.DataType stub).
-	rcs := make([]entity.RuleCondition, 0, len(conditions))
-	for _, lc := range conditions {
-		rcs = append(rcs, logicConditionToRuleCondition(lc))
-	}
-
-	// Build expectedValues map: attributeID → LogicCondition.ExpectedValue.
-	// Only stamp entries where ExpectedValue is a non-nil, non-JSON-null value.
-	// Conditions without a stamped expected value (e.g. parent/grouping nodes or
-	// missing rule_attribute rows) must be skipped so that the !ok guard in
-	// evaluateSingleCondition returns non-match rather than comparing against a
-	// zero-value produced by unmarshalling JSON null.
-	expectedValues := make(map[string]json.RawMessage, len(conditions))
-	for _, lc := range conditions {
-		if len(lc.ExpectedValue) > 0 && string(lc.ExpectedValue) != "null" {
-			expectedValues[lc.AttributeID] = lc.ExpectedValue
-		}
-	}
-
-	// Delegate to the unified chain; userAttrs provides the actual values.
-	return evaluateConditionGroup(rcs, expectedValues, userAttrs)
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +629,6 @@ func sortedVariations(rules []entity.Rule) []entity.Rule {
 	return out
 }
 
-// parseDate tries RFC3339 then "YYYY-MM-DD" date-only format.
 func parseDate(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil

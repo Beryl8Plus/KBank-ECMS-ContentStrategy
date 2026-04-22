@@ -13,6 +13,10 @@ service CMSRuntimeService {
   rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
 }
 
+// ---------------------------------------------------------------------------
+// Request / Response
+// ---------------------------------------------------------------------------
+
 // EvaluateRequest carries all data needed for evaluation.
 // The caller (cms-delivery) is responsible for querying the database.
 message EvaluateRequest {
@@ -24,17 +28,51 @@ message EvaluateRequest {
   // JSON bytes avoid duplicating the complex entity graph in proto.
   bytes schedules_json = 2;
 
-  // JSON-serialised live user attrs: attributeID -> compact JSON value.
-  // Non-empty means resolve ranked results. Empty means return logic
-  // entries for delivery-time evaluation.
+  // Native key-value pairs for user attributes (attributeID → compact JSON
+  // value). This replaces the previous bytes user_attrs_json field to
+  // eliminate JSON marshalling overhead on the gRPC wire path.
+  // An empty map means return logic entries for delivery-time evaluation.
+  map<string, bytes> user_attrs = 4;
+
+  // Deprecated: use user_attrs map instead. Kept temporarily for backward
+  // compatibility during rollout.
   bytes user_attrs_json = 3;
 }
+
+// EvaluateResponse carries evaluated ContentResult entries using the existing
+// proto ContentResult message. This replaces the previous bytes
+// logic_entries_json field to eliminate JSON marshalling overhead.
+message EvaluateResponse {
+  // Native repeated ContentResult entries.
+  repeated ContentResult results = 2;
+
+  // Deprecated: use results repeated field instead.
+  bytes logic_entries_json = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Shared messages
+// ---------------------------------------------------------------------------
 
 // Campaign carries campaign metadata for AUDIENCE / SALES_TARGET rule types.
 message Campaign {
   string code       = 1;
   string start_date = 2;
   string end_date   = 3;
+}
+
+// LogicCondition is a flattened, self-contained representation of a single
+// rule condition. It carries everything needed to evaluate the condition
+// against live user attributes without a DB hit.
+message LogicCondition {
+  string condition_id        = 1;
+  string parent_condition_id = 2;
+  string attribute_id        = 3;
+  string data_type           = 4;
+  string logical_operator    = 5;
+  string connector_operator  = 6;
+  int32  sequence            = 7;
+  bytes  expected_value      = 8; // compact JSON from RuleAttribute.Value
 }
 
 // ContentResult is a single evaluated and ranked content item.
@@ -48,11 +86,8 @@ message ContentResult {
   string            start_date_time  = 7;
   string            end_date_time    = 8;
   optional Campaign campaign         = 9;
-}
-
-// EvaluateResponse carries JSON-serialised PlacementLogicEntry
-// records. Using bytes avoids duplicating the full domain model in proto.
-message EvaluateResponse {
-  // JSON-serialised []domainservice.PlacementLogicEntry.
-  bytes logic_entries_json = 1;
+  string            logic_hash       = 10;
+  string            logic_expr       = 11;
+  bool              logic_eval       = 12;
+  repeated LogicCondition conditions = 13;
 }

@@ -72,6 +72,9 @@ func correlationIDUnaryInterceptor(
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
 
+// buildEvaluateRequest converts domain types to the native proto request.
+// Schedules are still JSON-serialised (complex entity graph) but user attrs
+// use the native map<string,bytes> field to avoid JSON marshalling.
 func (c *RuntimeGRPCClient) buildEvaluateRequest(
 	placementName string,
 	schedules []*entity.Schedule,
@@ -82,18 +85,16 @@ func (c *RuntimeGRPCClient) buildEvaluateRequest(
 		return nil, fmt.Errorf("cms-delivery: marshal schedules for gRPC: %w", err)
 	}
 
-	var userAttrsJSON []byte
-	if len(userAttrs) > 0 {
-		userAttrsJSON, err = json.Marshal(userAttrs)
-		if err != nil {
-			return nil, fmt.Errorf("cms-delivery: marshal user attrs for gRPC: %w", err)
-		}
+	// Convert map[string]json.RawMessage → map[string][]byte (zero-copy).
+	protoAttrs := make(map[string][]byte, len(userAttrs))
+	for k, v := range userAttrs {
+		protoAttrs[k] = []byte(v)
 	}
 
 	return &cmsruntimev1.EvaluateRequest{
 		PlacementName: placementName,
 		SchedulesJson: schedulesJSON,
-		UserAttrsJson: userAttrsJSON,
+		UserAttrs:     protoAttrs,
 	}, nil
 }
 
@@ -128,13 +129,69 @@ func (c *RuntimeGRPCClient) Evaluate(
 		return nil, fmt.Errorf("cms-delivery gRPC Evaluate(%s): %w", placementName, err)
 	}
 
+	// Prefer native proto results; fall back to legacy JSON bytes.
+	if len(resp.Results) > 0 {
+		return protoResultsToDomain(resp.Results), nil
+	}
+
+	// Legacy fallback: read JSON bytes.
 	if len(resp.LogicEntriesJson) == 0 {
 		return nil, nil
 	}
-
 	var entries []dto.ContentResult
 	if err := json.Unmarshal(resp.LogicEntriesJson, &entries); err != nil {
 		return nil, fmt.Errorf("cms-delivery gRPC: unmarshal logic entries: %w", err)
 	}
 	return entries, nil
+}
+
+// ---------------------------------------------------------------------------
+// Proto ↔ Domain converters
+// ---------------------------------------------------------------------------
+
+// protoResultsToDomain converts repeated proto ContentResult to domain DTOs.
+func protoResultsToDomain(pbResults []*cmsruntimev1.ContentResult) []dto.ContentResult {
+	results := make([]dto.ContentResult, 0, len(pbResults))
+	for _, pb := range pbResults {
+		if pb == nil {
+			continue
+		}
+		r := dto.ContentResult{
+			DecisionRuleId: pb.DecisionRuleId,
+			ContentPath:    pb.ContentPath,
+			RuleSetType:    pb.RuleSetType,
+			Source:         pb.Source,
+			Score:          pb.Score,
+			StartDateTime:  pb.StartDateTime,
+			EndDateTime:    pb.EndDateTime,
+			LogicHash:      pb.LogicHash,
+			LogicExpr:      pb.LogicExpr,
+			LogicEval:      pb.LogicEval,
+		}
+		if pb.Variation != nil {
+			v := *pb.Variation
+			r.Variation = &v
+		}
+		if pb.Campaign != nil {
+			r.Campaign = &dto.Campaign{
+				Code:      pb.Campaign.Code,
+				StartDate: pb.Campaign.StartDate,
+				EndDate:   pb.Campaign.EndDate,
+			}
+		}
+		for _, lc := range pb.Conditions {
+			r.Conditions = append(r.Conditions, dto.LogicCondition{
+				ConditionID:       lc.ConditionId,
+				ParentConditionID: lc.ParentConditionId,
+				AttributeID:       lc.AttributeId,
+				DataType:          lc.DataType,
+				LogicalOperator:   lc.LogicalOperator,
+				ConnectorOperator: lc.ConnectorOperator,
+				Sequence:          int(lc.Sequence),
+				ExpectedValue:     json.RawMessage(lc.ExpectedValue),
+			})
+		}
+		results = append(results, r)
+	}
+	return results
 }

@@ -31,9 +31,13 @@ type EvaluateRequest struct {
 	// Placement, RuleConditions (+ Attribute), and Rules (+ RuleAttributes).
 	// JSON bytes avoid duplicating the complex entity graph in proto.
 	SchedulesJson []byte `protobuf:"bytes,2,opt,name=schedules_json,json=schedulesJson,proto3" json:"schedules_json,omitempty"`
-	// JSON-serialised live user attrs: attributeID -> compact JSON value.
-	// Non-empty means resolve ranked results. Empty means return logic
-	// entries for delivery-time evaluation.
+	// Native key-value pairs for user attributes (attributeID → compact JSON
+	// value). This replaces the previous bytes user_attrs_json field to
+	// eliminate JSON marshalling overhead on the gRPC wire path.
+	// An empty map means return logic entries for delivery-time evaluation.
+	UserAttrs map[string][]byte `protobuf:"bytes,4,rep,name=user_attrs,json=userAttrs,proto3" json:"user_attrs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Deprecated: use user_attrs map instead. Kept temporarily for backward
+	// compatibility during rollout.
 	UserAttrsJson []byte `protobuf:"bytes,3,opt,name=user_attrs_json,json=userAttrsJson,proto3" json:"user_attrs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -83,9 +87,73 @@ func (x *EvaluateRequest) GetSchedulesJson() []byte {
 	return nil
 }
 
+func (x *EvaluateRequest) GetUserAttrs() map[string][]byte {
+	if x != nil {
+		return x.UserAttrs
+	}
+	return nil
+}
+
 func (x *EvaluateRequest) GetUserAttrsJson() []byte {
 	if x != nil {
 		return x.UserAttrsJson
+	}
+	return nil
+}
+
+// EvaluateResponse carries evaluated ContentResult entries using the existing
+// proto ContentResult message. This replaces the previous bytes
+// logic_entries_json field to eliminate JSON marshalling overhead.
+type EvaluateResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Native repeated ContentResult entries.
+	Results []*ContentResult `protobuf:"bytes,2,rep,name=results,proto3" json:"results,omitempty"`
+	// Deprecated: use results repeated field instead.
+	LogicEntriesJson []byte `protobuf:"bytes,1,opt,name=logic_entries_json,json=logicEntriesJson,proto3" json:"logic_entries_json,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *EvaluateResponse) Reset() {
+	*x = EvaluateResponse{}
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EvaluateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EvaluateResponse) ProtoMessage() {}
+
+func (x *EvaluateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EvaluateResponse.ProtoReflect.Descriptor instead.
+func (*EvaluateResponse) Descriptor() ([]byte, []int) {
+	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *EvaluateResponse) GetResults() []*ContentResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *EvaluateResponse) GetLogicEntriesJson() []byte {
+	if x != nil {
+		return x.LogicEntriesJson
 	}
 	return nil
 }
@@ -102,7 +170,7 @@ type Campaign struct {
 
 func (x *Campaign) Reset() {
 	*x = Campaign{}
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[1]
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -114,7 +182,7 @@ func (x *Campaign) String() string {
 func (*Campaign) ProtoMessage() {}
 
 func (x *Campaign) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[1]
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -127,7 +195,7 @@ func (x *Campaign) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Campaign.ProtoReflect.Descriptor instead.
 func (*Campaign) Descriptor() ([]byte, []int) {
-	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{1}
+	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Campaign) GetCode() string {
@@ -151,6 +219,109 @@ func (x *Campaign) GetEndDate() string {
 	return ""
 }
 
+// LogicCondition is a flattened, self-contained representation of a single
+// rule condition. It carries everything needed to evaluate the condition
+// against live user attributes without a DB hit.
+type LogicCondition struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ConditionId       string                 `protobuf:"bytes,1,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	ParentConditionId string                 `protobuf:"bytes,2,opt,name=parent_condition_id,json=parentConditionId,proto3" json:"parent_condition_id,omitempty"`
+	AttributeId       string                 `protobuf:"bytes,3,opt,name=attribute_id,json=attributeId,proto3" json:"attribute_id,omitempty"`
+	DataType          string                 `protobuf:"bytes,4,opt,name=data_type,json=dataType,proto3" json:"data_type,omitempty"`
+	LogicalOperator   string                 `protobuf:"bytes,5,opt,name=logical_operator,json=logicalOperator,proto3" json:"logical_operator,omitempty"`
+	ConnectorOperator string                 `protobuf:"bytes,6,opt,name=connector_operator,json=connectorOperator,proto3" json:"connector_operator,omitempty"`
+	Sequence          int32                  `protobuf:"varint,7,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	ExpectedValue     []byte                 `protobuf:"bytes,8,opt,name=expected_value,json=expectedValue,proto3" json:"expected_value,omitempty"` // compact JSON from RuleAttribute.Value
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *LogicCondition) Reset() {
+	*x = LogicCondition{}
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogicCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogicCondition) ProtoMessage() {}
+
+func (x *LogicCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogicCondition.ProtoReflect.Descriptor instead.
+func (*LogicCondition) Descriptor() ([]byte, []int) {
+	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *LogicCondition) GetConditionId() string {
+	if x != nil {
+		return x.ConditionId
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetParentConditionId() string {
+	if x != nil {
+		return x.ParentConditionId
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetAttributeId() string {
+	if x != nil {
+		return x.AttributeId
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetDataType() string {
+	if x != nil {
+		return x.DataType
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetLogicalOperator() string {
+	if x != nil {
+		return x.LogicalOperator
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetConnectorOperator() string {
+	if x != nil {
+		return x.ConnectorOperator
+	}
+	return ""
+}
+
+func (x *LogicCondition) GetSequence() int32 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *LogicCondition) GetExpectedValue() []byte {
+	if x != nil {
+		return x.ExpectedValue
+	}
+	return nil
+}
+
 // ContentResult is a single evaluated and ranked content item.
 type ContentResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -163,13 +334,17 @@ type ContentResult struct {
 	StartDateTime  string                 `protobuf:"bytes,7,opt,name=start_date_time,json=startDateTime,proto3" json:"start_date_time,omitempty"`
 	EndDateTime    string                 `protobuf:"bytes,8,opt,name=end_date_time,json=endDateTime,proto3" json:"end_date_time,omitempty"`
 	Campaign       *Campaign              `protobuf:"bytes,9,opt,name=campaign,proto3,oneof" json:"campaign,omitempty"`
+	LogicHash      string                 `protobuf:"bytes,10,opt,name=logic_hash,json=logicHash,proto3" json:"logic_hash,omitempty"`
+	LogicExpr      string                 `protobuf:"bytes,11,opt,name=logic_expr,json=logicExpr,proto3" json:"logic_expr,omitempty"`
+	LogicEval      bool                   `protobuf:"varint,12,opt,name=logic_eval,json=logicEval,proto3" json:"logic_eval,omitempty"`
+	Conditions     []*LogicCondition      `protobuf:"bytes,13,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ContentResult) Reset() {
 	*x = ContentResult{}
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[2]
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +356,7 @@ func (x *ContentResult) String() string {
 func (*ContentResult) ProtoMessage() {}
 
 func (x *ContentResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[2]
+	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +369,7 @@ func (x *ContentResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentResult.ProtoReflect.Descriptor instead.
 func (*ContentResult) Descriptor() ([]byte, []int) {
-	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{2}
+	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ContentResult) GetContentPath() string {
@@ -260,49 +435,30 @@ func (x *ContentResult) GetCampaign() *Campaign {
 	return nil
 }
 
-// EvaluateResponse carries JSON-serialised PlacementLogicEntry
-// records. Using bytes avoids duplicating the full domain model in proto.
-type EvaluateResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// JSON-serialised []domainservice.PlacementLogicEntry.
-	LogicEntriesJson []byte `protobuf:"bytes,1,opt,name=logic_entries_json,json=logicEntriesJson,proto3" json:"logic_entries_json,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *EvaluateResponse) Reset() {
-	*x = EvaluateResponse{}
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EvaluateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EvaluateResponse) ProtoMessage() {}
-
-func (x *EvaluateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_cms_runtime_v1_runtime_proto_msgTypes[3]
+func (x *ContentResult) GetLogicHash() string {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+		return x.LogicHash
 	}
-	return mi.MessageOf(x)
+	return ""
 }
 
-// Deprecated: Use EvaluateResponse.ProtoReflect.Descriptor instead.
-func (*EvaluateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *EvaluateResponse) GetLogicEntriesJson() []byte {
+func (x *ContentResult) GetLogicExpr() string {
 	if x != nil {
-		return x.LogicEntriesJson
+		return x.LogicExpr
+	}
+	return ""
+}
+
+func (x *ContentResult) GetLogicEval() bool {
+	if x != nil {
+		return x.LogicEval
+	}
+	return false
+}
+
+func (x *ContentResult) GetConditions() []*LogicCondition {
+	if x != nil {
+		return x.Conditions
 	}
 	return nil
 }
@@ -311,16 +467,33 @@ var File_proto_cms_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_proto_cms_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\"proto/cms_runtime/v1/runtime.proto\x12\x0ecms_runtime.v1\"\x87\x01\n" +
+	"\"proto/cms_runtime/v1/runtime.proto\x12\x0ecms_runtime.v1\"\x94\x02\n" +
 	"\x0fEvaluateRequest\x12%\n" +
 	"\x0eplacement_name\x18\x01 \x01(\tR\rplacementName\x12%\n" +
-	"\x0eschedules_json\x18\x02 \x01(\fR\rschedulesJson\x12&\n" +
-	"\x0fuser_attrs_json\x18\x03 \x01(\fR\ruserAttrsJson\"X\n" +
+	"\x0eschedules_json\x18\x02 \x01(\fR\rschedulesJson\x12M\n" +
+	"\n" +
+	"user_attrs\x18\x04 \x03(\v2..cms_runtime.v1.EvaluateRequest.UserAttrsEntryR\tuserAttrs\x12&\n" +
+	"\x0fuser_attrs_json\x18\x03 \x01(\fR\ruserAttrsJson\x1a<\n" +
+	"\x0eUserAttrsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"y\n" +
+	"\x10EvaluateResponse\x127\n" +
+	"\aresults\x18\x02 \x03(\v2\x1d.cms_runtime.v1.ContentResultR\aresults\x12,\n" +
+	"\x12logic_entries_json\x18\x01 \x01(\fR\x10logicEntriesJson\"X\n" +
 	"\bCampaign\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1d\n" +
 	"\n" +
 	"start_date\x18\x02 \x01(\tR\tstartDate\x12\x19\n" +
-	"\bend_date\x18\x03 \x01(\tR\aendDate\"\xf3\x02\n" +
+	"\bend_date\x18\x03 \x01(\tR\aendDate\"\xc0\x02\n" +
+	"\x0eLogicCondition\x12!\n" +
+	"\fcondition_id\x18\x01 \x01(\tR\vconditionId\x12.\n" +
+	"\x13parent_condition_id\x18\x02 \x01(\tR\x11parentConditionId\x12!\n" +
+	"\fattribute_id\x18\x03 \x01(\tR\vattributeId\x12\x1b\n" +
+	"\tdata_type\x18\x04 \x01(\tR\bdataType\x12)\n" +
+	"\x10logical_operator\x18\x05 \x01(\tR\x0flogicalOperator\x12-\n" +
+	"\x12connector_operator\x18\x06 \x01(\tR\x11connectorOperator\x12\x1a\n" +
+	"\bsequence\x18\a \x01(\x05R\bsequence\x12%\n" +
+	"\x0eexpected_value\x18\b \x01(\fR\rexpectedValue\"\x90\x04\n" +
 	"\rContentResult\x12!\n" +
 	"\fcontent_path\x18\x01 \x01(\tR\vcontentPath\x12(\n" +
 	"\x10decision_rule_id\x18\x02 \x01(\tR\x0edecisionRuleId\x12\"\n" +
@@ -330,12 +503,20 @@ const file_proto_cms_runtime_v1_runtime_proto_rawDesc = "" +
 	"\tvariation\x18\x06 \x01(\tH\x00R\tvariation\x88\x01\x01\x12&\n" +
 	"\x0fstart_date_time\x18\a \x01(\tR\rstartDateTime\x12\"\n" +
 	"\rend_date_time\x18\b \x01(\tR\vendDateTime\x129\n" +
-	"\bcampaign\x18\t \x01(\v2\x18.cms_runtime.v1.CampaignH\x01R\bcampaign\x88\x01\x01B\f\n" +
+	"\bcampaign\x18\t \x01(\v2\x18.cms_runtime.v1.CampaignH\x01R\bcampaign\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"logic_hash\x18\n" +
+	" \x01(\tR\tlogicHash\x12\x1d\n" +
+	"\n" +
+	"logic_expr\x18\v \x01(\tR\tlogicExpr\x12\x1d\n" +
+	"\n" +
+	"logic_eval\x18\f \x01(\bR\tlogicEval\x12>\n" +
+	"\n" +
+	"conditions\x18\r \x03(\v2\x1e.cms_runtime.v1.LogicConditionR\n" +
+	"conditionsB\f\n" +
 	"\n" +
 	"_variationB\v\n" +
-	"\t_campaign\"@\n" +
-	"\x10EvaluateResponse\x12,\n" +
-	"\x12logic_entries_json\x18\x01 \x01(\fR\x10logicEntriesJson2b\n" +
+	"\t_campaign2b\n" +
 	"\x11CMSRuntimeService\x12M\n" +
 	"\bEvaluate\x12\x1f.cms_runtime.v1.EvaluateRequest\x1a .cms_runtime.v1.EvaluateResponseB9Z7kbank-ecms/internal/grpc/pb/cms_runtime/v1;cmsruntimev1b\x06proto3"
 
@@ -351,22 +532,27 @@ func file_proto_cms_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_proto_cms_runtime_v1_runtime_proto_rawDescData
 }
 
-var file_proto_cms_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_cms_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_cms_runtime_v1_runtime_proto_goTypes = []any{
 	(*EvaluateRequest)(nil),  // 0: cms_runtime.v1.EvaluateRequest
-	(*Campaign)(nil),         // 1: cms_runtime.v1.Campaign
-	(*ContentResult)(nil),    // 2: cms_runtime.v1.ContentResult
-	(*EvaluateResponse)(nil), // 3: cms_runtime.v1.EvaluateResponse
+	(*EvaluateResponse)(nil), // 1: cms_runtime.v1.EvaluateResponse
+	(*Campaign)(nil),         // 2: cms_runtime.v1.Campaign
+	(*LogicCondition)(nil),   // 3: cms_runtime.v1.LogicCondition
+	(*ContentResult)(nil),    // 4: cms_runtime.v1.ContentResult
+	nil,                      // 5: cms_runtime.v1.EvaluateRequest.UserAttrsEntry
 }
 var file_proto_cms_runtime_v1_runtime_proto_depIdxs = []int32{
-	1, // 0: cms_runtime.v1.ContentResult.campaign:type_name -> cms_runtime.v1.Campaign
-	0, // 1: cms_runtime.v1.CMSRuntimeService.Evaluate:input_type -> cms_runtime.v1.EvaluateRequest
-	3, // 2: cms_runtime.v1.CMSRuntimeService.Evaluate:output_type -> cms_runtime.v1.EvaluateResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 0: cms_runtime.v1.EvaluateRequest.user_attrs:type_name -> cms_runtime.v1.EvaluateRequest.UserAttrsEntry
+	4, // 1: cms_runtime.v1.EvaluateResponse.results:type_name -> cms_runtime.v1.ContentResult
+	2, // 2: cms_runtime.v1.ContentResult.campaign:type_name -> cms_runtime.v1.Campaign
+	3, // 3: cms_runtime.v1.ContentResult.conditions:type_name -> cms_runtime.v1.LogicCondition
+	0, // 4: cms_runtime.v1.CMSRuntimeService.Evaluate:input_type -> cms_runtime.v1.EvaluateRequest
+	1, // 5: cms_runtime.v1.CMSRuntimeService.Evaluate:output_type -> cms_runtime.v1.EvaluateResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_cms_runtime_v1_runtime_proto_init() }
@@ -374,14 +560,14 @@ func file_proto_cms_runtime_v1_runtime_proto_init() {
 	if File_proto_cms_runtime_v1_runtime_proto != nil {
 		return
 	}
-	file_proto_cms_runtime_v1_runtime_proto_msgTypes[2].OneofWrappers = []any{}
+	file_proto_cms_runtime_v1_runtime_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_cms_runtime_v1_runtime_proto_rawDesc), len(file_proto_cms_runtime_v1_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

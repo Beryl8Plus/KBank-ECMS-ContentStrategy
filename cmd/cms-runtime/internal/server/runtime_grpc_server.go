@@ -45,14 +45,6 @@ type scheduleEvaluation struct {
 	logicEntries []dto.ContentResult
 }
 
-func flattenPlacementLogicEntries(evaluations []scheduleEvaluation) []dto.ContentResult {
-	entries := make([]dto.ContentResult, 0)
-	for _, evaluation := range evaluations {
-		entries = append(entries, evaluation.logicEntries...)
-	}
-	return entries
-}
-
 func decodeSchedules(req *cmsruntimev1.EvaluateRequest) ([]*entity.Schedule, error) {
 	var schedules []*entity.Schedule
 	if err := json.Unmarshal(req.SchedulesJson, &schedules); err != nil {
@@ -61,7 +53,20 @@ func decodeSchedules(req *cmsruntimev1.EvaluateRequest) ([]*entity.Schedule, err
 	return schedules, nil
 }
 
+// decodeUserAttrs extracts user attributes from the request.
+// It prefers the native proto map field (UserAttrs) over the legacy
+// JSON bytes (UserAttrsJson), eliminating JSON unmarshalling overhead.
 func decodeUserAttrs(req *cmsruntimev1.EvaluateRequest) (map[string]json.RawMessage, error) {
+	// Prefer native proto map.
+	if len(req.UserAttrs) > 0 {
+		attrs := make(map[string]json.RawMessage, len(req.UserAttrs))
+		for k, v := range req.UserAttrs {
+			attrs[k] = json.RawMessage(v)
+		}
+		return attrs, nil
+	}
+
+	// Legacy fallback: JSON bytes.
 	if len(req.UserAttrsJson) == 0 {
 		return nil, nil
 	}
@@ -161,6 +166,9 @@ func allMatchingLogicEntries(entries []dto.ContentResult, userAttrs map[string]j
 // cms-delivery can cache and evaluate them later. When user attributes are
 // present, it resolves ranked content results while preserving the legacy
 // fallback to rule.Score when no variation matches.
+//
+// The response now uses native repeated ContentResult proto messages instead
+// of JSON-serialised bytes to eliminate marshalling overhead.
 func (s *RuntimeGRPCServer) Evaluate(
 	ctx context.Context,
 	req *cmsruntimev1.EvaluateRequest,
@@ -179,21 +187,13 @@ func (s *RuntimeGRPCServer) Evaluate(
 		return nil, err
 	}
 	if len(userAttrs) == 0 {
-		return &cmsruntimev1.EvaluateResponse{LogicEntriesJson: nil}, nil
+		return &cmsruntimev1.EvaluateResponse{}, nil
 	}
 
 	// 1. Resolve each schedule to its best-ranked result.
 	now := time.Now().UTC().Format(time.RFC3339)
 	best := make(map[string]dto.ContentResult)
 	evaluations := buildScheduleEvaluations(schedules)
-	if len(userAttrs) == 0 {
-		data, err := json.Marshal(flattenPlacementLogicEntries(evaluations))
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "cms-runtime gRPC: marshal logic entries: %v", err)
-		}
-
-		return &cmsruntimev1.EvaluateResponse{LogicEntriesJson: data}, nil
-	}
 
 	for _, evaluation := range evaluations {
 		candidates, ok := resolveScheduleResult(evaluation, userAttrs, now)
@@ -212,14 +212,60 @@ func (s *RuntimeGRPCServer) Evaluate(
 	for _, r := range best {
 		items = append(items, r)
 	}
-	// Sort by score descending; stable sort preserves original order for equal scores (e.g., from the same rule).
+	// Sort by score descending; stable sort preserves original order for equal scores.
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Score > items[j].Score
 	})
-	data, err := json.Marshal(items)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cms-runtime gRPC: marshal logic entries: %v", err)
-	}
 
-	return &cmsruntimev1.EvaluateResponse{LogicEntriesJson: data}, nil
+	// 3. Convert domain DTOs to native proto ContentResult messages.
+	pbResults := domainResultsToProto(items)
+
+	return &cmsruntimev1.EvaluateResponse{Results: pbResults}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Domain → Proto converters
+// ---------------------------------------------------------------------------
+
+// domainResultsToProto converts domain ContentResult DTOs to proto messages.
+func domainResultsToProto(items []dto.ContentResult) []*cmsruntimev1.ContentResult {
+	results := make([]*cmsruntimev1.ContentResult, 0, len(items))
+	for _, item := range items {
+		pb := &cmsruntimev1.ContentResult{
+			ContentPath:    item.ContentPath,
+			DecisionRuleId: item.DecisionRuleId,
+			RuleSetType:    item.RuleSetType,
+			Source:         item.Source,
+			Score:          item.Score,
+			StartDateTime:  item.StartDateTime,
+			EndDateTime:    item.EndDateTime,
+			LogicHash:      item.LogicHash,
+			LogicExpr:      item.LogicExpr,
+			LogicEval:      item.LogicEval,
+		}
+		if item.Variation != nil {
+			pb.Variation = item.Variation
+		}
+		if item.Campaign != nil {
+			pb.Campaign = &cmsruntimev1.Campaign{
+				Code:      item.Campaign.Code,
+				StartDate: item.Campaign.StartDate,
+				EndDate:   item.Campaign.EndDate,
+			}
+		}
+		for _, lc := range item.Conditions {
+			pb.Conditions = append(pb.Conditions, &cmsruntimev1.LogicCondition{
+				ConditionId:       lc.ConditionID,
+				ParentConditionId: lc.ParentConditionID,
+				AttributeId:       lc.AttributeID,
+				DataType:          lc.DataType,
+				LogicalOperator:   lc.LogicalOperator,
+				ConnectorOperator: lc.ConnectorOperator,
+				Sequence:          int32(lc.Sequence),
+				ExpectedValue:     []byte(lc.ExpectedValue),
+			})
+		}
+		results = append(results, pb)
+	}
+	return results
 }

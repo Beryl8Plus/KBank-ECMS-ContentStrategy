@@ -17,6 +17,7 @@ import (
 	"kbank-ecms/pkg/util"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 // cmsPlacementKey returns the Redis key for the given placement name.
@@ -172,7 +173,6 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	if cisID == "" || userID == "" {
 		return nil, fmt.Errorf("GetPersonalizedContent: cisID and userID must not be empty")
 	}
-	result := make([]dto.ContentResult, 0)
 	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, cisID, userAttrs)
 	if resolveErr != nil {
 		logger.LSystem(ctx, entity.SystemLog{
@@ -227,85 +227,116 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		}
 	}
 
-	for _, name := range placementNames {
-		personalKey := cmsPersonalizedPlacementKey(cisID, name)
-		var entries []dto.ContentResult
+	// 3. Process each placement concurrently via errgroup.
+	// Bounded concurrency avoids overwhelming the gRPC backend during
+	// cache-miss storms while still providing significant speedup.
+	// Each goroutine writes to its own slot (no mutex needed), preserving
+	// placementNames order in the merged result.
+	const maxPlacementConcurrency = 10
+	results := make([][]dto.ContentResult, len(placementNames))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxPlacementConcurrency)
 
-		// Check the personalized cache first (L3). This should hit when the same user requests the same placement multiple times within resultTTL.
-		if cacheEntries, cacheErr := getCache[[]dto.ContentResult](
-			ctx,
-			s.cacheMemory,
-			s.cacheRepo,
-			personalKey,
-		); cacheErr == nil {
-			// Cache hit for logic entries.
-			entries = cacheEntries
-		} else if s.evaluator != nil && s.occurrenceRepo != nil {
-			// gRPC fallback — one or more rules were missing from cache.
-			grpcEntries, grpcErr := s.evaluatePlacementLogicViaGRPC(ctx, name, filtered[name], resolvedUserAttrs)
-			if grpcErr != nil {
-				logger.LSystem(ctx, entity.SystemLog{
-					Service: "CMS-DELIVERY",
-					Level:   "WARN",
-					Message: fmt.Sprintf("gRPC placement-logic fallback failed for %q: %v", name, grpcErr),
-				})
-				// On gRPC failure, skip this placement silently (do not return an error, do not include results).
-				continue
+	for i, name := range placementNames {
+		g.Go(func() error {
+			passing := s.evaluatePlacement(gctx, cisID, userID, name, filtered[name], resolvedUserAttrs)
+			if len(passing) > 0 {
+				results[i] = passing
 			}
-			entries = grpcEntries
-		} else {
-			// No logic cache and no gRPC fallback — skip silently.
+			return nil // individual placement failures are non-fatal
+		})
+	}
+
+	// Wait for all goroutines; errors are swallowed (non-fatal per spec).
+	_ = g.Wait()
+
+	var result []dto.ContentResult
+	for _, r := range results {
+		result = append(result, r...)
+	}
+	return result, nil
+}
+
+// evaluatePlacement handles cache lookup, gRPC fallback, and per-entry
+// evaluation for a single placement. Extracted to keep the errgroup callback
+// focused and testable independently.
+func (s *CMSDeliveryService) evaluatePlacement(
+	ctx context.Context,
+	cisID, userID, name string,
+	schedules []*entity.Schedule,
+	resolvedUserAttrs map[string]json.RawMessage,
+) []dto.ContentResult {
+	personalKey := cmsPersonalizedPlacementKey(cisID, name)
+	var entries []dto.ContentResult
+
+	// Check the personalized cache first (L3).
+	if cacheEntries, cacheErr := getCache[[]dto.ContentResult](
+		ctx,
+		s.cacheMemory,
+		s.cacheRepo,
+		personalKey,
+	); cacheErr == nil {
+		entries = cacheEntries
+	} else if s.evaluator != nil && s.occurrenceRepo != nil {
+		// gRPC fallback — one or more rules were missing from cache.
+		grpcEntries, grpcErr := s.evaluatePlacementLogicViaGRPC(ctx, name, schedules, resolvedUserAttrs)
+		if grpcErr != nil {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Level:   "WARN",
+				Message: fmt.Sprintf("gRPC placement-logic fallback failed for %q: %v", name, grpcErr),
+			})
+			return nil
+		}
+		entries = grpcEntries
+	} else {
+		return nil
+	}
+
+	// 4. Evaluate each entry against user attrs.
+	var passing []dto.ContentResult
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, entry := range entries {
+		if entry.LogicHash == "" {
+			r := entry
+			r.LogicEval = true
+			r.EvaluatedAt = now
+			passing = append(passing, r)
 			continue
 		}
 
-		// 4. Evaluate each entry against user attrs.
-		var passing []dto.ContentResult
-		now := time.Now().UTC().Format(time.RFC3339)
-		for _, entry := range entries {
-			if entry.LogicHash == "" {
-				// No logic hash means no user-dependent conditions — treat as match.
-				r := entry
-				r.LogicEval = true
-				r.EvaluatedAt = now
-				passing = append(passing, r)
-				continue
-			}
-
-			// Check per-user eval cache first.
-			evalKey := cmsUserEvalKey(userID, entry.LogicHash)
-			if cached, cacheErr := getCache[string](ctx, s.cacheMemory, s.cacheRepo, evalKey); cacheErr == nil {
-				if cached == "true" {
-					r := entry
-					r.EvaluatedAt = now
-					passing = append(passing, r)
-				}
-				continue
-			}
-
-			// Cache miss — evaluate live.
-			cacheVal := "false"
-			if entry.LogicEval {
-				cacheVal = "true"
+		// Check per-user eval cache first.
+		evalKey := cmsUserEvalKey(userID, entry.LogicHash)
+		if cached, cacheErr := getCache[string](ctx, s.cacheMemory, s.cacheRepo, evalKey); cacheErr == nil {
+			if cached == "true" {
 				r := entry
 				r.EvaluatedAt = now
 				passing = append(passing, r)
 			}
-			_ = setCache(ctx, s.cacheMemory, s.cacheRepo, evalKey, cacheVal, s.resultTTL)
+			continue
 		}
 
-		logger.LSystem(ctx, entity.SystemLog{
-			Service: "CMS-DELIVERY",
-			Level:   "INFO",
-			Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), name),
-		})
-		if len(passing) > 0 {
-			_ = setCache(ctx, s.cacheMemory, s.cacheRepo, personalKey, passing, s.resultTTL)
+		// Cache miss — evaluate live.
+		cacheVal := "false"
+		if entry.LogicEval {
+			cacheVal = "true"
+			r := entry
+			r.EvaluatedAt = now
+			passing = append(passing, r)
 		}
-
-		result = append(result, passing...)
+		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, evalKey, cacheVal, s.resultTTL)
 	}
 
-	return result, nil
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "CMS-DELIVERY",
+		Level:   "INFO",
+		Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), name),
+	})
+	if len(passing) > 0 {
+		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, personalKey, passing, s.resultTTL)
+	}
+
+	return passing
 }
 
 // evaluatePlacementLogicViaGRPC queries active schedules, delegates ContentResult

@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"kbank-ecms/internal/delivery/http/dto"
@@ -209,6 +210,270 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		}
 		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond1, cond2}, userAttrs)
 		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestParsedUserAttrs_ConcurrentAccess — go test -race must pass
+// ---------------------------------------------------------------------------
+
+func TestParsedUserAttrs_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	// ParsedUserAttrs is documented as single-goroutine per request.
+	// This test verifies the removed mutex does not hide a real race:
+	// each goroutine must use its own instance (as EvaluateRuleScore does).
+	const goroutines = 20
+	attrs := map[string]json.RawMessage{"tier": mustJSON(`"gold"`)}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			p := NewParsedUserAttrs(attrs) // own instance per goroutine
+			v, ok := p.GetString("tier")
+			assert.True(t, ok)
+			assert.Equal(t, "gold", v)
+		}()
+	}
+	wg.Wait()
+}
+
+// ---------------------------------------------------------------------------
+// TestParsedUserAttrs — parse-once semantics and cross-type independence
+// ---------------------------------------------------------------------------
+
+func TestParsedUserAttrs_ParseOnce(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetString_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`"hello"`)})
+		v1, ok1 := p.GetString("k")
+		v2, ok2 := p.GetString("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, "hello", v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetNumber_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`42.5`)})
+		v1, ok1 := p.GetNumber("k")
+		v2, ok2 := p.GetNumber("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, 42.5, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetBool_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`true`)})
+		v1, ok1 := p.GetBool("k")
+		v2, ok2 := p.GetBool("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.True(t, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetDate_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`"2026-04-22"`)})
+		v1, ok1 := p.GetDate("k")
+		v2, ok2 := p.GetDate("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, v1, v2)
+	})
+
+	// Retry-prevention: after a failed parse, swapping the raw bytes must NOT cause
+	// the second call to succeed — the attempted flag must block the re-parse.
+	t.Run("GetString_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`123`)}) // number ≠ string
+		_, ok1 := p.GetString("k")
+		p.cache["k"].raw = mustJSON(`"now-valid"`) // mutate underlying raw
+		_, ok2 := p.GetString("k")
+		assert.False(t, ok1, "first call must fail on invalid input")
+		assert.False(t, ok2, "second call must NOT retry — strAttempted blocks re-parse")
+	})
+
+	t.Run("GetNumber_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`"not-a-number"`)})
+		_, ok1 := p.GetNumber("k")
+		p.cache["k"].raw = mustJSON(`99`)
+		_, ok2 := p.GetNumber("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2, "second call must NOT retry — numAttempted blocks re-parse")
+	})
+
+	t.Run("GetBool_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`"not-a-bool"`)})
+		_, ok1 := p.GetBool("k")
+		p.cache["k"].raw = mustJSON(`true`)
+		_, ok2 := p.GetBool("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2, "second call must NOT retry — boolAttempted blocks re-parse")
+	})
+
+	t.Run("GetDate_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`"not-a-date"`)})
+		_, ok1 := p.GetDate("k")
+		p.cache["k"].raw = mustJSON(`"2026-04-22"`)
+		_, ok2 := p.GetDate("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2, "second call must NOT retry — dateAttempted blocks re-parse")
+	})
+
+	t.Run("CrossType_independence", func(t *testing.T) {
+		// Calling GetString first on a number value must not affect GetNumber.
+		p := NewParsedUserAttrs(map[string]json.RawMessage{"k": mustJSON(`42`)})
+		_, strOK := p.GetString("k")
+		num, numOK := p.GetNumber("k")
+		assert.False(t, strOK, "string parse must fail for a bare number")
+		assert.True(t, numOK, "number parse must succeed independently of string attempt")
+		assert.Equal(t, float64(42), num)
+	})
+
+	t.Run("MissingKey_returnsNotOK", func(t *testing.T) {
+		p := NewParsedUserAttrs(map[string]json.RawMessage{})
+		_, ok := p.GetString("missing")
+		assert.False(t, ok)
+	})
+
+	t.Run("NilReceiver_allGetters_returnFalse", func(t *testing.T) {
+		var p *ParsedUserAttrs
+		_, ok1 := p.GetString("k")
+		_, ok2 := p.GetNumber("k")
+		_, ok3 := p.GetBool("k")
+		_, ok4 := p.GetDate("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2)
+		assert.False(t, ok3)
+		assert.False(t, ok4)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestParsedExpectedValues_ParseOnce — parse-once semantics for expected values
+// ---------------------------------------------------------------------------
+
+func TestParsedExpectedValues_ParseOnce(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetString_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`"gold"`)})
+		v1, ok1 := p.GetString("k")
+		v2, ok2 := p.GetString("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, "gold", v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetStringSlice_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`["a","b","c"]`)})
+		v1, ok1 := p.GetStringSlice("k")
+		v2, ok2 := p.GetStringSlice("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, []string{"a", "b", "c"}, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetNumber_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`99.5`)})
+		v1, ok1 := p.GetNumber("k")
+		v2, ok2 := p.GetNumber("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, 99.5, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetNumberSlice_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`[1,2,3]`)})
+		v1, ok1 := p.GetNumberSlice("k")
+		v2, ok2 := p.GetNumberSlice("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, []float64{1, 2, 3}, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetBool_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`false`)})
+		v1, ok1 := p.GetBool("k")
+		v2, ok2 := p.GetBool("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.False(t, v1)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetDate_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`"2026-04-22"`)})
+		v1, ok1 := p.GetDate("k")
+		v2, ok2 := p.GetDate("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, v1, v2)
+	})
+
+	t.Run("GetDateBounds_parsedOnce_onSuccess", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`["2026-01-01","2026-12-31"]`)})
+		v1, ok1 := p.GetDateBounds("k")
+		v2, ok2 := p.GetDateBounds("k")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Equal(t, v1, v2)
+	})
+
+	// Retry-prevention: after a failed parse, swapping the raw bytes must NOT
+	// cause the second call to succeed — the attempted flag must block re-parse.
+	t.Run("GetString_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`42`)})
+		_, ok1 := p.GetString("k")
+		p.cache["k"].raw = mustJSON(`"now-valid"`)
+		_, ok2 := p.GetString("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2, "strAttempted must block re-parse")
+	})
+
+	t.Run("GetNumber_noRetry_onFailure", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`"not-a-number"`)})
+		_, ok1 := p.GetNumber("k")
+		p.cache["k"].raw = mustJSON(`99`)
+		_, ok2 := p.GetNumber("k")
+		assert.False(t, ok1)
+		assert.False(t, ok2, "numAttempted must block re-parse")
+	})
+
+	t.Run("CrossOperator_independence_scalarAndSlice", func(t *testing.T) {
+		// GetNumber (scalar) and GetNumberSlice (IN/BETWEEN) share the same raw bytes
+		// but cache independently — a number scalar raw must not satisfy a slice parse.
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`42`)})
+		num, numOK := p.GetNumber("k")
+		_, sliceOK := p.GetNumberSlice("k")
+		assert.True(t, numOK)
+		assert.Equal(t, float64(42), num)
+		assert.False(t, sliceOK, "scalar JSON must not parse as []float64")
+	})
+
+	t.Run("Has_missingKey_returnsFalse", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{})
+		assert.False(t, p.Has("missing"))
+	})
+
+	t.Run("Has_presentKey_returnsTrue", func(t *testing.T) {
+		p := NewParsedExpectedValues(map[string]json.RawMessage{"k": mustJSON(`"v"`)})
+		assert.True(t, p.Has("k"))
+	})
+
+	t.Run("NilReceiver_Has_returnsFalse", func(t *testing.T) {
+		var p *ParsedExpectedValues
+		assert.False(t, p.Has("k"))
+		_, ok := p.GetString("k")
 		assert.False(t, ok)
 	})
 }

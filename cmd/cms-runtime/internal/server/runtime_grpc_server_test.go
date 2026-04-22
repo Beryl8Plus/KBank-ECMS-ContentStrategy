@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
-	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"
@@ -35,11 +34,11 @@ func TestRuntimeGRPCServerEvaluateReturnsEmptyResponseWithoutUserAttrs(t *testin
 	)}, map[string]json.RawMessage{
 		attrID.String(): json.RawMessage(`"gold"`),
 	})
-	req.UserAttrsJson = nil
+	req.UserAttrs = nil
 
 	resp, err := server.Evaluate(context.Background(), req)
 	require.NoError(t, err)
-	assert.Empty(t, resp.LogicEntriesJson)
+	assert.Empty(t, resp.Results)
 }
 
 func TestRuntimeGRPCServerEvaluateReturnsHighestScoringMatchingVariation(t *testing.T) {
@@ -64,14 +63,13 @@ func TestRuntimeGRPCServerEvaluateReturnsHighestScoringMatchingVariation(t *test
 	resp, err := server.Evaluate(context.Background(), req)
 	require.NoError(t, err)
 
-	results := decodeEvaluateResponse(t, resp)
-	require.Len(t, results, 1)
-	assert.Equal(t, 9.0, results[0].Score)
-	if assert.NotNil(t, results[0].Variation) {
-		assert.Equal(t, "late", *results[0].Variation)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, 9.0, resp.Results[0].Score)
+	if assert.NotNil(t, resp.Results[0].Variation) {
+		assert.Equal(t, "late", *resp.Results[0].Variation)
 	}
-	assert.NotEmpty(t, results[0].LogicHash)
-	require.Len(t, results[0].Conditions, 1)
+	assert.NotEmpty(t, resp.Results[0].LogicHash)
+	require.Len(t, resp.Results[0].Conditions, 1)
 }
 
 func TestRuntimeGRPCServerEvaluateReturnsEmptyWhenNoVariationMatches(t *testing.T) {
@@ -95,8 +93,7 @@ func TestRuntimeGRPCServerEvaluateReturnsEmptyWhenNoVariationMatches(t *testing.
 	resp, err := server.Evaluate(context.Background(), req)
 	require.NoError(t, err)
 
-	results := decodeEvaluateResponse(t, resp)
-	assert.Empty(t, results)
+	assert.Empty(t, resp.Results)
 }
 
 func buildEvaluateRequest(
@@ -109,16 +106,16 @@ func buildEvaluateRequest(
 	schedulesJSON, err := json.Marshal(schedules)
 	require.NoError(t, err)
 
-	var userAttrsJSON []byte
-	if len(userAttrs) > 0 {
-		userAttrsJSON, err = json.Marshal(userAttrs)
-		require.NoError(t, err)
+	// Build native proto user attrs map (map[string][]byte).
+	protoAttrs := make(map[string][]byte, len(userAttrs))
+	for k, v := range userAttrs {
+		protoAttrs[k] = []byte(v)
 	}
 
 	return &cmsruntimev1.EvaluateRequest{
 		PlacementName: "hero",
 		SchedulesJson: schedulesJSON,
-		UserAttrsJson: userAttrsJSON,
+		UserAttrs:     protoAttrs,
 	}
 }
 
@@ -172,12 +169,4 @@ func buildRuleVariation(name string, orderNo int, score float64, attrID uuid.UUI
 			Value:       datatypes.JSON(value),
 		}},
 	}
-}
-
-func decodeEvaluateResponse(t *testing.T, resp *cmsruntimev1.EvaluateResponse) []dto.ContentResult {
-	t.Helper()
-
-	var entries []dto.ContentResult
-	require.NoError(t, json.Unmarshal(resp.LogicEntriesJson, &entries))
-	return entries
 }
