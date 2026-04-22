@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // MaterializationConfig holds tunable parameters for the occurrence generator.
@@ -80,20 +80,22 @@ func (s *ScheduleMaterializationService) MaterializeWindow(ctx context.Context) 
 		return fmt.Errorf("materialization: listing active schedules: %w", err)
 	}
 
-	slog.InfoContext(ctx, "materializing schedule occurrences",
-		slog.Int("schedules", len(schedules)),
-		slog.Time("window_start", now),
-		slog.Time("window_end", windowEnd),
-	)
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "MATERIALIZATION",
+		Level:   "INFO",
+		Message: fmt.Sprintf("materializing schedule occurrences (schedules=%d window_start=%s window_end=%s)",
+			len(schedules), now.Format(time.RFC3339), windowEnd.Format(time.RFC3339)),
+	})
 
 	for _, sched := range schedules {
 		occurrences, err := s.generateOccurrences(sched, now, windowEnd)
 		if err != nil {
 			// Log and continue — one bad schedule must not abort the whole job.
-			slog.ErrorContext(ctx, "failed to generate occurrences for schedule",
-				slog.String("schedule_id", sched.ID.String()),
-				slog.String("error", err.Error()),
-			)
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "MATERIALIZATION",
+				Level:   "ERROR",
+				Message: fmt.Sprintf("failed to generate occurrences for schedule %s: %s", sched.ID, err.Error()),
+			})
 			continue
 		}
 
@@ -102,10 +104,11 @@ func (s *ScheduleMaterializationService) MaterializeWindow(ctx context.Context) 
 		}
 
 		if err := s.occurrenceRepo.UpsertOccurrences(ctx, occurrences); err != nil {
-			slog.ErrorContext(ctx, "failed to upsert occurrences",
-				slog.String("schedule_id", sched.ID.String()),
-				slog.String("error", err.Error()),
-			)
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "MATERIALIZATION",
+				Level:   "ERROR",
+				Message: fmt.Sprintf("failed to upsert occurrences for schedule %s: %s", sched.ID, err.Error()),
+			})
 		}
 	}
 
@@ -162,7 +165,11 @@ func (s *ScheduleMaterializationService) CleanupPastOccurrences(ctx context.Cont
 	if err := s.occurrenceRepo.DeletePastOccurrences(ctx, cutoff); err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}
-	slog.InfoContext(ctx, "past occurrences cleaned up", slog.Time("cutoff", cutoff))
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "MATERIALIZATION",
+		Level:   "INFO",
+		Message: fmt.Sprintf("past occurrences cleaned up (cutoff=%s)", cutoff.Format(time.RFC3339)),
+	})
 	return nil
 }
 
@@ -190,9 +197,11 @@ func (s *ScheduleMaterializationService) generateOccurrences(
 	case enums.RecurrenceTypeCalendar:
 		// CALENDAR-based recurrence requires joining CalendarDate rows.
 		// This is not yet implemented; return empty to skip gracefully.
-		slog.Warn("CALENDAR recurrence type not yet supported for materialisation",
-			slog.String("schedule_id", sched.ID.String()),
-		)
+		logger.LSystem(context.Background(), entity.SystemLog{
+			Service: "MATERIALIZATION",
+			Level:   "WARN",
+			Message: fmt.Sprintf("CALENDAR recurrence type not yet supported for materialisation (schedule_id=%s)", sched.ID),
+		})
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported recurrence type %q for schedule %s", sched.RecurrenceType, sched.ID)
@@ -236,10 +245,11 @@ func (s *ScheduleMaterializationService) generateRRuleOccurrences(
 	loc, err := time.LoadLocation(sched.Timezone)
 	if err != nil {
 		// Fallback to UTC so a bad TZ doesn't abort the whole job.
-		slog.Warn("unknown timezone, falling back to UTC",
-			slog.String("schedule_id", sched.ID.String()),
-			slog.String("timezone", sched.Timezone),
-		)
+		logger.LSystem(context.Background(), entity.SystemLog{
+			Service: "MATERIALIZATION",
+			Level:   "WARN",
+			Message: fmt.Sprintf("unknown timezone %q for schedule %s, falling back to UTC", sched.Timezone, sched.ID),
+		})
 		loc = time.UTC
 	}
 

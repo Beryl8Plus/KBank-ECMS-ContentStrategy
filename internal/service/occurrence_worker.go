@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"time"
+
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // OccurrenceWorkerConfig holds timing parameters for the background worker.
@@ -61,10 +64,12 @@ func NewOccurrenceWorker(svc *ScheduleMaterializationService, cfg OccurrenceWork
 // Both operations log errors and continue — a transient DB failure does not
 // stop the worker.
 func (w *OccurrenceWorker) Start(ctx context.Context) {
-	slog.InfoContext(ctx, "occurrence worker starting",
-		slog.Duration("materialize_interval", w.cfg.materializationInterval()),
-		slog.Duration("cleanup_interval", w.cfg.cleanupInterval()),
-	)
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "OCCURRENCE-WORKER",
+		Level:   "INFO",
+		Message: fmt.Sprintf("occurrence worker starting (materialize_interval=%s cleanup_interval=%s)",
+			w.cfg.materializationInterval(), w.cfg.cleanupInterval()),
+	})
 
 	// Run once immediately so occurrences are ready on service startup.
 	w.runMaterialization(ctx)
@@ -77,7 +82,7 @@ func (w *OccurrenceWorker) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.InfoContext(ctx, "occurrence worker stopped")
+			logger.LSystem(ctx, entity.SystemLog{Service: "OCCURRENCE-WORKER", Level: "INFO", Message: "occurrence worker stopped"})
 			return
 		case <-materializeTicker.C:
 			w.runMaterialization(ctx)
@@ -89,12 +94,12 @@ func (w *OccurrenceWorker) Start(ctx context.Context) {
 
 func (w *OccurrenceWorker) runMaterialization(ctx context.Context) {
 	if err := w.svc.MaterializeWindow(ctx); err != nil {
-		slog.ErrorContext(ctx, "occurrence materialization failed", slog.String("error", err.Error()))
+		logger.LSystem(ctx, entity.SystemLog{Service: "OCCURRENCE-WORKER", Level: "ERROR", Message: "occurrence materialization failed: " + err.Error()})
 	}
 }
 
 func (w *OccurrenceWorker) runCleanup(ctx context.Context) {
 	if err := w.svc.CleanupPastOccurrences(ctx); err != nil {
-		slog.ErrorContext(ctx, "occurrence cleanup failed", slog.String("error", err.Error()))
+		logger.LSystem(ctx, entity.SystemLog{Service: "OCCURRENCE-WORKER", Level: "ERROR", Message: "occurrence cleanup failed: " + err.Error()})
 	}
 }
