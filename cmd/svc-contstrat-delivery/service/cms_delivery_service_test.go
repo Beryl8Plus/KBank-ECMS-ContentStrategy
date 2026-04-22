@@ -56,7 +56,7 @@ func TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback(t *testing.T) {
 	}
 
 	// Pre-populate the schedule cache so filtered["hero"] has 1 entry.
-	sched := &entity.Schedule{Placement: &entity.Placement{Name: "hero", MaxResults: 5}}
+	sched := &entity.Schedule{Placement: &entity.Placement{PlacementName: "hero"}}
 	schedJSON, _ := json.Marshal([]*entity.Schedule{sched})
 	stored := map[string]string{
 		cmsPlacementSchedulesKey("hero"): string(schedJSON),

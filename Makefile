@@ -1,4 +1,4 @@
-GOOSE := $(shell go env GOPATH)/bin/goose
+GOOSE := goose
 GOOSE_MIGRATIONS_DIR := cmd/migrate/migrations
 GOOSE_SEEDS_DIR     := cmd/migrate/seeds
 GOOSE_MOCK_DIR      := cmd/migrate/mocks

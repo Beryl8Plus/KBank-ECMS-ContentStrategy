@@ -43,6 +43,11 @@ const (
 	defaultMockName = "decision_rule_example_data"
 )
 
+type channelDef struct {
+	ID          string
+	ChannelName string
+}
+
 type attributeDef struct {
 	ID           string
 	FieldName    string
@@ -55,27 +60,26 @@ type attributeDef struct {
 }
 
 type mockSet struct {
-	PlacementID          string
-	PlacementName        string
-	PlacementDescription string
-	MaxResults           int
-	DecisionRuleID       string
-	DecisionRuleName     string
-	ContentPath          string
-	DecisionScore        float64
-	ConditionID          string
-	AttributeID          string
-	LogicalOperator      string
-	ConnectorOperator    string
-	RuleID               string
-	VariationName        string
-	RuleScore            float64
-	OrderNo              int
-	RuleAttributeID      string
-	RuleValueSQL         string
-	ScheduleID           string
-	EffectiveFromExpr    string
-	EffectiveUntilExpr   string
+	ChannelID          string
+	PlacementID        string
+	PlacementName      string
+	DecisionRuleID     string
+	DecisionRuleName   string
+	ContentPath        string
+	DecisionScore      float64
+	ConditionID        string
+	AttributeID        string
+	LogicalOperator    string
+	ConnectorOperator  string
+	RuleID             string
+	VariationName      string
+	RuleScore          float64
+	OrderNo            int
+	RuleAttributeID    string
+	RuleValueSQL       string
+	ScheduleID         string
+	EffectiveFromExpr  string
+	EffectiveUntilExpr string
 }
 
 func main() {
@@ -98,9 +102,10 @@ func main() {
 	_ = gofakeit.Seed(timeSeed)
 
 	schemaID := gofakeit.UUID()
+	channels := buildChannels()
 	attributes := buildAttributes(schemaID)
-	mockSets := buildMockSets(*count, attributes)
-	sql := buildSQL(timeSeed, schemaID, attributes, mockSets)
+	mockSets := buildMockSets(*count, channels, attributes)
+	sql := buildSQL(timeSeed, schemaID, channels, attributes, mockSets)
 
 	if err := os.MkdirAll(filepath.Dir(resolvedOutputPath), 0o755); err != nil {
 		fail("create output directory: %v", err)
@@ -149,6 +154,17 @@ func findLatestMockFile(mockName string) (string, bool) {
 	return paths[len(paths)-1], true
 }
 
+// buildChannels creates the fixed set of channels that placements are grouped under.
+// Each entry maps 1-to-1 with the placement name options in buildMockSets.
+func buildChannels() []channelDef {
+	return []channelDef{
+		{ID: gofakeit.UUID(), ChannelName: "Home"},
+		{ID: gofakeit.UUID(), ChannelName: "Portfolio"},
+		{ID: gofakeit.UUID(), ChannelName: "Wealth"},
+		{ID: gofakeit.UUID(), ChannelName: "Offer"},
+	}
+}
+
 func buildAttributes(schemaID string) []attributeDef {
 	return []attributeDef{
 		{
@@ -194,54 +210,49 @@ func buildAttributes(schemaID string) []attributeDef {
 	}
 }
 
-func buildMockSets(count int, attributes []attributeDef) []mockSet {
-	channels := []string{"Home", "Portfolio", "Insight", "Offer", "Wealth", "Deposit", "Credit", "Reward"}
-	surfaces := []string{"Banner", "Carousel", "Tile", "Popup", "Widget", "Spotlight"}
-	zones := []string{"Hero", "Top", "Middle", "Bottom", "Sidebar"}
+func buildMockSets(count int, channels []channelDef, attributes []attributeDef) []mockSet {
+	// Fixed placement options; index matches channels slice order.
+	placementOptions := []string{"wsaHomeBanner", "wsaPortBanner", "wsaSplash", "wsaLandingPage"}
 	variationPrefixes := []string{"Prime", "Growth", "Focus", "Priority", "Select", "Momentum"}
 	segments := []string{"Mass", "Affluent", "VIP", "Young Wealth", "SME"}
 	regions := []string{"Bangkok", "Central", "North", "Northeast", "South"}
 
 	sets := make([]mockSet, 0, count)
 	for index := 1; index <= count; index++ {
-		channel := gofakeit.RandomString(channels)
-		surface := gofakeit.RandomString(surfaces)
-		zone := gofakeit.RandomString(zones)
+		placementIdx := gofakeit.Number(0, len(placementOptions)-1)
+		placementName := placementOptions[placementIdx]
+		channel := channels[placementIdx]
+
 		prefix := gofakeit.RandomString(variationPrefixes)
 		attribute := attributes[gofakeit.Number(0, len(attributes)-1)]
 
 		logicalOperator, ruleValueSQL, conditionLabel := buildCondition(attribute.FieldName, segments, regions)
 		decisionScore := round1(gofakeit.Float64Range(0.5, 8.5))
 		ruleScore := round1(gofakeit.Float64Range(5, 30))
-		maxResults := gofakeit.Number(1, 10)
 		fromDaysAgo := gofakeit.Number(0, 45)
 		untilDaysAhead := gofakeit.Number(90, 365)
 
-		// Use a fixed set of placement names (4 items only)
-		placementOptions := []string{"wsaHomeBanner", "wsaPortBanner", "wsaSplash", "wsaLandingPage"}
-		placementName := gofakeit.RandomString(placementOptions)
 		sets = append(sets, mockSet{
-			PlacementID:          gofakeit.UUID(),
-			PlacementName:        placementName,
-			PlacementDescription: fmt.Sprintf("%s %s placement for %s zone", channel, strings.ToLower(surface), strings.ToLower(zone)),
-			MaxResults:           maxResults,
-			DecisionRuleID:       gofakeit.UUID(),
-			DecisionRuleName:     placementName,
-			ContentPath:          fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(channel), strings.ToLower(surface), index),
-			DecisionScore:        decisionScore,
-			ConditionID:          gofakeit.UUID(),
-			AttributeID:          attribute.ID,
-			LogicalOperator:      logicalOperator,
-			ConnectorOperator:    "AND",
-			RuleID:               gofakeit.UUID(),
-			VariationName:        fmt.Sprintf("%s %s %02d", prefix, conditionLabel, index),
-			RuleScore:            ruleScore,
-			OrderNo:              1,
-			RuleAttributeID:      gofakeit.UUID(),
-			RuleValueSQL:         ruleValueSQL,
-			ScheduleID:           gofakeit.UUID(),
-			EffectiveFromExpr:    fmt.Sprintf("NOW() - interval '%d day'", fromDaysAgo),
-			EffectiveUntilExpr:   fmt.Sprintf("NOW() + interval '%d day'", untilDaysAhead),
+			ChannelID:          channel.ID,
+			PlacementID:        gofakeit.UUID(),
+			PlacementName:      placementName,
+			DecisionRuleID:     gofakeit.UUID(),
+			DecisionRuleName:   placementName,
+			ContentPath:        fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(channel.ChannelName), strings.ToLower(placementName), index),
+			DecisionScore:      decisionScore,
+			ConditionID:        gofakeit.UUID(),
+			AttributeID:        attribute.ID,
+			LogicalOperator:    logicalOperator,
+			ConnectorOperator:  "AND",
+			RuleID:             gofakeit.UUID(),
+			VariationName:      fmt.Sprintf("%s %s %02d", prefix, conditionLabel, index),
+			RuleScore:          ruleScore,
+			OrderNo:            1,
+			RuleAttributeID:    gofakeit.UUID(),
+			RuleValueSQL:       ruleValueSQL,
+			ScheduleID:         gofakeit.UUID(),
+			EffectiveFromExpr:  fmt.Sprintf("NOW() - interval '%d day'", fromDaysAgo),
+			EffectiveUntilExpr: fmt.Sprintf("NOW() + interval '%d day'", untilDaysAhead),
 		})
 	}
 
@@ -269,20 +280,26 @@ func buildCondition(fieldName string, segments []string, regions []string) (stri
 	}
 }
 
-func buildSQL(seed int64, schemaID string, attributes []attributeDef, sets []mockSet) string {
+func buildSQL(seed int64, schemaID string, channels []channelDef, attributes []attributeDef, sets []mockSet) string {
 	var buf bytes.Buffer
 
 	buf.WriteString("-- +goose Up\n")
 	buf.WriteString("-- Generated by scripts/generate_decision_rule_mock.go\n")
 	buf.WriteString(fmt.Sprintf("-- Seed: %d\n\n", seed))
 
+	// channels must be inserted before placements (FK dependency).
+	writeInsert(&buf, "channels",
+		[]string{`"ID"`, `"CHANNEL_NAME"`, `"CREATED_AT"`, `"UPDATED_AT"`},
+		channelValues(channels),
+	)
+
 	writeInsert(&buf, "placements",
-		[]string{"\"ID\"", "\"NAME\"", "\"DESCRIPTION\"", "\"MAX_RESULTS\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"PLACEMENT_NAME"`, `"CHANNEL_ID"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		placementValues(sets),
 	)
 
 	writeInsert(&buf, "clen_schema_registry",
-		[]string{"\"ID\"", "\"SCHEMA_NAME\"", "\"VERSION\"", "\"SCHEMA_DEFINITION\"", "\"IS_ACTIVE\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"SCHEMA_NAME"`, `"VERSION"`, `"SCHEMA_DEFINITION"`, `"IS_ACTIVE"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		[][]string{{
 			sqlStringLiteral(schemaID),
 			sqlStringLiteral("PersonalizationAudience"),
@@ -295,46 +312,60 @@ func buildSQL(seed int64, schemaID string, attributes []attributeDef, sets []moc
 	)
 
 	writeInsert(&buf, "attributes",
-		[]string{"\"ID\"", "\"CLEN_SCHEMA_REGISTRY_ID\"", "\"FIELD_NAME\"", "\"DISPLAY_NAME\"", "\"DATA_TYPE\"", "\"VALUE\"", "\"DESCRIPTION\"", "\"SOURCE_SYSTEM\"", "\"IS_ACTIVE\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"CLEN_SCHEMA_REGISTRY_ID"`, `"FIELD_NAME"`, `"DISPLAY_NAME"`, `"DATA_TYPE"`, `"VALUE"`, `"DESCRIPTION"`, `"SOURCE_SYSTEM"`, `"IS_ACTIVE"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		attributeValues(schemaID, attributes),
 	)
 
 	writeInsert(&buf, "decision_rules",
-		[]string{"\"ID\"", "\"NAME\"", "\"TYPE\"", "\"EVALUATE_TYPE\"", "\"CONTENT_PATH\"", "\"SCORE\"", "\"STATUS\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"NAME"`, `"TYPE"`, `"EVALUATE_TYPE"`, `"CONTENT_PATH"`, `"SCORE"`, `"STATUS"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		decisionRuleValues(sets),
 	)
 
 	writeInsert(&buf, "rule_conditions",
-		[]string{"\"ID\"", "\"SEQUENCE\"", "\"DECISION_RULE_ID\"", "\"ATTRIBUTE_ID\"", "\"LOGICAL_OPERATOR\"", "\"CONNECTOR_OPERATOR\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"SEQUENCE"`, `"DECISION_RULE_ID"`, `"ATTRIBUTE_ID"`, `"LOGICAL_OPERATOR"`, `"CONNECTOR_OPERATOR"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		ruleConditionValues(sets),
 	)
 
 	writeInsert(&buf, "rules",
-		[]string{"\"ID\"", "\"DECISION_RULE_ID\"", "\"VARIATION_NAME\"", "\"SCORE\"", "\"ORDER_NO\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"DECISION_RULE_ID"`, `"VARIATION_NAME"`, `"SCORE"`, `"ORDER_NO"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		ruleValues(sets),
 	)
 
 	writeInsert(&buf, "rule_attributes",
-		[]string{"\"ID\"", "\"RULE_ID\"", "\"ATTRIBUTE_ID\"", "\"VALUE\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"RULE_ID"`, `"ATTRIBUTE_ID"`, `"VALUE"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		ruleAttributeValues(sets),
 	)
 
 	writeInsert(&buf, "schedules",
-		[]string{"\"ID\"", "\"DECISION_RULE_ID\"", "\"PLACEMENT_ID\"", "\"RECURRENCE_TYPE\"", "\"EFFECTIVE_FROM\"", "\"EFFECTIVE_UNTIL\"", "\"IS_ACTIVE\"", "\"CREATED_AT\"", "\"UPDATED_AT\""},
+		[]string{`"ID"`, `"DECISION_RULE_ID"`, `"PLACEMENT_ID"`, `"RECURRENCE_TYPE"`, `"EFFECTIVE_FROM"`, `"EFFECTIVE_UNTIL"`, `"IS_ACTIVE"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		scheduleValues(sets),
 	)
 
 	buf.WriteString("-- +goose Down\n")
-	writeDelete(&buf, "schedules", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.ScheduleID }))
-	writeDelete(&buf, "rule_attributes", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.RuleAttributeID }))
-	writeDelete(&buf, "rules", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.RuleID }))
-	writeDelete(&buf, "rule_conditions", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.ConditionID }))
-	writeDelete(&buf, "decision_rules", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.DecisionRuleID }))
-	writeDelete(&buf, "attributes", "\"ID\"", collectAttributeIDs(attributes))
+	writeDelete(&buf, "schedules", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.ScheduleID }))
+	writeDelete(&buf, "rule_attributes", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.RuleAttributeID }))
+	writeDelete(&buf, "rules", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.RuleID }))
+	writeDelete(&buf, "rule_conditions", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.ConditionID }))
+	writeDelete(&buf, "decision_rules", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.DecisionRuleID }))
+	writeDelete(&buf, "attributes", `"ID"`, collectAttributeIDs(attributes))
 	buf.WriteString(fmt.Sprintf("DELETE FROM clen_schema_registry WHERE \"ID\" = %s;\n", sqlStringLiteral(schemaID)))
-	writeDelete(&buf, "placements", "\"ID\"", collectIDs(sets, func(item mockSet) string { return item.PlacementID }))
+	writeDelete(&buf, "placements", `"ID"`, collectIDs(sets, func(item mockSet) string { return item.PlacementID }))
+	writeDelete(&buf, "channels", `"ID"`, collectChannelIDs(channels))
 
 	return buf.String()
+}
+
+func channelValues(channels []channelDef) [][]string {
+	values := make([][]string, 0, len(channels))
+	for _, ch := range channels {
+		values = append(values, []string{
+			sqlStringLiteral(ch.ID),
+			sqlStringLiteral(ch.ChannelName),
+			"NOW()",
+			"NOW()",
+		})
+	}
+	return values
 }
 
 func placementValues(sets []mockSet) [][]string {
@@ -343,8 +374,7 @@ func placementValues(sets []mockSet) [][]string {
 		values = append(values, []string{
 			sqlStringLiteral(item.PlacementID),
 			sqlStringLiteral(item.PlacementName),
-			sqlStringLiteral(item.PlacementDescription),
-			fmt.Sprintf("%d", item.MaxResults),
+			sqlStringLiteral(item.ChannelID),
 			"NOW()",
 			"NOW()",
 		})
@@ -478,6 +508,14 @@ func writeDelete(buf *bytes.Buffer, table string, column string, ids []string) {
 		buf.WriteString(fmt.Sprintf("    %s%s\n", sqlStringLiteral(id), separator))
 	}
 	buf.WriteString(");\n")
+}
+
+func collectChannelIDs(channels []channelDef) []string {
+	ids := make([]string, 0, len(channels))
+	for _, ch := range channels {
+		ids = append(ids, ch.ID)
+	}
+	return ids
 }
 
 func collectAttributeIDs(attributes []attributeDef) []string {

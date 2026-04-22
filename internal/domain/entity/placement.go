@@ -1,11 +1,13 @@
 package entity
 
-// Placement is a master-data entity for content placement locations.
+import "github.com/google/uuid"
+
+// Placement represents a named content placement slot within a channel.
 //
 // Table: placements
 type Placement struct {
 	BaseModel
-	Name        string `gorm:"size:255"   json:"name"`
-	Description string `gorm:"type:text"  json:"description"`
-	MaxResults  int    `gorm:"default:10" json:"maxResults"`
+	PlacementName string    `gorm:"size:255"                           json:"placementName"`
+	ChannelID     uuid.UUID `gorm:"type:uuid;not null"                 json:"channelId"`
+	Channel       *Channel  `gorm:"foreignKey:ChannelID;references:ID" json:"channel,omitempty"`
 }

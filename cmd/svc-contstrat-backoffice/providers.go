@@ -45,9 +45,11 @@ func ProvideRouter(
 	decisionRuleHandler *handler.DecisionRuleHandler,
 	occurrenceHandler *handler.ScheduleOccurrenceHandler,
 	attributeHandler *handler.AttributeHandler,
+	channelHandler *handler.ChannelHandler,
+	placementHandler *handler.PlacementHandler,
 ) *gin.Engine {
 	r := deliveryhttp.InitNewRouter(db, rateLimit)
-	handler.RegisterRoutes(r, ruleManagementHandler, scheduleHandler, decisionRuleHandler, occurrenceHandler, attributeHandler)
+	handler.RegisterRoutes(r, ruleManagementHandler, scheduleHandler, decisionRuleHandler, occurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	return r
 }
 
@@ -66,12 +68,20 @@ var ProviderSet = wire.NewSet(
 	repository.NewAttributePostgresRepository,
 	wire.Bind(new(domainrepo.AttributeRepository), new(*repository.AttributePostgresRepository)),
 
+	repository.NewChannelPostgresRepository,
+	wire.Bind(new(domainrepo.ChannelRepository), new(*repository.ChannelPostgresRepository)),
+
+	repository.NewPlacementPostgresRepository,
+	wire.Bind(new(domainrepo.PlacementRepository), new(*repository.PlacementPostgresRepository)),
+
 	// Services
 	service.NewScheduleService,
 	service.NewScheduleOccurrenceService,
 	service.NewDecisionRuleService,
 	service.NewRuleManagementService,
 	service.NewAttributeService,
+	service.NewChannelService,
+	service.NewPlacementService,
 
 	// Schedule Occurrence materialization worker
 	ProvideMatConfig,
@@ -85,6 +95,8 @@ var ProviderSet = wire.NewSet(
 	handler.NewDecisionRuleHandler,
 	handler.NewRuleManagementHandler,
 	handler.NewAttributeHandler,
+	handler.NewChannelHandler,
+	handler.NewPlacementHandler,
 
 	// Router
 	ProvideRouter,

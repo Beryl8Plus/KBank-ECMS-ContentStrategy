@@ -229,7 +229,7 @@ func buildScheduleFixture(
 		BaseModel:      entity.BaseModel{ID: uuid.New()},
 		DecisionRuleID: decisionRuleID,
 		DecisionRule:   rule,
-		Placement:      &entity.Placement{Name: "hero", MaxResults: 10},
+		Placement:      &entity.Placement{PlacementName: "hero"},
 		EffectiveFrom:  now,
 		EffectiveUntil: now.Add(24 * time.Hour),
 	}

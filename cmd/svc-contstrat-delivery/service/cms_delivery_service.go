@@ -222,8 +222,8 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 				}
 			}
 		}
-		if sched.Placement != nil && slices.Contains(placementNames, sched.Placement.Name) {
-			filtered[sched.Placement.Name] = append(filtered[sched.Placement.Name], sched)
+		if sched.Placement != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
+			filtered[sched.Placement.PlacementName] = append(filtered[sched.Placement.PlacementName], sched)
 		}
 	}
 
@@ -475,10 +475,10 @@ func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
 	}
 	groups := make(map[string]*placementGroup)
 	for _, sched := range schedules {
-		if sched.Placement == nil || sched.Placement.Name == "" {
+		if sched.Placement == nil || sched.Placement.PlacementName == "" {
 			continue
 		}
-		name := sched.Placement.Name
+		name := sched.Placement.PlacementName
 		g, ok := groups[name]
 		if !ok {
 			g = &placementGroup{}

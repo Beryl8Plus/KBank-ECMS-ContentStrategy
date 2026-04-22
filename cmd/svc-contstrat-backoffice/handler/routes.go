@@ -11,6 +11,8 @@ func RegisterRoutes(
 	decisionRuleHandler *DecisionRuleHandler,
 	occurrenceHandler *ScheduleOccurrenceHandler,
 	attributeHandler *AttributeHandler,
+	channelHandler *ChannelHandler,
+	placementHandler *PlacementHandler,
 ) {
 	r.POST("/rule-management", ruleManagementHandler.IngressRuleManagement)
 
@@ -41,5 +43,23 @@ func RegisterRoutes(
 		attributes.GET("/:id", attributeHandler.GetAttribute)
 		attributes.PUT("/:id", attributeHandler.UpdateAttribute)
 		attributes.DELETE("/:id", attributeHandler.DeleteAttribute)
+	}
+
+	channels := r.Group("/channels")
+	{
+		channels.POST("", channelHandler.CreateChannel)
+		channels.GET("", channelHandler.ListChannels)
+		channels.GET("/:id", channelHandler.GetChannel)
+		channels.PUT("/:id", channelHandler.UpdateChannel)
+		channels.DELETE("/:id", channelHandler.DeleteChannel)
+	}
+
+	placements := r.Group("/placements")
+	{
+		placements.POST("", placementHandler.CreatePlacement)
+		placements.GET("", placementHandler.ListPlacements)
+		placements.GET("/:id", placementHandler.GetPlacement)
+		placements.PUT("/:id", placementHandler.UpdatePlacement)
+		placements.DELETE("/:id", placementHandler.DeletePlacement)
 	}
 }

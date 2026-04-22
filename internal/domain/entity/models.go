@@ -7,10 +7,11 @@ func AllModels() []interface{} {
 		// 1. Independent tables (no FK deps)
 		&Role{},
 		&Profile{},
-		&Placement{},
+		&Channel{},
 		&CLENSchemaRegistry{},
 		&Calendar{},
 		// 2. Tables with FK to independent tables
+		&Placement{},
 		&User{},
 		&Permission{},
 		&Attribute{},
