@@ -9,7 +9,7 @@ GOOSE_DB_DSN := "host=$${DB_HOST:-localhost} port=$${DB_PORT:-5432} user=$${DB_U
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset test vet lint fmt clean install-hooks swagger swagger-server swagger-cms-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
+.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
 
 ## Install protoc Go plugins
 proto-install:
@@ -56,30 +56,30 @@ build: swagger
 ## Generate wire dependencies
 wire-gen:
 	wire gen ./cmd/svc-contstrat-backoffice
-	wire gen ./cmd/cms-delivery
+	wire gen ./cmd/svc-contstrat-delivery
 
 ## Run the server locally
 run:
 	go run ./cmd/svc-contstrat-backoffice/
 
-## Run cms-delivery locally
-run-cms-delivery:
-	go run ./cmd/cms-delivery/
+## Run svc-contstrat-delivery locally
+run-svc-contstrat-delivery:
+	go run ./cmd/svc-contstrat-delivery/
 
-## Run cms-runtime locally
-run-cms-runtime:
-	go run ./cmd/cms-runtime/
+## Run svc-contstrat-runtime locally
+run-svc-contstrat-runtime:
+	go run ./cmd/svc-contstrat-runtime/
 
 ## Generate Swagger documentation for all services
-swagger: swagger-server swagger-cms-delivery
+swagger: swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery
 
 ## Generate Swagger documentation for the server service
-swagger-server:
-	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName server --parseDependency --parseInternal
+swagger-svc-contstrat-backoffice:
+	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName svc_contstrat_backoffice --parseDependency --parseInternal
 
-## Generate Swagger documentation for the cms-delivery service
-swagger-cms-delivery:
-	swag init -g cmd/cms-delivery/main.go --output docs/swagger/cmsdelivery --packageName cmsdelivery --parseDependency --parseInternal
+## Generate Swagger documentation for the svc-contstrat-delivery service
+swagger-svc-contstrat-delivery:
+	swag init -g cmd/svc-contstrat-delivery/main.go --output docs/swagger/svc-contstrat-delivery --packageName svc_contstrat_delivery --parseDependency --parseInternal
 
 ## Build Docker Image
 dev-build:

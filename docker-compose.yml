@@ -40,9 +40,9 @@ services:
       redis:
         condition: service_healthy
 
-  server:
+  svc-contstrat-backoffice:
     build: .
-    command: ["sh", "-c", "./migrate && ./kbank-ecms"]
+    command: ["sh", "-c", "./migrate && ./svc-contstrat-backoffice"]
     ports:
       - "8081:8081"
     env_file:
@@ -57,9 +57,9 @@ services:
       redis:
         condition: service_healthy
 
-  cms-delivery:
+  svc-contstrat-delivery:
     build: .
-    command: ["./cms-delivery"]
+    command: ["./svc-contstrat-delivery"]
     ports:
       - "8082:8082"
     env_file:
@@ -68,18 +68,18 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       SWAGGER_HOST: localhost:8082
-      CMS_RUNTIME_GRPC_ADDR: cms-runtime:50051
+      CMS_RUNTIME_GRPC_ADDR: svc-contstrat-runtime:50051
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      cms-runtime:
+      svc-contstrat-runtime:
         condition: service_started
 
-  cms-runtime:
+  svc-contstrat-runtime:
     build: .
-    command: ["./cms-runtime"]
+    command: ["./svc-contstrat-runtime"]
     ports:
       - "50051:50051"
     env_file:
@@ -106,8 +106,8 @@ services:
         ]
       URLS_PRIMARY_NAME: "Server (Rule Management)"
     depends_on:
-      - server
-      - cms-delivery
+      - svc-contstrat-backoffice
+      - svc-contstrat-delivery
 
 volumes:
   redisinsight:

@@ -1,11 +1,11 @@
-// Package testserver exposes the cms-runtime gRPC server registration for
-// integration tests that live outside the cmd/cms-runtime tree.
+// Package testserver exposes the svc-contstrat-runtime gRPC server registration for
+// integration tests that live outside the cmd/svc-contstrat-runtime tree.
 package testserver
 
 import (
 	"google.golang.org/grpc"
 
-	runtimeserver "kbank-ecms/cmd/cms-runtime/internal/server"
+	runtimeserver "kbank-ecms/cmd/svc-contstrat-runtime/internal/server"
 )
 
 // Register attaches the RuntimeGRPCServer to a gRPC server instance.

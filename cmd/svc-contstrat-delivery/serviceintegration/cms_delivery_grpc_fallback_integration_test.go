@@ -16,8 +16,8 @@ import (
 	"google.golang.org/grpc"
 	"gorm.io/datatypes"
 
-	deliveryservice "kbank-ecms/cmd/cms-delivery/service"
-	grpcserver "kbank-ecms/cmd/cms-runtime/testserver"
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
+	grpcserver "kbank-ecms/cmd/svc-contstrat-runtime/testserver"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"

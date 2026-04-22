@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"gorm.io/datatypes"
 
-	grpcserver "kbank-ecms/cmd/cms-runtime/testserver"
+	grpcserver "kbank-ecms/cmd/svc-contstrat-runtime/testserver"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 )

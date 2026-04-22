@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"kbank-ecms/cmd/cms-runtime/internal/evaluator"
+	"kbank-ecms/cmd/svc-contstrat-runtime/internal/evaluator"
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	cmsruntimev1 "kbank-ecms/internal/grpc/pb/cms_runtime/v1"

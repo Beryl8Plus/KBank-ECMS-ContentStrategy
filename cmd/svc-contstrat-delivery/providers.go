@@ -7,8 +7,8 @@ import (
 	"github.com/google/wire"
 	"gorm.io/gorm"
 
-	cmshandler "kbank-ecms/cmd/cms-delivery/handler"
-	deliveryservice "kbank-ecms/cmd/cms-delivery/service"
+	cmshandler "kbank-ecms/cmd/svc-contstrat-delivery/handler"
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
