@@ -75,11 +75,11 @@ swagger: swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery
 
 ## Generate Swagger documentation for the server service
 swagger-svc-contstrat-backoffice:
-	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName svc_contstrat_backoffice --parseDependency --parseInternal
+	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName svc_contstrat_backoffice --parseDependency --parseInternal --exclude cmd/svc-contstrat-delivery,cmd/svc-contstrat-runtime
 
 ## Generate Swagger documentation for the svc-contstrat-delivery service
 swagger-svc-contstrat-delivery:
-	swag init -g cmd/svc-contstrat-delivery/main.go --output docs/swagger/svc-contstrat-delivery --packageName svc_contstrat_delivery --parseDependency --parseInternal
+	swag init -g cmd/svc-contstrat-delivery/main.go --output docs/swagger/svc-contstrat-delivery --packageName svc_contstrat_delivery --parseDependency --parseInternal --exclude cmd/svc-contstrat-backoffice,cmd/svc-contstrat-runtime
 
 ## Build Docker Image
 dev-build:
