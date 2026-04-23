@@ -11,7 +11,6 @@ import (
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
-	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/pkg/util"
@@ -47,9 +46,9 @@ func ruleDecisionCacheKey(id string) string {
 }
 
 // compile-time interface guard.
-var _ domainservice.DeliveryService = (*CMSDeliveryService)(nil)
+var _ DeliveryService = (*CMSDeliveryService)(nil)
 
-// CMSDeliveryService implements domainservice.DeliveryService.
+// CMSDeliveryService implements DeliveryService.
 // Primary path: reads pre-computed content results from Redis.
 // Fallback path (cache miss): queries active schedules from PostgreSQL and
 // delegates evaluation to cms-runtime via gRPC, then caches the result.
@@ -59,7 +58,7 @@ type CMSDeliveryService struct {
 	cacheRepo      domainrepo.RedisCacheRepository
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository // nil disables fallback
 	decisionRepo   domainrepo.DecisionRuleRepository       // nil disables fallback
-	evaluator      domainservice.RuntimeEvaluator          // nil disables fallback
+	evaluator      RuntimeEvaluator                        // nil disables fallback
 	cacheMemory    *cache.CacheMemory[any]
 	resultTTL      time.Duration
 	tickInterval   time.Duration
@@ -80,7 +79,7 @@ func NewCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
-	evaluator domainservice.RuntimeEvaluator,
+	evaluator RuntimeEvaluator,
 	cacheMemory *cache.CacheMemory[any],
 	resultTTL time.Duration,
 	tickInterval time.Duration,

@@ -114,17 +114,25 @@ db-mock-create-sql:
 	@if [ -z "$(name)" ]; then echo "Usage: make db-mock-create-sql name=<mock_name>"; exit 1; fi
 	$(GOOSE) -dir $(GOOSE_MOCK_DIR) create $(name) sql
 
-## Generate decision rule mock SQL using the Go generator.
+## Generate decision rule mock SQL + Redis seed script using the Go generator.
+## The Redis seed script (scripts/seed-redis-user-attrs.sh) is always regenerated
+## so its attribute UUIDs stay in sync with the SQL output.
 ## Usage:
 ##   make db-mock-generate-decision-rule
 ##   make db-mock-generate-decision-rule name=decision_rule_example_data count=100
 db-mock-generate-decision-rule:
 	go run ./scripts/mockdata -name=$${name:-decision_rule_example_data} -count=$${count:-50}
+	@if [ -n "$(REDIS_CONTAINER)" ]; then \
+		echo "Seeding Redis..."; \
+		docker exec -i $(REDIS_CONTAINER) sh < scripts/seed-redis-user-attrs.sh; \
+	else \
+		echo "Redis container not running — skipping live seed (scripts/seed-redis-user-attrs.sh updated)"; \
+	fi
 
-## Generate decision rule mock SQL to an explicit output path.
+## Generate decision rule mock SQL + Redis seed to an explicit output path.
 ## Usage:
-##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mock/20260417000000_decision_rule_example_data.sql
-##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mock/20260417000000_decision_rule_example_data.sql count=20
+##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mocks/20260417000000_custom.sql
+##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mocks/20260417000000_custom.sql count=20
 db-mock-generate-decision-rule-custom-out:
 	@if [ -z "$(out)" ]; then echo "Usage: make db-mock-generate-decision-rule-custom-out out=<output_sql_path> [count=<mock_count>]"; exit 1; fi
 	go run ./scripts/mockdata -out=$(out) -count=$${count:-50}
@@ -155,11 +163,16 @@ db-create:
 	@echo "Creating database $${DB_NAME:-kbank_ecms}..."
 	@docker exec $(POSTGRES_CONTAINER) createdb -U $${DB_USER:-postgres} $${DB_NAME:-kbank_ecms}
 
-## Clear all tables in the database (truncate rows, keep schema)
+## Clear all tables in the database (truncate rows, keep schema).
+## Also resets the mock migration tracking table so db-mock-data-sql-up can be re-run.
 db-clear:
 	@echo "Clearing all tables in $${DB_NAME:-kbank_ecms}..."
-	@docker exec $(POSTGRES_CONTAINER) psql -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -t -c "SELECT 'TRUNCATE ' || string_agg(quote_ident(tablename), ', ') || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public' HAVING count(*) > 0;" | \
-		xargs -I {} docker exec $(POSTGRES_CONTAINER) psql -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -c "{}"
+	@docker exec $(POSTGRES_CONTAINER) psql -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -tAc \
+		"SELECT 'TRUNCATE ' || string_agg(quote_ident(tablename), ', ') || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public' HAVING count(*) > 0;" | \
+		docker exec -i $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms}
+	@docker exec $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -c \
+		"TRUNCATE $(GOOSE_MOCK_TABLE);" 2>/dev/null || true
+	@echo "Done. All rows cleared."
 
 ## Reset the database (drop → create → migrate)
 db-reset: db-drop db-create migrate

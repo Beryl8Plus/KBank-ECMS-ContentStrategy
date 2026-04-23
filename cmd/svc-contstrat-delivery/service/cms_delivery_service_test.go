@@ -13,7 +13,6 @@ import (
 
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
-	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
 )
 
@@ -30,7 +29,7 @@ func newSvcCacheOnly(cacheRepo *mockCacheRepo) *CMSDeliveryService {
 func newSvcWithFallback(
 	cacheRepo *mockCacheRepo,
 	occurrenceRepo *mockOccurrenceRepo,
-	eval domainservice.RuntimeEvaluator,
+	eval RuntimeEvaluator,
 ) *CMSDeliveryService {
 	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, nil, time.Hour, 0)
 }
@@ -308,7 +307,7 @@ func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleID(ctx context.Context, 
 	return nil, nil
 }
 
-// mockRuntimeEvaluator is a minimal mock for domainservice.RuntimeEvaluator.
+// mockRuntimeEvaluator is a minimal mock for RuntimeEvaluator.
 type mockRuntimeEvaluator struct {
 	evaluateFn func(ctx context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error)
 }
@@ -327,7 +326,7 @@ func (m *mockRuntimeEvaluator) Evaluate(
 }
 
 // compile-time guard.
-var _ domainservice.RuntimeEvaluator = (*mockRuntimeEvaluator)(nil)
+var _ RuntimeEvaluator = (*mockRuntimeEvaluator)(nil)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GetPersonalizedContent tests

@@ -21,8 +21,6 @@ import (
 	"github.com/joho/godotenv"
 
 	"kbank-ecms/internal/domain/entity"
-	domainservice "kbank-ecms/internal/domain/service"
-	grpcclient "kbank-ecms/internal/grpc/client"
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
@@ -88,24 +86,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// gRPC client to cms-runtime (optional — graceful degradation)
-	var evaluator domainservice.RuntimeEvaluator
-	if grpcAddr := os.Getenv("CMS_RUNTIME_GRPC_ADDR"); grpcAddr != "" {
-		runtimeClient, err := grpcclient.NewRuntimeGRPCClient(grpcAddr)
-		if err != nil {
-			logger.LSystem(ctx, entity.SystemLog{
-				Service: "CMS-DELIVERY",
-				Level:   "WARN",
-				Message: "Failed to dial gRPC evaluator: " + err.Error(),
-			})
-		} else {
-			evaluator = runtimeClient
-			defer runtimeClient.Close()
-		}
-	}
-
 	// Build app — wires service → handler → middleware → router
-	app, cleanup := InitializeApp(db, rateLimit, redisRepo, evaluator)
+	app, cleanup := InitializeApp(db, redisRepo, rateLimit)
 	defer cleanup()
 
 	// Start background ticker (no-op if tickInterval <= 0).

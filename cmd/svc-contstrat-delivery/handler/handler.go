@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity/enums"
-	"kbank-ecms/internal/domain/service"
 	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +14,11 @@ import (
 
 // Handler handles HTTP requests for the cms-delivery module.
 type Handler struct {
-	svc service.DeliveryService
+	svc deliveryservice.DeliveryService
 }
 
 // NewHandler creates a new cms-delivery Handler.
-func NewHandler(svc service.DeliveryService) *Handler {
+func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 	return &Handler{svc: svc}
 }
 

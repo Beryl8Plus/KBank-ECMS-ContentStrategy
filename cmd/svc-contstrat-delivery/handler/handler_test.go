@@ -9,15 +9,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
-	"kbank-ecms/internal/domain/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var _ service.DeliveryService = (*mockDeliveryService)(nil)
+var _ deliveryservice.DeliveryService = (*mockDeliveryService)(nil)
 
 func init() {
 	gin.SetMode(gin.TestMode)
@@ -46,7 +46,7 @@ func (m *mockDeliveryService) FlushCache(ctx context.Context, placements []strin
 
 // ---- helpers -------------------------------------------------------------
 
-func setupRouter(svc service.DeliveryService) *gin.Engine {
+func setupRouter(svc deliveryservice.DeliveryService) *gin.Engine {
 	r := gin.New()
 	h := NewHandler(svc)
 	r.GET("/content", h.getContent)

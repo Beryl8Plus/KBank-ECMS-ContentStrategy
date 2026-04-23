@@ -1,7 +1,7 @@
 package handler
 
 import (
-	domainservice "kbank-ecms/internal/domain/service"
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,7 +11,7 @@ import (
 // Start/Stop for the background ticker if applicable).
 func RegisterRoutes(
 	r *gin.Engine,
-	svc domainservice.DeliveryService,
+	svc deliveryservice.DeliveryService,
 ) {
 	handler := NewHandler(svc)
 

@@ -8,11 +8,11 @@ import (
 	"gorm.io/gorm"
 
 	cmshandler "kbank-ecms/cmd/svc-contstrat-delivery/handler"
+	evaluator "kbank-ecms/cmd/svc-contstrat-delivery/internal/evaluator"
 	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
-	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/repository"
 )
@@ -21,7 +21,7 @@ import (
 func ProvideRouter(
 	db *gorm.DB,
 	rateLimit entity.RateLimit,
-	svc domainservice.DeliveryService,
+	svc deliveryservice.DeliveryService,
 ) *gin.Engine {
 	r := deliveryhttp.InitNewRouter(db, rateLimit)
 	cmshandler.RegisterRoutes(r, svc)
@@ -33,7 +33,7 @@ func ProvideCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
-	evaluator domainservice.RuntimeEvaluator,
+	evaluator deliveryservice.RuntimeEvaluator,
 	cacheMemory *cache.CacheMemory[any],
 ) *deliveryservice.CMSDeliveryService {
 	resultTTL := parseDurationEnv("CMS_RUNTIME_TTL", 15*time.Minute)
@@ -51,6 +51,11 @@ func ProvideCacheMemory() (*cache.CacheMemory[any], func()) {
 	return c, func() {
 		c.Stop()
 	}
+}
+
+// ProvideRuntimeEvaluator constructs the LocalEvaluator as the RuntimeEvaluator implementation.
+func ProvideRuntimeEvaluator() *evaluator.LocalEvaluator {
+	return evaluator.NewLocalEvaluator()
 }
 
 // App groups the dependencies needed by main.
@@ -74,11 +79,12 @@ var ProviderSet = wire.NewSet(
 
 	repository.NewDecisionRulePostgresRepository,
 	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
+	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
 
+	// Providers
 	ProvideCacheMemory,
+	ProvideRuntimeEvaluator,
 	ProvideCMSDeliveryService,
-	wire.Bind(new(domainservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
-
 	ProvideRouter,
 	ProvideApp,
 )
