@@ -6,10 +6,12 @@ GOOSE_MIGRATION_TABLE := migration_tracking.goose_migrations
 GOOSE_SEED_TABLE      := migration_tracking.seed_migrations
 GOOSE_MOCK_TABLE      := migration_tracking.mock_migrations
 GOOSE_DB_DSN := "host=$${DB_HOST:-localhost} port=$${DB_PORT:-5432} user=$${DB_USER:-postgres} password=$${DB_PASSWORD:-postgres} dbname=$${DB_NAME:-kbank_ecms} sslmode=$${DB_SSLMODE:-disable}"
+ATLAS_DB_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$${DB_HOST:-localhost}:$${DB_PORT:-5432}/$${DB_NAME:-kbank_ecms}?sslmode=$${DB_SSLMODE:-disable}&search_path=public"
+ATLAS_EMPTY_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$${DB_HOST:-localhost}:$${DB_PORT:-5432}/$${DB_NAME:-kbank_ecms}?sslmode=$${DB_SSLMODE:-disable}&search_path=migration_tracking"
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
+.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
 
 ## Install protoc Go plugins
 proto-install:
@@ -161,6 +163,18 @@ db-clear:
 
 ## Reset the database (drop → create → migrate)
 db-reset: db-drop db-create migrate
+
+## Inspect the current database schema and output in Atlas HCL format
+db-schema-inspect:
+	@echo "Inspecting database schema..."
+	atlas schema inspect -u $(ATLAS_DB_URL)
+
+## Generate SQL DDL from the current database state
+db-schema-sql:
+	@echo "Generating SQL schema from database..."
+	@if [ ! -d "cmd/migrate/migrations-prod" ]; then mkdir -p cmd/migrate/migrations-prod; fi
+	@atlas schema diff --from $(ATLAS_EMPTY_URL) --to $(ATLAS_DB_URL) > cmd/migrate/migrations-prod/database_schema.sql
+	@echo "Schema saved to cmd/migrate/migrations-prod/database_schema.sql"
 
 ## Set a key/value in the local Redis container: make redis-set key=<key> val=<value>
 redis-set:
