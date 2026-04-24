@@ -1,12 +1,12 @@
 package cache
 
 import (
-	"context"
 	"errors"
 	"runtime"
 	"sync"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -25,18 +25,12 @@ func mustRegister[C prometheus.Collector](c C) C {
 	return c
 }
 
-// cachedEntry wraps any value with expiration metadata.
-type cachedEntry[T any] struct {
-	value     T
-	expiredAt time.Time
-}
-
 // CacheMemory is a memory-aware in-process cache for any value type T.
 // Each entry carries its own TTL supplied at Set time.
 // It monitors heap usage and evicts entries under memory pressure.
+// Backed by github.com/patrickmn/go-cache for TTL management and eviction.
 type CacheMemory[T any] struct {
-	mu      sync.RWMutex
-	entries map[string]cachedEntry[T]
+	cache *gocache.Cache
 
 	// Config
 	maxMemoryPct float64 // e.g. 0.60 (60%)
@@ -45,6 +39,7 @@ type CacheMemory[T any] struct {
 	stopCh chan struct{}
 
 	// Status
+	mu            sync.RWMutex
 	isMemPressure bool
 
 	// Metrics (per-instance, namespaced)
@@ -56,7 +51,7 @@ type CacheMemory[T any] struct {
 
 // NewCacheMemory initializes the cache and starts the background memory monitor.
 // namespace is used as a prefix for Prometheus metric names and must be unique per instance.
-func NewCacheMemory[T any](namespace string, maxMemPct float64) *CacheMemory[T] {
+func NewCacheMemory[T any](namespace string, maxMemPct float64, ttl time.Duration) *CacheMemory[T] {
 	cacheHits := mustRegister(prometheus.NewCounter(prometheus.CounterOpts{
 		Name: namespace + "_cache_hits_total",
 		Help: "Total number of cache hits in local memory",
@@ -78,7 +73,7 @@ func NewCacheMemory[T any](namespace string, maxMemPct float64) *CacheMemory[T] 
 	}))
 
 	rc := &CacheMemory[T]{
-		entries:           make(map[string]cachedEntry[T]),
+		cache:             gocache.New(ttl, 5*time.Minute),
 		maxMemoryPct:      maxMemPct,
 		stopCh:            make(chan struct{}),
 		mCacheHits:        cacheHits,
@@ -97,71 +92,45 @@ func (rc *CacheMemory[T]) Stop() {
 }
 
 // Get retrieves a value from local memory.
-// If an entry is found but has expired, it is lazily deleted from the map.
-func (rc *CacheMemory[T]) Get(ctx context.Context, key string) (T, bool) {
-	rc.mu.RLock()
-	entry, found := rc.entries[key]
-	rc.mu.RUnlock()
-
+// Returns the zero value and false when the key is absent or expired.
+// The context is accepted for future tracing/cancellation support.
+func (rc *CacheMemory[T]) Get(key string) (T, bool) {
+	v, found := rc.cache.Get(key)
 	if !found {
 		rc.mCacheMisses.Inc()
 		var zero T
 		return zero, false
 	}
-
-	if time.Now().Before(entry.expiredAt) {
-		rc.mCacheHits.Inc()
-		return entry.value, true
-	}
-
-	// Lazy eviction: expired entry found — acquire write lock and delete.
-	// Re-check after acquiring the write lock to guard against a concurrent delete.
-	rc.mu.Lock()
-	if e, ok := rc.entries[key]; ok && !time.Now().Before(e.expiredAt) {
-		delete(rc.entries, key)
-		rc.updateMetrics()
-	}
-	rc.mu.Unlock()
-
-	rc.mCacheMisses.Inc()
-	var zero T
-	return zero, false
+	rc.mCacheHits.Inc()
+	return v.(T), true
 }
 
 // Set adds a value with the given TTL. Under memory pressure new entries are
 // rejected and the key is evicted if it already exists.
 func (rc *CacheMemory[T]) Set(key string, value T, ttl time.Duration) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
+	rc.mu.RLock()
+	pressure := rc.isMemPressure
+	rc.mu.RUnlock()
 
-	if rc.isMemPressure {
-		delete(rc.entries, key)
+	if pressure {
+		rc.cache.Delete(key)
 		rc.updateMetrics()
 		return
 	}
 
-	rc.entries[key] = cachedEntry[T]{
-		value:     value,
-		expiredAt: time.Now().Add(ttl),
-	}
+	rc.cache.Set(key, value, ttl)
 	rc.updateMetrics()
 }
 
 // Delete removes a single key from local memory.
 func (rc *CacheMemory[T]) Delete(key string) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	delete(rc.entries, key)
+	rc.cache.Delete(key)
 	rc.updateMetrics()
 }
 
 // Clear removes all keys from local memory.
 func (rc *CacheMemory[T]) Clear() {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	rc.entries = make(map[string]cachedEntry[T])
+	rc.cache.Flush()
 	rc.updateMetrics()
 }
 
@@ -182,28 +151,28 @@ func (rc *CacheMemory[T]) monitorMemory() {
 				continue
 			}
 
+			// Always purge expired entries on every tick, regardless of memory pressure.
+			rc.purgeExpired()
+
 			// Use HeapAlloc/HeapSys — a meaningful heap-specific utilisation ratio.
 			usedPct := float64(m.HeapAlloc) / float64(m.HeapSys)
 
 			rc.mu.Lock()
-
-			// Always purge expired entries on every tick, regardless of memory pressure.
-			rc.purgeExpired()
-
 			if usedPct > rc.maxMemoryPct {
 				rc.isMemPressure = true
 				rc.mMemPressureGauge.Set(1)
-
-				// Critical pressure: wipe all remaining entries.
-				if usedPct > 0.8 {
-					rc.entries = make(map[string]cachedEntry[T])
-				}
 			} else {
 				rc.isMemPressure = false
 				rc.mMemPressureGauge.Set(0)
 			}
-			rc.updateMetrics()
 			rc.mu.Unlock()
+
+			// Critical pressure: wipe all remaining entries.
+			if usedPct > 0.8 {
+				rc.cache.Flush()
+			}
+
+			rc.updateMetrics()
 
 		case <-rc.stopCh:
 			return
@@ -213,15 +182,10 @@ func (rc *CacheMemory[T]) monitorMemory() {
 
 // updateMetrics updates the Prometheus gauge for cache size.
 func (rc *CacheMemory[T]) updateMetrics() {
-	rc.mCacheSizeGauge.Set(float64(len(rc.entries)))
+	rc.mCacheSizeGauge.Set(float64(rc.cache.ItemCount()))
 }
 
 // purgeExpired removes entries that are past their TTL.
 func (rc *CacheMemory[T]) purgeExpired() {
-	now := time.Now()
-	for k, v := range rc.entries {
-		if now.After(v.expiredAt) {
-			delete(rc.entries, k)
-		}
-	}
+	rc.cache.DeleteExpired()
 }

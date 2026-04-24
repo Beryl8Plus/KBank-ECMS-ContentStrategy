@@ -17,12 +17,22 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers: constructor helpers to reduce boilerplate in tests
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no gRPC).
-func newSvcCacheOnly(cacheRepo *mockCacheRepo) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, &mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0)
+// newTestMemCache builds a *MemoryCache for tests and registers cleanup.
+func newTestMemCache(t *testing.T, ns string) *MemoryCache {
+	t.Helper()
+	s := cache.NewCacheMemory[[]*entity.Schedule](ns+"_schedules", 0.95, time.Hour)
+	r := cache.NewCacheMemory[*entity.DecisionRule](ns+"_rules", 0.95, time.Hour)
+	t.Cleanup(s.Stop)
+	t.Cleanup(r.Stop)
+	return &MemoryCache{Schedules: s, DecisionRule: r}
+}
+
+// newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no evaluator).
+func newSvcCacheOnly(cacheRepo *mockCacheRepo, mem *MemoryCache) *CMSDeliveryService {
+	return NewCMSDeliveryService(cacheRepo, &mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0)
 }
 
 // newSvcWithFallback builds a CMSDeliveryService with cache, occurrence repo, and evaluator.
@@ -30,188 +40,9 @@ func newSvcWithFallback(
 	cacheRepo *mockCacheRepo,
 	occurrenceRepo *mockOccurrenceRepo,
 	eval RuntimeEvaluator,
+	mem *MemoryCache,
 ) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, nil, time.Hour, 0)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Logic-cache miss + gRPC fallback tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback verifies that a
-// placement logic cache miss calls RuntimeEvaluator.Evaluate, then caches the
-// user evaluation result and the personalized placement result.
-func TestGetPersonalizedContent_LogicCacheMiss_WithGRPCFallback(t *testing.T) {
-	t.Parallel()
-
-	logicEntry := dto.ContentResult{
-		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/content/hero",
-		RuleSetType:    "MASS",
-		Score:          0.8,
-		LogicHash:      "hero-hash",
-		LogicEval:      true, // server evaluated this entry as matching
-		Conditions:     []dto.LogicCondition{},
-	}
-
-	// Pre-populate the schedule cache so filtered["hero"] has 1 entry.
-	sched := &entity.Schedule{Placement: &entity.Placement{PlacementName: "hero"}}
-	schedJSON, _ := json.Marshal([]*entity.Schedule{sched})
-	stored := map[string]string{
-		cmsPlacementSchedulesKey("hero"): string(schedJSON),
-	}
-
-	svc := newSvcWithFallback(
-		&mockCacheRepo{
-			getFn: func(_ context.Context, key string) (string, error) {
-				if value, ok := stored[key]; ok {
-					return value, nil
-				}
-				return "", errors.New("miss")
-			},
-			setFn: func(_ context.Context, key, value string, _ time.Duration) error {
-				stored[key] = value
-				return nil
-			},
-		},
-		&mockOccurrenceRepo{},
-		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				assert.Equal(t, "hero", name)
-				require.Len(t, schedules, 1)
-				assert.Empty(t, userAttrs) // service passes resolved (empty) user attrs
-				return []dto.ContentResult{logicEntry}, nil
-			},
-		},
-	)
-
-	result, err := svc.GetPersonalizedContent(
-		context.Background(),
-		"cis1",
-		"user1",
-		[]string{"hero"},
-		map[string]json.RawMessage{},
-	)
-
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-	assert.Equal(t, "/content/hero", result[0].ContentPath)
-	assert.Equal(t, "true", stored[cmsUserEvalKey("user1", logicEntry.LogicHash)])
-	assert.NotEmpty(t, stored[cmsPersonalizedPlacementKey("cis1", "hero")])
-}
-
-// TestGetPersonalizedContent_LogicCacheMiss_GRPCFails verifies graceful
-// degradation: gRPC failure returns an empty result without propagating the error.
-func TestGetPersonalizedContent_LogicCacheMiss_GRPCFails(t *testing.T) {
-	t.Parallel()
-
-	svc := newSvcWithFallback(
-		&mockCacheRepo{
-			getFn: func(_ context.Context, _ string) (string, error) {
-				return "", errors.New("miss")
-			},
-		},
-		&mockOccurrenceRepo{},
-		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				return nil, errors.New("rpc error: unavailable")
-			},
-		},
-	)
-
-	result, err := svc.GetPersonalizedContent(
-		context.Background(),
-		"cis1",
-		"user1",
-		[]string{"hero"},
-		map[string]json.RawMessage{},
-	)
-
-	require.NoError(t, err)
-	assert.Empty(t, result)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FlushCache tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestCMSDeliveryService_FlushCache_Selective verifies that FlushCache calls
-// Delete for each named placement (schedules key + placement key) and does not
-// call FlushDB. Rule caches are also flushed when schedule data is present.
-func TestCMSDeliveryService_FlushCache_Selective(t *testing.T) {
-	t.Parallel()
-
-	deletedKeys := []string{}
-	flushDBCalled := false
-	mem := cache.NewCacheMemory[any]("flush_cache_selective_test", 0.95)
-	t.Cleanup(mem.Stop)
-	mem.Set(cmsPlacementKey("hero"), "hero", time.Hour)
-	mem.Set(cmsPlacementKey("sidebar"), "sidebar", time.Hour)
-
-	svc := NewCMSDeliveryService(&mockCacheRepo{
-		deleteFn: func(_ context.Context, key string) error {
-			deletedKeys = append(deletedKeys, key)
-			return nil
-		},
-		flushFn: func(_ context.Context) error {
-			flushDBCalled = true
-			return nil
-		},
-	}, nil, nil, nil, mem, time.Hour, 0)
-
-	err := svc.FlushCache(context.Background(), []string{"hero", "sidebar"}, true)
-
-	require.NoError(t, err)
-	assert.False(t, flushDBCalled)
-	// UC3: each placement flushes schedules key + placement key = 2 × 2 = 4 deletes.
-	// (no rule keys because schedule cache is empty → no rule IDs to resolve)
-	assert.Len(t, deletedKeys, 4)
-	assert.Contains(t, deletedKeys, cmsPlacementSchedulesKey("hero"))
-	assert.Contains(t, deletedKeys, cmsPlacementKey("hero"))
-	assert.Contains(t, deletedKeys, cmsPlacementSchedulesKey("sidebar"))
-	assert.Contains(t, deletedKeys, cmsPlacementKey("sidebar"))
-	_, ok := mem.Get(context.Background(), cmsPlacementKey("hero"))
-	assert.False(t, ok)
-	_, ok = mem.Get(context.Background(), cmsPlacementKey("sidebar"))
-	assert.False(t, ok)
-}
-
-// TestCMSDeliveryService_FlushCache_All verifies that FlushCache with nil/empty
-// names calls FlushDB instead of Delete.
-func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
-	t.Parallel()
-
-	deleteCalled := false
-	flushDBCalled := false
-	mem := cache.NewCacheMemory[any]("flush_cache_all_test", 0.95)
-	t.Cleanup(mem.Stop)
-	mem.Set(cmsPlacementKey("hero"), "hero", time.Hour)
-
-	svc := NewCMSDeliveryService(&mockCacheRepo{
-		deleteFn: func(_ context.Context, _ string) error {
-			deleteCalled = true
-			return nil
-		},
-		flushFn: func(_ context.Context) error {
-			flushDBCalled = true
-			return nil
-		},
-	}, nil, nil, nil, mem, time.Hour, 0)
-
-	// nil placements
-	require.NoError(t, svc.FlushCache(context.Background(), nil, false))
-	assert.True(t, flushDBCalled)
-	assert.False(t, deleteCalled)
-	_, ok := mem.Get(context.Background(), cmsPlacementKey("hero"))
-	assert.False(t, ok)
-
-	// reset and test empty slice
-	flushDBCalled = false
-	mem.Set(cmsPlacementKey("hero"), "hero", time.Hour)
-	require.NoError(t, svc.FlushCache(context.Background(), []string{}, false))
-	assert.True(t, flushDBCalled)
-	_, ok = mem.Get(context.Background(), cmsPlacementKey("hero"))
-	assert.False(t, ok)
+	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, mem, time.Hour, 0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,8 +69,8 @@ func (m *mockCacheRepo) Set(ctx context.Context, key string, val string, exp tim
 	}
 	return nil
 }
-func (m *mockCacheRepo) HGet(ctx context.Context, key, field string) (string, error) { return "", nil }
-func (m *mockCacheRepo) HSet(ctx context.Context, key, field, val string) error      { return nil }
+func (m *mockCacheRepo) HGet(_ context.Context, _, _ string) (string, error) { return "", nil }
+func (m *mockCacheRepo) HSet(_ context.Context, _, _, _ string) error        { return nil }
 func (m *mockCacheRepo) FlushDB(ctx context.Context) error {
 	if m.flushFn != nil {
 		return m.flushFn(ctx)
@@ -297,12 +128,20 @@ func (m *mockOccurrenceRepo) ListByScheduleID(_ context.Context, _ uuid.UUID, _,
 
 // mockDecisionRuleRepo is a minimal mock for domainrepo.DecisionRuleRepository.
 type mockDecisionRuleRepo struct {
-	getFn func(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error)
+	getFn  func(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error)
+	getsFn func(ctx context.Context, scheduleIDs []uuid.UUID) (map[uuid.UUID]*entity.DecisionRule, error)
 }
 
 func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleID(ctx context.Context, scheduleID uuid.UUID) (*entity.DecisionRule, error) {
 	if m.getFn != nil {
 		return m.getFn(ctx, scheduleID)
+	}
+	return nil, nil
+}
+
+func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleIDs(ctx context.Context, scheduleIDs []uuid.UUID) (map[uuid.UUID]*entity.DecisionRule, error) {
+	if m.getsFn != nil {
+		return m.getsFn(ctx, scheduleIDs)
 	}
 	return nil, nil
 }
@@ -316,7 +155,6 @@ func (m *mockRuntimeEvaluator) Evaluate(
 	ctx context.Context,
 	name string,
 	schedules []*entity.Schedule,
-
 	userAttrs map[string]json.RawMessage,
 ) ([]dto.ContentResult, error) {
 	if m.evaluateFn != nil {
@@ -329,192 +167,192 @@ func (m *mockRuntimeEvaluator) Evaluate(
 var _ RuntimeEvaluator = (*mockRuntimeEvaluator)(nil)
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FlushCache tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestCMSDeliveryService_FlushCache_Selective verifies that FlushCache clears
+// in-memory schedule entries for each named placement without touching Redis.
+func TestCMSDeliveryService_FlushCache_Selective(t *testing.T) {
+	t.Parallel()
+
+	deletedKeys := []string{}
+	flushDBCalled := false
+	mem := newTestMemCache(t, "flush_cache_selective_test")
+	mem.Schedules.Set(cmsPlacementSchedulesKey("hero"), []*entity.Schedule{}, time.Hour)
+	mem.Schedules.Set(cmsPlacementSchedulesKey("sidebar"), []*entity.Schedule{}, time.Hour)
+
+	svc := NewCMSDeliveryService(&mockCacheRepo{
+		deleteFn: func(_ context.Context, key string) error {
+			deletedKeys = append(deletedKeys, key)
+			return nil
+		},
+		flushFn: func(_ context.Context) error {
+			flushDBCalled = true
+			return nil
+		},
+	}, nil, nil, nil, mem, time.Hour, 0)
+
+	err := svc.FlushCache(context.Background(), []string{"hero", "sidebar"}, false)
+
+	require.NoError(t, err)
+	assert.False(t, flushDBCalled)
+	assert.Empty(t, deletedKeys, "selective flush should not call Redis Delete")
+	_, ok := mem.Schedules.Get(cmsPlacementSchedulesKey("hero"))
+	assert.False(t, ok, "hero schedules should be evicted from in-memory cache")
+	_, ok = mem.Schedules.Get(cmsPlacementSchedulesKey("sidebar"))
+	assert.False(t, ok, "sidebar schedules should be evicted from in-memory cache")
+}
+
+// TestCMSDeliveryService_FlushCache_All verifies that FlushCache with nil/empty
+// names calls FlushDB instead of Delete.
+func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	flushDBCalled := false
+	mem := newTestMemCache(t, "flush_cache_all_test")
+
+	svc := NewCMSDeliveryService(&mockCacheRepo{
+		deleteFn: func(_ context.Context, _ string) error {
+			deleteCalled = true
+			return nil
+		},
+		flushFn: func(_ context.Context) error {
+			flushDBCalled = true
+			return nil
+		},
+	}, nil, nil, nil, mem, time.Hour, 0)
+
+	// nil placements → FlushDB
+	require.NoError(t, svc.FlushCache(context.Background(), nil, false))
+	assert.True(t, flushDBCalled)
+	assert.False(t, deleteCalled)
+
+	// empty slice → FlushDB
+	flushDBCalled = false
+	require.NoError(t, svc.FlushCache(context.Background(), []string{}, false))
+	assert.True(t, flushDBCalled)
+	assert.False(t, deleteCalled)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GetPersonalizedContent tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestGetPersonalizedContent_PersonalizedCacheHit verifies that a warm
-// cms:placement:{cisID}:{name} cache is returned without any evaluation.
-func TestGetPersonalizedContent_PersonalizedCacheHit(t *testing.T) {
+// TestGetPersonalizedContent_EvaluatorFallback verifies that a personalized cache
+// miss triggers RuntimeEvaluator.Evaluate with the schedules from in-memory cache
+// and returns the evaluator's results.
+func TestGetPersonalizedContent_EvaluatorFallback(t *testing.T) {
 	t.Parallel()
 
-	cached := []dto.ContentResult{{ContentPath: "/hero", Score: 0.9}}
-	data, _ := json.Marshal(cached)
-
-	svc := newSvcCacheOnly(&mockCacheRepo{
-		getFn: func(_ context.Context, key string) (string, error) {
-			if key == cmsPersonalizedPlacementKey("cis1", "hero") {
-				return string(data), nil
-			}
-			return "", errors.New("not found")
-		},
-	})
-
-	result, err := svc.GetPersonalizedContent(context.Background(), "cis1", "user1", []string{"hero"}, nil)
-
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-	assert.Equal(t, "/hero", result[0].ContentPath)
-}
-
-// TestGetPersonalizedContent_UserEvalCacheHit_True verifies that a cached
-// "true" user-eval result skips live evaluation and includes the entry.
-func TestGetPersonalizedContent_UserEvalCacheHit_True(t *testing.T) {
-	t.Parallel()
-
-	logicHash := "abc123"
 	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/product",
-		RuleSetType:    "Mass",
+		ContentPath:    "/content/hero",
+		RuleSetType:    "MASS",
+		LogicEval:      true,
 		Score:          0.8,
-		LogicHash:      logicHash,
-		Conditions:     []dto.LogicCondition{},
 	}
 
-	// gRPC returns entry; per-user eval cache is pre-populated as "true".
-	stored := map[string]string{
-		cmsUserEvalKey("user1", logicHash): "true",
+	mem := newTestMemCache(t, "evaluator_fallback")
+	rule := &entity.DecisionRule{BaseModel: entity.BaseModel{ID: uuid.New()}}
+	sched := &entity.Schedule{
+		Placement:    &entity.Placement{PlacementName: "hero"},
+		DecisionRule: rule,
 	}
+	mem.Schedules.Set(cmsPlacementSchedulesKey("hero"), []*entity.Schedule{sched}, time.Hour)
+
 	svc := newSvcWithFallback(
 		&mockCacheRepo{
-			getFn: func(_ context.Context, key string) (string, error) {
-				if v, ok := stored[key]; ok {
-					return v, nil
-				}
+			getFn: func(_ context.Context, _ string) (string, error) {
 				return "", errors.New("miss")
-			},
-			setFn: func(_ context.Context, key, val string, _ time.Duration) error {
-				stored[key] = val
-				return nil
 			},
 		},
 		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				assert.Equal(t, "hero", name)
+				require.Len(t, schedules, 1)
 				return []dto.ContentResult{entry}, nil
 			},
 		},
+		mem,
 	)
 
-	result, err := svc.GetPersonalizedContent(context.Background(), "cis1", "user1", []string{"shopping"}, nil)
+	result, err := svc.GetPersonalizedContent(
+		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+	)
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
-	assert.Equal(t, "/product", result[0].ContentPath)
+	assert.Equal(t, "/content/hero", result[0].ContentPath)
 }
 
-// TestGetPersonalizedContent_UserEvalCacheHit_False verifies that a cached
-// "false" user-eval result excludes the entry.
-func TestGetPersonalizedContent_UserEvalCacheHit_False(t *testing.T) {
+// TestGetPersonalizedContent_EvaluatorFails verifies graceful degradation:
+// evaluator failure returns an empty result without propagating the error.
+func TestGetPersonalizedContent_EvaluatorFails(t *testing.T) {
 	t.Parallel()
 
-	logicHash := "def456"
-	entry := dto.ContentResult{
-		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/product",
-		LogicHash:      logicHash,
-		LogicEval:      true, // LogicEval is true but cached eval says "false" — cached result wins
-		Conditions:     []dto.LogicCondition{},
-	}
+	mem := newTestMemCache(t, "evaluator_fails")
 
-	// gRPC returns entry; per-user eval cache is pre-populated as "false".
-	stored := map[string]string{
-		cmsUserEvalKey("user1", logicHash): "false",
-	}
 	svc := newSvcWithFallback(
 		&mockCacheRepo{
-			getFn: func(_ context.Context, key string) (string, error) {
-				if v, ok := stored[key]; ok {
-					return v, nil
-				}
+			getFn: func(_ context.Context, _ string) (string, error) {
 				return "", errors.New("miss")
 			},
 		},
 		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				return []dto.ContentResult{entry}, nil
+				return nil, errors.New("rpc error: unavailable")
 			},
 		},
+		mem,
 	)
 
-	result, err := svc.GetPersonalizedContent(context.Background(), "cis1", "user1", []string{"shop"}, nil)
+	result, err := svc.GetPersonalizedContent(
+		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+	)
 
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
 
-// TestGetPersonalizedContent_LiveEval_PassAndCache verifies that a user-eval
-// cache miss triggers live evaluation via entry.LogicEval; the result is stored
-// and the passing entry is returned.
-func TestGetPersonalizedContent_LiveEval_PassAndCache(t *testing.T) {
+// TestGetPersonalizedContent_NoSchedulesInMemory verifies that a placement with
+// no schedules in the in-memory cache returns an empty result when no evaluator is set.
+func TestGetPersonalizedContent_NoSchedulesInMemory(t *testing.T) {
 	t.Parallel()
 
-	logicHash := "live-pass-hash"
-	entry := dto.ContentResult{
-		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/offer",
-		Score:          1.0,
-		LogicHash:      logicHash,
-		LogicEval:      true, // server evaluated this entry as matching
-		Conditions:     []dto.LogicCondition{},
-	}
+	mem := newTestMemCache(t, "no_schedules")
 
-	stored := map[string]string{}
-	svc := newSvcWithFallback(
-		&mockCacheRepo{
-			getFn: func(_ context.Context, key string) (string, error) {
-				if v, ok := stored[key]; ok {
-					return v, nil
-				}
-				return "", errors.New("miss")
-			},
-			setFn: func(_ context.Context, key, val string, _ time.Duration) error {
-				stored[key] = val
-				return nil
-			},
+	svc := newSvcCacheOnly(&mockCacheRepo{
+		getFn: func(_ context.Context, _ string) (string, error) {
+			return "", errors.New("miss")
 		},
-		&mockOccurrenceRepo{},
-		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				return []dto.ContentResult{entry}, nil
-			},
-		},
+	}, mem)
+
+	result, err := svc.GetPersonalizedContent(
+		context.Background(), "cis1", "user1", []string{"unknown-placement"}, nil,
 	)
 
-	userAttrs := map[string]json.RawMessage{
-		uuid.New().String(): json.RawMessage(`"premium"`),
-	}
-
-	result, err := svc.GetPersonalizedContent(context.Background(), "cis2", "user99", []string{"deals"}, userAttrs)
-
 	require.NoError(t, err)
-	require.Len(t, result, 1)
-	assert.Equal(t, "/offer", result[0].ContentPath)
-
-	// User eval result should be cached under the preserved logicHash.
-	assert.Equal(t, "true", stored[cmsUserEvalKey("user99", logicHash)])
-	// Personalised placement cache should be written.
-	assert.NotEmpty(t, stored[cmsPersonalizedPlacementKey("cis2", "deals")])
+	assert.Empty(t, result)
 }
 
 // TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID verifies that the
 // delivery service resolves a cis_id:{cisID} JSON payload from Redis and passes
-// the merged attributes to the gRPC evaluator.
+// the merged attributes to the evaluator.
 func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 	t.Parallel()
 
 	condAttrID := uuid.New()
-	logicHash := "cis-redis-hash"
 	entry := dto.ContentResult{
 		DecisionRuleId: uuid.New().String(),
 		ContentPath:    "/wealth/vip",
+		LogicEval:      true,
 		Score:          9.5,
-		LogicHash:      logicHash,
-		LogicEval:      true, // server evaluated this entry as matching
 	}
 
-	userAttrsData, _ := json.Marshal(map[string]interface{}{
+	userAttrsData, _ := json.Marshal(map[string]any{
 		condAttrID.String(): "balanced",
 	})
 
@@ -522,6 +360,8 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 		cmsUserAttrsKey("cis42"): string(userAttrsData),
 	}
 
+	mem := newTestMemCache(t, "user_attrs_from_redis")
+
 	svc := newSvcWithFallback(
 		&mockCacheRepo{
 			getFn: func(_ context.Context, key string) (string, error) {
@@ -530,20 +370,16 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 				}
 				return "", errors.New("miss")
 			},
-			setFn: func(_ context.Context, key, val string, _ time.Duration) error {
-				stored[key] = val
-				return nil
-			},
 		},
 		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
 			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				// Verify the user attr from Redis was resolved and passed to the evaluator.
 				_, ok := userAttrs[condAttrID.String()]
 				assert.True(t, ok, "expected resolved user attr to be passed to evaluator")
 				return []dto.ContentResult{entry}, nil
 			},
 		},
+		mem,
 	)
 
 	result, err := svc.GetPersonalizedContent(
@@ -553,70 +389,4 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Equal(t, "/wealth/vip", result[0].ContentPath)
-	assert.Equal(t, "true", stored[cmsUserEvalKey("user88", logicHash)])
-	assert.NotEmpty(t, stored[cmsPersonalizedPlacementKey("cis42", "wealth-banner")])
-}
-
-// TestGetPersonalizedContent_EvalFalse_ExcludedAndCached verifies that when
-// the evaluator returns LogicEval=false the entry is excluded and the result
-// is cached as "false" under the user eval key.
-func TestGetPersonalizedContent_EvalFalse_ExcludedAndCached(t *testing.T) {
-	t.Parallel()
-
-	logicHash := "eval-false-hash"
-	entry := dto.ContentResult{
-		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/restricted",
-		LogicHash:      logicHash,
-		LogicEval:      false, // evaluator determined this entry does not match
-	}
-
-	stored := map[string]string{}
-	svc := newSvcWithFallback(
-		&mockCacheRepo{
-			getFn: func(_ context.Context, key string) (string, error) {
-				if v, ok := stored[key]; ok {
-					return v, nil
-				}
-				return "", errors.New("miss")
-			},
-			setFn: func(_ context.Context, key, val string, _ time.Duration) error {
-				stored[key] = val
-				return nil
-			},
-		},
-		&mockOccurrenceRepo{},
-		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
-				return []dto.ContentResult{entry}, nil
-			},
-		},
-	)
-
-	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis3", "user42", []string{"vip"}, map[string]json.RawMessage{},
-	)
-
-	require.NoError(t, err)
-	assert.Empty(t, result)
-	// The false result should be cached under the logic hash.
-	assert.Equal(t, "false", stored[cmsUserEvalKey("user42", logicHash)])
-}
-
-// TestGetPersonalizedContent_NoLogicCache returns empty when the logic key is absent.
-func TestGetPersonalizedContent_NoLogicCache(t *testing.T) {
-	t.Parallel()
-
-	svc := newSvcCacheOnly(&mockCacheRepo{
-		getFn: func(_ context.Context, _ string) (string, error) {
-			return "", errors.New("miss")
-		},
-	})
-
-	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"unknown-placement"}, nil,
-	)
-
-	require.NoError(t, err)
-	assert.Empty(t, result)
 }

@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -13,8 +12,7 @@ import (
 // Prometheus metric registration conflicts between parallel tests.
 func newTestCache(t *testing.T) *CacheMemory[string] {
 	t.Helper()
-	// Use test name as namespace to ensure uniqueness.
-	c := NewCacheMemory[string](t.Name(), 0.99)
+	c := NewCacheMemory[string](t.Name(), 0.99, time.Hour)
 	t.Cleanup(func() { c.Stop() })
 	return c
 }
@@ -24,7 +22,7 @@ func TestGet_ReturnsHitBeforeExpiry(t *testing.T) {
 	c := newTestCache(t)
 	c.Set("key", "value", 10*time.Second)
 
-	got, ok := c.Get(context.Background(), "key")
+	got, ok := c.Get("key")
 	require.True(t, ok, "expected cache hit")
 	assert.Equal(t, "value", got)
 }
@@ -36,35 +34,15 @@ func TestGet_ReturnsMissAfterExpiry(t *testing.T) {
 
 	time.Sleep(5 * time.Millisecond) // let TTL elapse
 
-	got, ok := c.Get(context.Background(), "key")
+	got, ok := c.Get("key")
 	assert.False(t, ok, "expected cache miss after TTL expiry")
 	assert.Empty(t, got)
-}
-
-// TestGet_LazyDeletesExpiredEntry verifies that calling Get on an expired entry
-// removes it from the internal map immediately (lazy eviction).
-func TestGet_LazyDeletesExpiredEntry(t *testing.T) {
-	c := newTestCache(t)
-	c.Set("key", "value", 1*time.Millisecond)
-
-	time.Sleep(5 * time.Millisecond) // let TTL elapse
-
-	// First Get: triggers lazy eviction.
-	_, ok := c.Get(context.Background(), "key")
-	assert.False(t, ok)
-
-	// Inspect internal map directly (same package — white-box test).
-	c.mu.RLock()
-	_, stillPresent := c.entries["key"]
-	c.mu.RUnlock()
-
-	assert.False(t, stillPresent, "expired entry should have been lazily deleted from the map")
 }
 
 // TestGet_MissOnNonExistentKey verifies a miss for a key that was never stored.
 func TestGet_MissOnNonExistentKey(t *testing.T) {
 	c := newTestCache(t)
-	_, ok := c.Get(context.Background(), "ghost")
+	_, ok := c.Get("ghost")
 	assert.False(t, ok)
 }
 
@@ -79,7 +57,7 @@ func TestSet_RejectsUnderMemPressure(t *testing.T) {
 
 	c.Set("key", "value", 10*time.Second)
 
-	_, ok := c.Get(context.Background(), "key")
+	_, ok := c.Get("key")
 	assert.False(t, ok, "entry should not be stored under memory pressure")
 }
 
@@ -92,17 +70,13 @@ func TestPurgeExpired_RemovesOnlyExpiredKeys(t *testing.T) {
 
 	time.Sleep(5 * time.Millisecond) // let "dead" TTL elapse
 
-	c.mu.Lock()
 	c.purgeExpired()
-	c.mu.Unlock()
 
-	c.mu.RLock()
-	_, deadPresent := c.entries["dead"]
-	_, livePresent := c.entries["live"]
-	c.mu.RUnlock()
+	_, deadOk := c.cache.Get("dead")
+	_, liveOk := c.cache.Get("live")
 
-	assert.False(t, deadPresent, "expired entry 'dead' should have been purged")
-	assert.True(t, livePresent, "valid entry 'live' should still be present")
+	assert.False(t, deadOk, "expired entry 'dead' should have been purged")
+	assert.True(t, liveOk, "valid entry 'live' should still be present")
 }
 
 // TestDelete_RemovesKey verifies that Delete removes the specified key.
@@ -111,7 +85,7 @@ func TestDelete_RemovesKey(t *testing.T) {
 	c.Set("key", "value", 10*time.Second)
 	c.Delete("key")
 
-	_, ok := c.Get(context.Background(), "key")
+	_, ok := c.Get("key")
 	assert.False(t, ok)
 }
 
@@ -122,9 +96,5 @@ func TestClear_RemovesAllKeys(t *testing.T) {
 	c.Set("b", "2", 10*time.Second)
 	c.Clear()
 
-	c.mu.RLock()
-	count := len(c.entries)
-	c.mu.RUnlock()
-
-	assert.Equal(t, 0, count, "cache should be empty after Clear")
+	assert.Equal(t, 0, c.cache.ItemCount(), "cache should be empty after Clear")
 }

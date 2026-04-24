@@ -13,40 +13,33 @@ import (
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
-	"kbank-ecms/pkg/util"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
-// cmsPlacementKey returns the Redis key for the given placement name.
+// Return ContentResult entries that Mass Type
 func cmsPlacementKey(name string) string {
 	return "cms:placement:" + name
 }
 
-// cmsPlacementSchedulesKey returns the Redis key where the runtime writes
-// ContentResult records for the personalized delivery path.
+// Return Schedule entries for a placement, used for cache keys and DB queries.
 func cmsPlacementSchedulesKey(name string) string {
-	return fmt.Sprintf("cms:placement:%s:schedules", name)
+	return "cms:placement:" + name + ":schedules"
 }
 
-// cmsPersonalizedPlacementKey returns the Redis key for per-CIS personalized content.
-func cmsPersonalizedPlacementKey(cisID, name string) string {
-	return "cms:placement:" + cisID + ":" + name
-}
-
-// cmsUserEvalKey returns the Redis key for a per-user logic evaluation result.
-func cmsUserEvalKey(userID, hash string) string {
-	return "cms:eval:user:" + userID + ":logic:" + hash
-}
-
-// ruleDecisionCacheKey returns the Redis key for caching a decision rule by ID.
+// Return logic entries for a placement, used for cache keys.
 func ruleDecisionCacheKey(id string) string {
 	return "rule:" + id
 }
 
 // compile-time interface guard.
 var _ DeliveryService = (*CMSDeliveryService)(nil)
+
+type MemoryCache struct {
+	Schedules    *cache.CacheMemory[[]*entity.Schedule]
+	DecisionRule *cache.CacheMemory[*entity.DecisionRule]
+}
 
 // CMSDeliveryService implements DeliveryService.
 // Primary path: reads pre-computed content results from Redis.
@@ -59,7 +52,7 @@ type CMSDeliveryService struct {
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository // nil disables fallback
 	decisionRepo   domainrepo.DecisionRuleRepository       // nil disables fallback
 	evaluator      RuntimeEvaluator                        // nil disables fallback
-	cacheMemory    *cache.CacheMemory[any]
+	cacheMemory    *MemoryCache                            // nil disables in-memory caching
 	resultTTL      time.Duration
 	tickInterval   time.Duration
 
@@ -80,7 +73,7 @@ func NewCMSDeliveryService(
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator RuntimeEvaluator,
-	cacheMemory *cache.CacheMemory[any],
+	cacheMemory *MemoryCache,
 	resultTTL time.Duration,
 	tickInterval time.Duration,
 ) *CMSDeliveryService {
@@ -100,50 +93,30 @@ func NewCMSDeliveryService(
 // ALL Redis placement caches are flushed via FlushDB.
 func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []string, isEvaluate bool) error {
 	if len(placementNames) == 0 {
-		if s.cacheMemory != nil {
-			s.cacheMemory.Clear()
-		}
 		if err := s.cacheRepo.FlushDB(ctx); err != nil {
 			return fmt.Errorf("flushing all caches: %w", err)
 		}
-
-		// After a full flush, proactively re-populate caches for all active placements to avoid cache stampede on first request.
-		// This is optional but helps ensure a warm cache.
-		if isEvaluate {
-			s.evaluateAllViaGRPC(ctx)
-		}
 		return nil
 	}
+
 	for _, name := range placementNames {
-		// UC3: flush rule caches for every rule associated with this placement,
-		// then flush the schedule list and the placement result cache.
-		if schedules, err := getCache[[]*entity.Schedule](ctx, s.cacheMemory, s.cacheRepo, cmsPlacementSchedulesKey(name)); err == nil {
-			seen := make(map[string]struct{})
+		placementNameKey := cmsPlacementSchedulesKey(name)
+		schedules, ok := s.cacheMemory.Schedules.Get(placementNameKey)
+		if ok && schedules != nil {
 			for _, sched := range schedules {
-				id := sched.DecisionRuleID.String()
-				if _, already := seen[id]; already {
-					continue
+				if sched.DecisionRule != nil {
+					decisionRuleKey := ruleDecisionCacheKey(sched.DecisionRule.ID.String())
+					s.cacheMemory.DecisionRule.Delete(decisionRuleKey)
 				}
-				seen[id] = struct{}{}
-				_ = s.flushCacheKey(ctx, ruleDecisionCacheKey(id))
 			}
 		}
-		if err := s.flushCacheKey(ctx, cmsPlacementSchedulesKey(name)); err != nil {
-			return err
-		}
-		if err := s.flushCacheKey(ctx, cmsPlacementKey(name)); err != nil {
-			return err
-		}
+		s.cacheMemory.Schedules.Delete(placementNameKey)
 	}
-	return nil
-}
 
-func (s *CMSDeliveryService) flushCacheKey(ctx context.Context, key string) error {
-	if s.cacheMemory != nil {
-		s.cacheMemory.Delete(key)
-	}
-	if err := s.cacheRepo.Delete(ctx, key); err != nil {
-		return fmt.Errorf("flushing cache key %s: %w", key, err)
+	// After a full flush, proactively re-populate caches for all active placements to avoid cache stampede on first request.
+	// This is optional but helps ensure a warm cache.
+	if isEvaluate {
+		s.evaluate(ctx)
 	}
 	return nil
 }
@@ -185,12 +158,12 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	// 1. Query per placement active schedules.
 	schedules := []*entity.Schedule{}
 	for _, placementName := range placementNames {
-		result, err := getCache[[]*entity.Schedule](ctx, s.cacheMemory, s.cacheRepo, cmsPlacementSchedulesKey(placementName))
-		if err != nil {
+		result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName))
+		if !ok {
 			logger.LSystem(ctx, entity.SystemLog{
 				Service: "CMS-DELIVERY",
 				Level:   "WARN",
-				Message: fmt.Sprintf("Failed to query active schedules for placement %q: %v", placementName, err),
+				Message: fmt.Sprintf("Failed to query active schedules for placement %q", placementName),
 			})
 			// On DB failure, skip this placement silently (do not return an error, do not include results).
 			continue
@@ -200,29 +173,46 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 	// 2. Filter to the requested placement. Re-attach DecisionRule from the rule
 	// cache when the schedule was stored lean (UC2 strips DecisionRule on write).
+	missedRules := []uuid.UUID{}
 	filtered := make(map[string][]*entity.Schedule)
 	for _, sched := range schedules {
 		if sched.DecisionRule == nil && sched.DecisionRuleID != uuid.Nil {
 			decisionRuleKey := ruleDecisionCacheKey(sched.DecisionRuleID.String())
-			if rule, err := getCache[*entity.DecisionRule](ctx, s.cacheMemory, s.cacheRepo, decisionRuleKey); err == nil && rule != nil {
+			if rule, ok := s.cacheMemory.DecisionRule.Get(decisionRuleKey); ok && rule != nil {
 				sched.DecisionRule = rule
 			} else {
-				// miss cache, try to query DB directly to avoid stale cache.
-				if rule, err := util.GetSet(ctx, s.cacheRepo, decisionRuleKey, s.resultTTL, func(ctx context.Context) (*entity.DecisionRule, error) {
-					return s.decisionRepo.GetDecisionRuleByScheduleID(ctx, sched.ID)
-				}); err == nil && rule != nil {
-					sched.DecisionRule = rule
-				} else {
-					logger.LSystem(ctx, entity.SystemLog{
-						Service: "CMS-DELIVERY",
-						Level:   "WARN",
-						Message: fmt.Sprintf("Failed to query rule for sched %q: %v", sched.DecisionRuleID.String(), err),
-					})
-				}
+				missedRules = append(missedRules, sched.ID)
 			}
 		}
-		if sched.Placement != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
+	}
+	// 2.1 missedRules can be used to trigger proactive cache population in the background ticker if we want to optimize for repeated cache misses on the same rules. For now we just log them.
+	if len(missedRules) > 0 {
+		// miss cache, try to query DB directly to avoid stale cache.
+		if rules, err := s.decisionRepo.GetDecisionRuleByScheduleIDs(ctx, missedRules); err == nil && len(rules) > 0 {
+			for _, sched := range schedules {
+				if rule, ok := rules[sched.ID]; ok {
+					sched.DecisionRule = rule
+					s.cacheMemory.DecisionRule.Set(ruleDecisionCacheKey(rule.ID.String()), rule, s.resultTTL)
+				}
+			}
+		} else {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Level:   "WARN",
+				Message: fmt.Sprintf("Failed to query rules for schedules %v: %v", missedRules, err),
+			})
+		}
+	}
+	// 2.2 filter to requested placements.
+	for _, sched := range schedules {
+		if sched.Placement != nil && sched.DecisionRule != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
 			filtered[sched.Placement.PlacementName] = append(filtered[sched.Placement.PlacementName], sched)
+		} else {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Level:   "WARN",
+				Message: fmt.Sprintf("Schedule %v skipped due to missing placement or decision rule", sched.ID),
+			})
 		}
 	}
 
@@ -256,7 +246,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	return result, nil
 }
 
-// evaluatePlacement handles cache lookup, gRPC fallback, and per-entry
+// evaluatePlacement handles the full evaluation flow for a single placement name, returning the passing ContentResult entries.
 // evaluation for a single placement. Extracted to keep the errgroup callback
 // focused and testable independently.
 func (s *CMSDeliveryService) evaluatePlacement(
@@ -265,65 +255,28 @@ func (s *CMSDeliveryService) evaluatePlacement(
 	schedules []*entity.Schedule,
 	resolvedUserAttrs map[string]json.RawMessage,
 ) []dto.ContentResult {
-	personalKey := cmsPersonalizedPlacementKey(cisID, name)
 	var entries []dto.ContentResult
-
-	// Check the personalized cache first (L3).
-	if cacheEntries, cacheErr := getCache[[]dto.ContentResult](
-		ctx,
-		s.cacheMemory,
-		s.cacheRepo,
-		personalKey,
-	); cacheErr == nil {
-		entries = cacheEntries
-	} else if s.evaluator != nil && s.occurrenceRepo != nil {
-		// gRPC fallback — one or more rules were missing from cache.
-		grpcEntries, grpcErr := s.evaluatePlacementLogicViaGRPC(ctx, name, schedules, resolvedUserAttrs)
-		if grpcErr != nil {
+	// Evaluate the placement logic immediately if the evaluator and occurrenceRepo are configured; otherwise, return no results (cache miss).
+	if s.evaluator != nil && s.occurrenceRepo != nil {
+		results, err := s.evaluator.Evaluate(ctx, name, schedules, resolvedUserAttrs)
+		if err != nil {
 			logger.LSystem(ctx, entity.SystemLog{
 				Service: "CMS-DELIVERY",
 				Level:   "WARN",
-				Message: fmt.Sprintf("gRPC placement-logic fallback failed for %q: %v", name, grpcErr),
+				Message: fmt.Sprintf("Evaluate failed for %q: %v", name, err),
 			})
 			return nil
 		}
-		entries = grpcEntries
+		// filter is LogicEval is true, which means the logic expression passed. The rest of the fields are used for caching and response construction.
+		var passing []dto.ContentResult
+		for _, item := range results {
+			if item.LogicEval {
+				passing = append(passing, item)
+			}
+		}
+		entries = passing
 	} else {
 		return nil
-	}
-
-	// 4. Evaluate each entry against user attrs.
-	var passing []dto.ContentResult
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, entry := range entries {
-		if entry.LogicHash == "" {
-			r := entry
-			r.LogicEval = true
-			r.EvaluatedAt = now
-			passing = append(passing, r)
-			continue
-		}
-
-		// Check per-user eval cache first.
-		evalKey := cmsUserEvalKey(userID, entry.LogicHash)
-		if cached, cacheErr := getCache[string](ctx, s.cacheMemory, s.cacheRepo, evalKey); cacheErr == nil {
-			if cached == "true" {
-				r := entry
-				r.EvaluatedAt = now
-				passing = append(passing, r)
-			}
-			continue
-		}
-
-		// Cache miss — evaluate live.
-		cacheVal := "false"
-		if entry.LogicEval {
-			cacheVal = "true"
-			r := entry
-			r.EvaluatedAt = now
-			passing = append(passing, r)
-		}
-		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, evalKey, cacheVal, s.resultTTL)
 	}
 
 	logger.LSystem(ctx, entity.SystemLog{
@@ -331,29 +284,7 @@ func (s *CMSDeliveryService) evaluatePlacement(
 		Level:   "INFO",
 		Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), name),
 	})
-	if len(passing) > 0 {
-		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, personalKey, passing, s.resultTTL)
-	}
-
-	return passing
-}
-
-// evaluatePlacementLogicViaGRPC queries active schedules, delegates ContentResult
-// evaluation to cms-runtime via gRPC, caches the result under cmsPlacementLogicKey, and
-// returns the entries for immediate use by GetPersonalizedContent.
-func (s *CMSDeliveryService) evaluatePlacementLogicViaGRPC(
-	ctx context.Context,
-	placementName string,
-	filtered []*entity.Schedule,
-	userAttrs map[string]json.RawMessage,
-) ([]dto.ContentResult, error) {
-	// Delegate evaluation to cms-runtime via gRPC.
-	entries, err := s.evaluator.Evaluate(ctx, placementName, filtered, userAttrs)
-	if err != nil {
-		return nil, err
-	}
-
-	return entries, nil
+	return entries
 }
 
 // ---------------------------------------------------------------------------
@@ -412,12 +343,12 @@ func (s *CMSDeliveryService) Stop() error {
 	return nil
 }
 
-// runLoop fires evaluateAllViaGRPC immediately, then on every tick.
+// runLoop fires evaluate immediately, then on every tick.
 func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 	defer close(s.done)
 
 	// Fire immediately on start.
-	s.evaluateAllViaGRPC(ctx)
+	s.evaluate(ctx)
 
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
@@ -427,12 +358,12 @@ func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			s.evaluateAllViaGRPC(ctx)
+			s.evaluate(ctx)
 		}
 	}
 }
 
-// evaluateAllViaGRPC queries all active schedules from the database,
+// evaluate queries all active schedules from the database,
 // groups them by placement, and for each placement:
 //
 //  1. L1 — caches each schedule's rules in CacheMemory.
@@ -443,13 +374,13 @@ func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 //
 // On gRPC failure for a single placement the error is logged and the loop
 // continues with the next placement.
-func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
+func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 	occurrences, err := s.occurrenceRepo.ListActiveAt(ctx, time.Now())
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "CMS-DELIVERY",
 			Level:   "ERROR",
-			Message: fmt.Sprintf("evaluateAllViaGRPC: list active occurrences: %v", err),
+			Message: fmt.Sprintf("evaluate: list active occurrences: %v", err),
 		})
 		return
 	}
@@ -484,11 +415,6 @@ func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
 			groups[name] = g
 		}
 		g.schedules = append(g.schedules, sched)
-
-		// L1 — cache individual decision rule in CacheMemory for local look-ups.
-		if s.cacheMemory != nil && sched.DecisionRule != nil {
-			_ = setCache(ctx, s.cacheMemory, s.cacheRepo, ruleDecisionCacheKey(sched.DecisionRule.ID.String()), sched.DecisionRule, s.resultTTL)
-		}
 	}
 
 	if len(groups) == 0 {
@@ -498,7 +424,7 @@ func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: fmt.Sprintf("evaluateAllViaGRPC: processing %d placements (%d schedules)", len(groups), len(schedules)),
+		Message: fmt.Sprintf("evaluate: processing %d placements (%d schedules)", len(groups), len(schedules)),
 	})
 
 	// UC2: cache lean schedules (DecisionRule stripped) for later retrieval in
@@ -506,15 +432,12 @@ func (s *CMSDeliveryService) evaluateAllViaGRPC(ctx context.Context) {
 	// ruleDecisionCacheKey, so embedding it in every schedule would duplicate it
 	// once per schedule that shares the same rule.
 	for placementName, g := range groups {
-		_ = setCache(ctx, s.cacheMemory, s.cacheRepo, cmsPlacementSchedulesKey(placementName), g.schedules, s.resultTTL)
+		s.cacheMemory.Schedules.Set(cmsPlacementSchedulesKey(placementName), g.schedules, s.resultTTL)
 	}
 }
 
 // setCache writes value to both the in-memory cache (if configured) and Redis.
-func setCache[T any](ctx context.Context, mem *cache.CacheMemory[any], repo domainrepo.RedisCacheRepository, key string, value T, ttl time.Duration) error {
-	if mem != nil {
-		mem.Set(key, value, ttl)
-	}
+func setCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string, value T, ttl time.Duration) error {
 	// checking value is string to avoid unnecessary JSON marshal for string values (e.g. rule logic hashes). If value is not string, marshal to JSON before writing to Redis.
 	if strVal, ok := any(value).(string); ok {
 		return repo.Set(ctx, key, strVal, ttl)
@@ -527,21 +450,8 @@ func setCache[T any](ctx context.Context, mem *cache.CacheMemory[any], repo doma
 }
 
 // getCache retrieves a value by key, checking in-memory cache first then falling back to Redis.
-func getCache[T any](ctx context.Context, mem *cache.CacheMemory[any], repo domainrepo.RedisCacheRepository, key string) (T, error) {
+func getCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string) (T, error) {
 	var zero T
-	if mem != nil {
-		if val, ok := mem.Get(ctx, key); ok && val != nil {
-			// checking value is string to avoid unnecessary JSON unmarshal for string values (e.g. rule logic hashes).
-			// If value is not string, it means it's stored as JSON in cache, so we need to marshal it back to original type before returning.
-			if strVal, isStr := any(val).(string); isStr {
-				if err := json.Unmarshal([]byte(strVal), &zero); err != nil {
-					return zero, fmt.Errorf("cache: unmarshal error: %w", err)
-				}
-				return zero, nil
-			}
-			return val.(T), nil
-		}
-	}
 	val, err := repo.Get(ctx, key)
 	if err != nil {
 		return zero, err

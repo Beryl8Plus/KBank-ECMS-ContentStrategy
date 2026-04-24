@@ -34,7 +34,7 @@ func ProvideCMSDeliveryService(
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator deliveryservice.RuntimeEvaluator,
-	cacheMemory *cache.CacheMemory[any],
+	cacheMemory *deliveryservice.MemoryCache,
 ) *deliveryservice.CMSDeliveryService {
 	resultTTL := parseDurationEnv("CMS_RUNTIME_TTL", 15*time.Minute)
 	tickInterval := parseDurationEnv("CMS_RUNTIME_INTERVAL", 5*time.Minute)
@@ -46,10 +46,16 @@ func ProvideCMSDeliveryService(
 }
 
 // ProvideCacheMemory provides the L1 cache.
-func ProvideCacheMemory() (*cache.CacheMemory[any], func()) {
-	c := cache.NewCacheMemory[any]("cms_rule", 0.60)
-	return c, func() {
-		c.Stop()
+func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
+	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
+	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
+	memoryCache := deliveryservice.MemoryCache{
+		Schedules:    schedules,
+		DecisionRule: decisionRule,
+	}
+	return &memoryCache, func() {
+		schedules.Stop()
+		decisionRule.Stop()
 	}
 }
 
@@ -80,6 +86,7 @@ var ProviderSet = wire.NewSet(
 	repository.NewDecisionRulePostgresRepository,
 	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
 	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
+	wire.Bind(new(deliveryservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
 
 	// Providers
 	ProvideCacheMemory,

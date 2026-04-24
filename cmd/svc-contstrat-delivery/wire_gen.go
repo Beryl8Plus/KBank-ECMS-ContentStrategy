@@ -7,11 +7,10 @@
 package main
 
 import (
+	"gorm.io/gorm"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/repository"
 	repository2 "kbank-ecms/internal/repository"
-
-	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
@@ -20,9 +19,9 @@ import (
 func InitializeApp(db *gorm.DB, redisRepo repository.RedisCacheRepository, rateLimit entity.RateLimit) (*App, func()) {
 	scheduleOccurrencePostgresRepository := repository2.NewScheduleOccurrencePostgresRepository(db)
 	decisionRulePostgresRepository := repository2.NewDecisionRulePostgresRepository(db)
-	cacheMemory, cleanup := ProvideCacheMemory()
 	localEvaluator := ProvideRuntimeEvaluator()
-	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, scheduleOccurrencePostgresRepository, decisionRulePostgresRepository, localEvaluator, cacheMemory)
+	memoryCache, cleanup := ProvideCacheMemory()
+	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, scheduleOccurrencePostgresRepository, decisionRulePostgresRepository, localEvaluator, memoryCache)
 	engine := ProvideRouter(db, rateLimit, cmsDeliveryService)
 	app := ProvideApp(engine, cmsDeliveryService)
 	return app, func() {

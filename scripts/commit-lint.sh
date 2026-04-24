@@ -19,7 +19,7 @@ if printf '%s\n' "$msg" | grep -qE '^(Merge|Revert)'; then
 fi
 
 type_regex='feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert'
-scope_regex='[a-z0-9._/-]+'
+scope_regex='[a-zA-Z0-9._/-]+'
 regex="^($type_regex)(\\($scope_regex\\))?(!)?:\\s.+"
 
 if printf '%s\n' "$msg" | grep -E -q "$regex"; then
