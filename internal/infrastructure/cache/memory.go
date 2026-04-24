@@ -41,6 +41,7 @@ type CacheMemory[T any] struct {
 	// Status
 	mu            sync.RWMutex
 	isMemPressure bool
+	lastUsedPct   float64
 
 	// Metrics (per-instance, namespaced)
 	mCacheHits        prometheus.Counter
@@ -134,6 +135,24 @@ func (rc *CacheMemory[T]) Clear() {
 	rc.updateMetrics()
 }
 
+// Keys returns a slice of all keys currently stored in the cache.
+func (rc *CacheMemory[T]) Keys() []string {
+	keys := make([]string, 0, rc.cache.ItemCount())
+	for k := range rc.cache.Items() {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Status returns whether the cache is under memory pressure and the last
+// measured heap utilisation ratio (HeapAlloc/HeapSys, range 0–1).
+// Returns 0 before the first monitor tick fires.
+func (rc *CacheMemory[T]) Status() (isMemPressure bool, usedPct float64) {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+	return rc.isMemPressure, rc.lastUsedPct
+}
+
 // monitorMemory runs in the background to check HeapAlloc against the threshold.
 func (rc *CacheMemory[T]) monitorMemory() {
 	ticker := time.NewTicker(5 * time.Second)
@@ -158,6 +177,7 @@ func (rc *CacheMemory[T]) monitorMemory() {
 			usedPct := float64(m.HeapAlloc) / float64(m.HeapSys)
 
 			rc.mu.Lock()
+			rc.lastUsedPct = usedPct
 			if usedPct > rc.maxMemoryPct {
 				rc.isMemPressure = true
 				rc.mMemPressureGauge.Set(1)

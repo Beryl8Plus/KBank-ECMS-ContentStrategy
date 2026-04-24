@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -19,9 +20,9 @@ import (
 )
 
 // Return ContentResult entries that Mass Type
-func cmsPlacementKey(name string) string {
-	return "cms:placement:" + name
-}
+// func cmsPlacementKey(name string) string {
+// 	return "cms:placement:" + name
+// }
 
 // Return Schedule entries for a placement, used for cache keys and DB queries.
 func cmsPlacementSchedulesKey(name string) string {
@@ -39,6 +40,14 @@ var _ DeliveryService = (*CMSDeliveryService)(nil)
 type MemoryCache struct {
 	Schedules    *cache.CacheMemory[[]*entity.Schedule]
 	DecisionRule *cache.CacheMemory[*entity.DecisionRule]
+}
+
+func (m *MemoryCache) getStatus() (isMemPressure bool, memoryUsagePct float64) {
+	isMemPressureDecision, memoryUsagePctDecision := m.DecisionRule.Status()
+	isMemPressureSchedule, memoryUsagePctSchedule := m.Schedules.Status()
+	isMemPressure = isMemPressureDecision || isMemPressureSchedule
+	memoryUsagePct = math.Max(memoryUsagePctDecision, memoryUsagePctSchedule)
+	return isMemPressure, memoryUsagePct
 }
 
 // CMSDeliveryService implements DeliveryService.
@@ -86,6 +95,30 @@ func NewCMSDeliveryService(
 		resultTTL:      resultTTL,
 		tickInterval:   tickInterval,
 	}
+}
+
+// GetCacheKeys returns the list of cache keys for the given placement names.
+// This is used for monitoring and debugging purposes to see which cache keys are currently stored in Memory.
+func (s *CMSDeliveryService) GetCacheKeys(ctx context.Context) ([]string, error) {
+	// For simplicity, this implementation only returns In-memory cache keys.
+	var keys []string
+	if s.cacheMemory != nil {
+		keys = append(keys, s.cacheMemory.Schedules.Keys()...)
+		keys = append(keys, s.cacheMemory.DecisionRule.Keys()...)
+	}
+
+	return keys, nil
+}
+
+// GetCacheStatus returns whether the in-memory cache is under heap pressure
+// and the last measured heap utilisation ratio (0–1). Returns false/0 when
+// no in-memory cache is configured.
+func (s *CMSDeliveryService) GetCacheStatus(ctx context.Context) (isMemPressure bool, memoryUsagePct float64, err error) {
+	if s.cacheMemory == nil {
+		return false, 0.0, nil
+	}
+	isMemPressure, memoryUsagePct = s.cacheMemory.getStatus()
+	return isMemPressure, memoryUsagePct, nil
 }
 
 // FlushCache removes cached results for the given placement names.
@@ -183,6 +216,36 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			} else {
 				missedRules = append(missedRules, sched.ID)
 			}
+		}
+	}
+	// 2.1 missedRules can be used to trigger proactive cache population in the background ticker if we want to optimize for repeated cache misses on the same rules. For now we just log them.
+	if len(missedRules) > 0 {
+		// miss cache, try to query DB directly to avoid stale cache.
+		if rules, err := s.decisionRepo.GetDecisionRuleByScheduleIDs(ctx, missedRules); err == nil && len(rules) > 0 {
+			for _, sched := range schedules {
+				if rule, ok := rules[sched.ID]; ok {
+					sched.DecisionRule = rule
+					s.cacheMemory.DecisionRule.Set(ruleDecisionCacheKey(rule.ID.String()), rule, s.resultTTL)
+				}
+			}
+		} else {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Level:   "WARN",
+				Message: fmt.Sprintf("Failed to query rules for schedules %v: %v", missedRules, err),
+			})
+		}
+	}
+	// 2.2 filter to requested placements.
+	for _, sched := range schedules {
+		if sched.Placement != nil && sched.DecisionRule != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
+			filtered[sched.Placement.PlacementName] = append(filtered[sched.Placement.PlacementName], sched)
+		} else {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Level:   "WARN",
+				Message: fmt.Sprintf("Schedule %v skipped due to missing placement or decision rule", sched.ID),
+			})
 		}
 	}
 	// 2.1 missedRules can be used to trigger proactive cache population in the background ticker if we want to optimize for repeated cache misses on the same rules. For now we just log them.
@@ -436,34 +499,34 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 	}
 }
 
-// setCache writes value to both the in-memory cache (if configured) and Redis.
-func setCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string, value T, ttl time.Duration) error {
-	// checking value is string to avoid unnecessary JSON marshal for string values (e.g. rule logic hashes). If value is not string, marshal to JSON before writing to Redis.
-	if strVal, ok := any(value).(string); ok {
-		return repo.Set(ctx, key, strVal, ttl)
-	}
-	valueJSON, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("cache: marshal error: %w", err)
-	}
-	return repo.Set(ctx, key, string(valueJSON), ttl)
-}
+// // setCache writes value to both the in-memory cache (if configured) and Redis.
+// func setCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string, value T, ttl time.Duration) error {
+// 	// checking value is string to avoid unnecessary JSON marshal for string values (e.g. rule logic hashes). If value is not string, marshal to JSON before writing to Redis.
+// 	if strVal, ok := any(value).(string); ok {
+// 		return repo.Set(ctx, key, strVal, ttl)
+// 	}
+// 	valueJSON, err := json.Marshal(value)
+// 	if err != nil {
+// 		return fmt.Errorf("cache: marshal error: %w", err)
+// 	}
+// 	return repo.Set(ctx, key, string(valueJSON), ttl)
+// }
 
-// getCache retrieves a value by key, checking in-memory cache first then falling back to Redis.
-func getCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string) (T, error) {
-	var zero T
-	val, err := repo.Get(ctx, key)
-	if err != nil {
-		return zero, err
-	}
-	// setCache stores string values raw (without JSON encoding); handle string type directly
-	// to stay consistent and avoid json.Unmarshal treating "true"/"false" as JSON booleans.
-	if strPtr, ok := any(&zero).(*string); ok {
-		*strPtr = val
-		return zero, nil
-	}
-	if err = json.Unmarshal([]byte(val), &zero); err != nil {
-		return zero, fmt.Errorf("cache: unmarshal error: %w", err)
-	}
-	return zero, nil
-}
+// // getCache retrieves a value by key, checking in-memory cache first then falling back to Redis.
+// func getCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string) (T, error) {
+// 	var zero T
+// 	val, err := repo.Get(ctx, key)
+// 	if err != nil {
+// 		return zero, err
+// 	}
+// 	// setCache stores string values raw (without JSON encoding); handle string type directly
+// 	// to stay consistent and avoid json.Unmarshal treating "true"/"false" as JSON booleans.
+// 	if strPtr, ok := any(&zero).(*string); ok {
+// 		*strPtr = val
+// 		return zero, nil
+// 	}
+// 	if err = json.Unmarshal([]byte(val), &zero); err != nil {
+// 		return zero, fmt.Errorf("cache: unmarshal error: %w", err)
+// 	}
+// 	return zero, nil
+// }

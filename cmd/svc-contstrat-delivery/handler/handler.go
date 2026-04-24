@@ -2,11 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
+	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
+	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
@@ -82,18 +85,39 @@ func (h *Handler) getContent(c *gin.Context) {
 // getCacheStatus handles GET /purge_requests
 //
 // @Summary Get cache status
-// @Description Returns list purge request status.
+// @Description Returns in-memory cache keys, heap pressure flag, and heap usage ratio.
 // @Tags svc-contstrat-delivery
 // @Accept json
 // @Produce json
-// @Success 200 {object} dto.APIResponse{data=map[string]string}
+// @Success 200 {object} dto.APIResponse{data=dto.CacheStatusResponse}
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
 // @Router /purge_requests [get]
 func (h *Handler) getStatus(c *gin.Context) {
-	// TODO: Implement actual status retrieval logic. For now, return a placeholder response.
+	ctx := c.Request.Context()
 
-	c.JSON(http.StatusOK, dto.APIResponse{})
+	isMemPressure, memUsagePct, err := h.svc.GetCacheStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+
+	keys, err := h.svc.GetCacheKeys(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "SVS-CONTSTRAT-DELIVERY",
+		Message: fmt.Sprintf("cache status: pressure=%v usage=%.2f%% keys=%d", isMemPressure, memUsagePct*100, len(keys)),
+	})
+
+	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.CacheStatusResponse{
+		IsMemPressure:  isMemPressure,
+		MemoryUsagePct: memUsagePct,
+		CacheKeys:      keys,
+	}})
 }
 
 // flushCache handles POST /purge_requests

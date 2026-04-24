@@ -28,4 +28,11 @@ type DeliveryService interface {
 	// If placementNames is non-empty, only those placements are evicted.
 	// If placementNames is nil or empty, ALL placement caches are flushed.
 	FlushCache(ctx context.Context, placementNames []string, isEvaluate bool) error
+
+	// GetCacheKeys returns the list of cache keys for the given placement names.
+	// This is used for monitoring and debugging purposes to see which cache keys are currently stored in Memory.
+	GetCacheKeys(ctx context.Context) ([]string, error)
+
+	// GetCacheStatus returns whether the cache is under memory pressure and the current memory usage percentage.
+	GetCacheStatus(ctx context.Context) (isMemPressure bool, memoryUsagePct float64, err error)
 }
