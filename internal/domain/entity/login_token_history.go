@@ -7,7 +7,7 @@ import "time"
 // Table: login_token_histories
 type LoginTokenHistory struct {
 	BaseModel
-	Username    string    `gorm:"size:255;uniqueIndex" json:"username"`
+	UserName    string    `gorm:"size:255;uniqueIndex" json:"username"`
 	AccessToken string    `gorm:"size:255"             json:"accessToken"`
 	ExpireDate  time.Time `gorm:"type:timestamptz"     json:"expireDate"`
 }
