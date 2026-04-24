@@ -85,21 +85,22 @@ type ruleVariation struct {
 
 // mockSet models one full scenario: channel → placement → decision rule → condition → N variations → schedule.
 type mockSet struct {
-	ChannelID          string
-	PlacementID        string
-	PlacementName      string
-	DecisionRuleID     string
-	DecisionRuleName   string
-	ContentPath        string
-	DecisionScore      float64
-	ConditionID        string
-	AttributeID        string
-	LogicalOperator    string
-	ConnectorOperator  string
-	Variations         []ruleVariation
-	ScheduleID         string
-	EffectiveFromExpr  string
-	EffectiveUntilExpr string
+	ChannelID              string
+	PlacementID            string
+	PlacementName          string
+	DecisionRuleID         string
+	DecisionRuleBusinessID string
+	DecisionRuleName       string
+	ContentPath            string
+	DecisionScore          float64
+	ConditionID            string
+	AttributeID            string
+	LogicalOperator        string
+	ConnectorOperator      string
+	Variations             []ruleVariation
+	ScheduleID             string
+	EffectiveFromExpr      string
+	EffectiveUntilExpr     string
 }
 
 // userSeed describes one test user to seed into Redis.
@@ -292,22 +293,24 @@ func buildMockSets(count int, channels []channelDef, attributes []attributeDef) 
 			})
 		}
 
+		yearMonth := time.Now().UTC().Format("200601")
 		sets = append(sets, mockSet{
-			ChannelID:          channel.ID,
-			PlacementID:        gofakeit.UUID(),
-			PlacementName:      placementName,
-			DecisionRuleID:     gofakeit.UUID(),
-			DecisionRuleName:   fmt.Sprintf("%s Rule %02d", placementName, index),
-			ContentPath:        fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(channel.ChannelName), strings.ToLower(placementName), index),
-			DecisionScore:      decisionScore,
-			ConditionID:        gofakeit.UUID(),
-			AttributeID:        primaryAttr.ID,
-			LogicalOperator:    logicalOperator,
-			ConnectorOperator:  "AND",
-			Variations:         variations,
-			ScheduleID:         gofakeit.UUID(),
-			EffectiveFromExpr:  fmt.Sprintf("NOW() - interval '%d day'", fromDaysAgo),
-			EffectiveUntilExpr: fmt.Sprintf("NOW() + interval '%d day'", untilDaysAhead),
+			ChannelID:              channel.ID,
+			PlacementID:            gofakeit.UUID(),
+			PlacementName:          placementName,
+			DecisionRuleID:         gofakeit.UUID(),
+			DecisionRuleBusinessID: fmt.Sprintf("RS-%s-%04d", yearMonth, index+1),
+			DecisionRuleName:       fmt.Sprintf("%s Rule %02d", placementName, index),
+			ContentPath:            fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(channel.ChannelName), strings.ToLower(placementName), index),
+			DecisionScore:          decisionScore,
+			ConditionID:            gofakeit.UUID(),
+			AttributeID:            primaryAttr.ID,
+			LogicalOperator:        logicalOperator,
+			ConnectorOperator:      "AND",
+			Variations:             variations,
+			ScheduleID:             gofakeit.UUID(),
+			EffectiveFromExpr:      fmt.Sprintf("NOW() - interval '%d day'", fromDaysAgo),
+			EffectiveUntilExpr:     fmt.Sprintf("NOW() + interval '%d day'", untilDaysAhead),
 		})
 	}
 	return sets
@@ -419,7 +422,7 @@ func buildSQL(seed int64, schemaID string, channels []channelDef, attributes []a
 	)
 
 	writeInsert(&buf, "decision_rules",
-		[]string{`"ID"`, `"NAME"`, `"TYPE"`, `"EVALUATE_TYPE"`, `"CONTENT_PATH"`, `"SCORE"`, `"STATUS"`, `"CREATED_AT"`, `"UPDATED_AT"`},
+		[]string{`"ID"`, `"DECISION_RULE_RUNNING"`, `"NAME"`, `"TYPE"`, `"EVALUATE_TYPE"`, `"CONTENT_PATH"`, `"SCORE"`, `"STATUS"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		decisionRuleValues(sets),
 	)
 
@@ -510,6 +513,7 @@ func decisionRuleValues(sets []mockSet) [][]string {
 	for _, s := range sets {
 		out = append(out, []string{
 			sqlStringLiteral(s.DecisionRuleID),
+			"(SELECT next_decision_rule_id())",
 			sqlStringLiteral(s.DecisionRuleName),
 			sqlStringLiteral("AUDIENCE"),
 			sqlStringLiteral("SCORING"),
