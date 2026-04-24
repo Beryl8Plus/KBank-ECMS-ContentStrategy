@@ -27,7 +27,7 @@ You are a specialist for pull request authoring and refinement in this repositor
 
 ## Defaults
 
-- Base branch: `main`
+- Base branch: `develop` (Based on the branch that has separated, unless the repository uses a different default or the user specifies otherwise)
 - Title style: `conventional`
 - Max title length: `72`
 - Draft PR default: `false`
