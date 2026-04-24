@@ -390,3 +390,89 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 	require.Len(t, result, 1)
 	assert.Equal(t, "/wealth/vip", result[0].ContentPath)
 }
+
+// TestGetPersonalizedContent_CacheMissTriggersEvaluate verifies that when the
+// schedule cache is empty (e.g. TTL expired), GetPersonalizedContent calls
+// evaluate() to re-populate the cache and returns non-empty results.
+func TestGetPersonalizedContent_CacheMissTriggersEvaluate(t *testing.T) {
+	t.Parallel()
+
+	ruleID := uuid.New()
+	schedID := uuid.New()
+	rule := &entity.DecisionRule{BaseModel: entity.BaseModel{ID: ruleID}}
+	placement := &entity.Placement{PlacementName: "hero"}
+	sched := &entity.Schedule{
+		BaseModel:      entity.BaseModel{ID: schedID},
+		Placement:      placement,
+		DecisionRule:   rule,
+		DecisionRuleID: ruleID,
+	}
+	occ := &entity.ScheduleOccurrence{
+		ScheduleID: schedID,
+		Schedule:   sched,
+	}
+
+	entry := dto.ContentResult{
+		ContentPath: "/hero/banner",
+		LogicEval:   true,
+		Score:       1.0,
+	}
+
+	mem := newTestMemCache(t, "cache_miss_triggers_evaluate")
+	// Cache starts empty — simulates TTL expiry.
+
+	listCalled := false
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{},
+		&mockOccurrenceRepo{
+			listActiveAtFn: func(_ context.Context, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+				listCalled = true
+				return []*entity.ScheduleOccurrence{occ}, nil
+			},
+		},
+		&mockDecisionRuleRepo{},
+		&mockRuntimeEvaluator{
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+				return []dto.ContentResult{entry}, nil
+			},
+		},
+		mem, time.Hour, 0,
+	)
+
+	result, err := svc.GetPersonalizedContent(
+		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, listCalled, "expected ListActiveAt to be called as evaluate fallback")
+	require.Len(t, result, 1)
+	assert.Equal(t, "/hero/banner", result[0].ContentPath)
+}
+
+// TestGetPersonalizedContent_CacheMissPersistsGracefully verifies that when
+// evaluate() finds no active occurrences, the placement is skipped and an
+// empty result is returned without error.
+func TestGetPersonalizedContent_CacheMissPersistsGracefully(t *testing.T) {
+	t.Parallel()
+
+	mem := newTestMemCache(t, "cache_miss_persists")
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{},
+		&mockOccurrenceRepo{
+			listActiveAtFn: func(_ context.Context, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+				return nil, nil // no active occurrences
+			},
+		},
+		&mockDecisionRuleRepo{},
+		&mockRuntimeEvaluator{},
+		mem, time.Hour, 0,
+	)
+
+	result, err := svc.GetPersonalizedContent(
+		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}

@@ -26,7 +26,7 @@ import (
 
 // Return Schedule entries for a placement, used for cache keys and DB queries.
 func cmsPlacementSchedulesKey(name string) string {
-	return "cms:placement:" + name + ":schedules"
+	return "schedules:placement:" + name + ""
 }
 
 // Return logic entries for a placement, used for cache keys.
@@ -190,18 +190,29 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 	// 1. Query per placement active schedules.
 	schedules := []*entity.Schedule{}
+	missedPlacements := make(map[string]struct{})
 	for _, placementName := range placementNames {
 		result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName))
 		if !ok {
-			logger.LSystem(ctx, entity.SystemLog{
-				Service: "CMS-DELIVERY",
-				Level:   "WARN",
-				Message: fmt.Sprintf("Failed to query active schedules for placement %q", placementName),
-			})
-			// On DB failure, skip this placement silently (do not return an error, do not include results).
+			missedPlacements[placementName] = struct{}{}
 			continue
 		}
 		schedules = append(schedules, result...)
+	}
+
+	// Cache miss: re-evaluate to refresh all placement caches, then retry.
+	if len(missedPlacements) > 0 && s.occurrenceRepo != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "INFO",
+			Message: fmt.Sprintf("schedule cache miss for %d placement(s), triggering evaluate", len(missedPlacements)),
+		})
+		s.evaluate(ctx)
+		for placementName := range missedPlacements {
+			if result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName)); ok {
+				schedules = append(schedules, result...)
+			}
+		}
 	}
 
 	// 2. Filter to the requested placement. Re-attach DecisionRule from the rule
@@ -218,9 +229,13 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			}
 		}
 	}
-	// 2.1 missedRules can be used to trigger proactive cache population in the background ticker if we want to optimize for repeated cache misses on the same rules. For now we just log them.
+	// On rule cache miss, fetch from DB and backfill both the schedule pointer and the rule cache.
 	if len(missedRules) > 0 {
-		// miss cache, try to query DB directly to avoid stale cache.
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "INFO",
+			Message: fmt.Sprintf("decision rule cache miss for %d schedule(s), querying DB", len(missedRules)),
+		})
 		if rules, err := s.decisionRepo.GetDecisionRuleByScheduleIDs(ctx, missedRules); err == nil && len(rules) > 0 {
 			for _, sched := range schedules {
 				if rule, ok := rules[sched.ID]; ok {
@@ -236,37 +251,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			})
 		}
 	}
-	// 2.2 filter to requested placements.
-	for _, sched := range schedules {
-		if sched.Placement != nil && sched.DecisionRule != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
-			filtered[sched.Placement.PlacementName] = append(filtered[sched.Placement.PlacementName], sched)
-		} else {
-			logger.LSystem(ctx, entity.SystemLog{
-				Service: "CMS-DELIVERY",
-				Level:   "WARN",
-				Message: fmt.Sprintf("Schedule %v skipped due to missing placement or decision rule", sched.ID),
-			})
-		}
-	}
-	// 2.1 missedRules can be used to trigger proactive cache population in the background ticker if we want to optimize for repeated cache misses on the same rules. For now we just log them.
-	if len(missedRules) > 0 {
-		// miss cache, try to query DB directly to avoid stale cache.
-		if rules, err := s.decisionRepo.GetDecisionRuleByScheduleIDs(ctx, missedRules); err == nil && len(rules) > 0 {
-			for _, sched := range schedules {
-				if rule, ok := rules[sched.ID]; ok {
-					sched.DecisionRule = rule
-					s.cacheMemory.DecisionRule.Set(ruleDecisionCacheKey(rule.ID.String()), rule, s.resultTTL)
-				}
-			}
-		} else {
-			logger.LSystem(ctx, entity.SystemLog{
-				Service: "CMS-DELIVERY",
-				Level:   "WARN",
-				Message: fmt.Sprintf("Failed to query rules for schedules %v: %v", missedRules, err),
-			})
-		}
-	}
-	// 2.2 filter to requested placements.
+	// 3. Filter to requested placements.
 	for _, sched := range schedules {
 		if sched.Placement != nil && sched.DecisionRule != nil && slices.Contains(placementNames, sched.Placement.PlacementName) {
 			filtered[sched.Placement.PlacementName] = append(filtered[sched.Placement.PlacementName], sched)
@@ -279,7 +264,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		}
 	}
 
-	// 3. Process each placement concurrently via errgroup.
+	// 3.1 Process each placement concurrently via errgroup.
 	// Bounded concurrency avoids overwhelming the gRPC backend during
 	// cache-miss storms while still providing significant speedup.
 	// Each goroutine writes to its own slot (no mutex needed), preserving
