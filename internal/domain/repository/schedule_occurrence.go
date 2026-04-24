@@ -32,6 +32,9 @@ type ScheduleOccurrenceRepository interface {
 	// contains `at`: occurrence_start <= at AND occurrence_end > at.
 	ListActiveAt(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
 
+	// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+	ListActiveByPlacementsAt(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error)
+
 	// ListByScheduleID returns a paginated list of occurrences for a given
 	// schedule, ordered by occurrence_start ascending.
 	// Returns the matching rows and the total row count (for pagination).

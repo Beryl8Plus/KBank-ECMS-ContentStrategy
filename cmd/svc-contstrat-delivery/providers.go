@@ -49,13 +49,19 @@ func ProvideCMSDeliveryService(
 func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
 	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
 	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
+	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", 0.60, 24*time.Hour)
+	lastSync := cache.NewCacheMemory[time.Time]("cms-runtime-syncs", 0.60, 24*time.Hour)
 	memoryCache := deliveryservice.MemoryCache{
-		Schedules:    schedules,
-		DecisionRule: decisionRule,
+		Schedules:     schedules,
+		DecisionRule:  decisionRule,
+		VersionHashes: versionHashes,
+		LastSync:      lastSync,
 	}
 	return &memoryCache, func() {
 		schedules.Stop()
 		decisionRule.Stop()
+		versionHashes.Stop()
+		lastSync.Stop()
 	}
 }
 

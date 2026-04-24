@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +20,7 @@ import (
 	"kbank-ecms/internal/infrastructure/logger"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,9 +42,118 @@ func ruleDecisionCacheKey(id string) string {
 // compile-time interface guard.
 var _ DeliveryService = (*CMSDeliveryService)(nil)
 
+// SyncPingMessage represents the structured payload for Redis Pub/Sub pings.
+// Carrying a version hash allows pods to avoid redundant refreshes.
+type SyncPingMessage struct {
+	PlacementName string `json:"placement_name"`
+	VersionHash   string `json:"version_hash"`
+}
+
+// MemoryCache represents the L1 in-memory mirror.
 type MemoryCache struct {
-	Schedules    *cache.CacheMemory[[]*entity.Schedule]
-	DecisionRule *cache.CacheMemory[*entity.DecisionRule]
+	Schedules     *cache.CacheMemory[[]*entity.Schedule]
+	DecisionRule  *cache.CacheMemory[*entity.DecisionRule]
+	VersionHashes *cache.CacheMemory[string]    // Map of placement name -> version hash
+	LastSync      *cache.CacheMemory[time.Time] // Map of placement name -> last sync timestamp
+}
+
+// UpdateSchedules replaces the entire schedule and rule sets in the cache,
+// deleting any keys that are not present in the new sets to maintain mirror fidelity.
+func (m *MemoryCache) UpdateSchedules(
+	newSchedules map[string][]*entity.Schedule,
+	newRules map[string]*entity.DecisionRule,
+	newVersions map[string]string,
+	ttl time.Duration,
+	onUpdate func(placement, version string),
+) {
+	// 1. Sync Schedules
+	existingSchedules := m.Schedules.Keys()
+	newScheduleKeys := make(map[string]struct{}, len(newSchedules))
+	for k, v := range newSchedules {
+		m.Schedules.Set(k, v, ttl)
+		newScheduleKeys[k] = struct{}{}
+	}
+	for _, k := range existingSchedules {
+		if _, ok := newScheduleKeys[k]; !ok {
+			m.Schedules.Delete(k)
+		}
+	}
+
+	// 2. Sync DecisionRules
+	existingRules := m.DecisionRule.Keys()
+	newRuleKeys := make(map[string]struct{}, len(newRules))
+	for k, v := range newRules {
+		m.DecisionRule.Set(k, v, ttl)
+		newRuleKeys[k] = struct{}{}
+	}
+	for _, k := range existingRules {
+		if _, ok := newRuleKeys[k]; !ok {
+			m.DecisionRule.Delete(k)
+		}
+	}
+
+	// 3. Sync VersionHashes
+	if m.VersionHashes != nil {
+		existingVersions := m.VersionHashes.Keys()
+		newVersionKeys := make(map[string]struct{}, len(newVersions))
+		for k, v := range newVersions {
+			m.VersionHashes.Set(k, v, ttl)
+			newVersionKeys[k] = struct{}{}
+
+			if onUpdate != nil {
+				onUpdate(k, v)
+			}
+		}
+		for _, k := range existingVersions {
+			if _, ok := newVersionKeys[k]; !ok {
+				m.VersionHashes.Delete(k)
+			}
+		}
+	}
+
+	// 4. Sync LastSync timestamps
+	if m.LastSync != nil {
+		now := time.Now()
+		existingSyncs := m.LastSync.Keys()
+		newSyncKeys := make(map[string]struct{}, len(newSchedules))
+		for k := range newSchedules {
+			// Extract placement name from key (schedules:placement:NAME)
+			name := strings.TrimPrefix(k, "schedules:placement:")
+			m.LastSync.Set(name, now, ttl)
+			newSyncKeys[name] = struct{}{}
+		}
+		for _, k := range existingSyncs {
+			if _, ok := newSyncKeys[k]; !ok {
+				m.LastSync.Delete(k)
+			}
+		}
+	}
+}
+
+// PruneOrphanedRules removes rules from the cache that are no longer referenced by any schedule.
+func (m *MemoryCache) PruneOrphanedRules() {
+	if m.Schedules == nil || m.DecisionRule == nil {
+		return
+	}
+
+	// 1. Collect all Rule IDs currently referenced by ANY cached schedule
+	usedRuleKeys := make(map[string]struct{})
+	for _, key := range m.Schedules.Keys() {
+		if item, ok := m.Schedules.Get(key); ok {
+			for _, s := range item {
+				if s.DecisionRuleID != uuid.Nil {
+					usedRuleKeys[ruleDecisionCacheKey(s.DecisionRuleID.String())] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// 2. Delete any cached rules that are no longer referenced
+	for _, ruleKey := range m.DecisionRule.Keys() {
+		if _, used := usedRuleKeys[ruleKey]; !used {
+			m.DecisionRule.Delete(ruleKey)
+		}
+	}
 }
 
 func (m *MemoryCache) getStatus() (isMemPressure bool, memoryUsagePct float64) {
@@ -72,6 +186,14 @@ type CMSDeliveryService struct {
 	running bool
 	stopCh  chan struct{}
 	done    chan struct{}
+
+	// Subscriber fields
+	subCtx    context.Context
+	subCancel context.CancelFunc
+	subDone   chan struct{}
+
+	// Metrics
+	mPlacementVersion *prometheus.GaugeVec
 }
 
 // NewCMSDeliveryService creates a CMSDeliveryService.
@@ -89,14 +211,39 @@ func NewCMSDeliveryService(
 	resultTTL time.Duration,
 	tickInterval time.Duration,
 ) *CMSDeliveryService {
+	// Initialize metrics
+	placementVersion := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cms_delivery_placement_version",
+		Help: "Indicates the current version hash of a mirrored placement on this pod (Value is always 1)",
+	}, []string{"placement_name", "version_hash"})
+
+	// Register with collision handling (safe for parallel tests)
+	if err := prometheus.Register(placementVersion); err != nil {
+		var are prometheus.AlreadyRegisteredError
+		if errors.As(err, &are) {
+			if existing, ok := are.ExistingCollector.(*prometheus.GaugeVec); ok {
+				placementVersion = existing
+			}
+		} else {
+			// In production, register should only fail on fatal misconfiguration.
+			// In tests, we might want to avoid panic.
+			logger.LSystem(context.Background(), entity.SystemLog{
+				Service: "CMS-DELIVERY",
+				Message: fmt.Sprintf("Prometheus metric registration failed: %v", err),
+			})
+		}
+	}
+
 	return &CMSDeliveryService{
-		cacheRepo:      cacheRepo,
-		occurrenceRepo: occurrenceRepo,
-		decisionRepo:   decisionRuleRepo,
-		evaluator:      evaluator,
-		cacheMemory:    cacheMemory,
-		resultTTL:      resultTTL,
-		tickInterval:   tickInterval,
+		cacheRepo:         cacheRepo,
+		occurrenceRepo:    occurrenceRepo,
+		decisionRepo:      decisionRuleRepo,
+		evaluator:         evaluator,
+		cacheMemory:       cacheMemory,
+		resultTTL:         resultTTL,
+		tickInterval:      tickInterval,
+		done:              make(chan struct{}),
+		mPlacementVersion: placementVersion,
 	}
 }
 
@@ -225,6 +372,39 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	schedules := []*entity.Schedule{}
 	missedPlacements := make(map[string]struct{})
 	for _, placementName := range placementNames {
+		// Priority 3: Strict Integrity Fail-Fast
+		// If LastSync is too old, the mirror is untrusted.
+		if s.cacheMemory != nil && s.cacheMemory.LastSync != nil {
+			if lastSync, ok := s.cacheMemory.LastSync.Get(placementName); ok {
+				// Default to 10m staleness if tickInterval is not set; otherwise 2x interval.
+				threshold := 10 * time.Minute
+				if s.tickInterval > 0 {
+					threshold = 2 * s.tickInterval
+				}
+				if time.Since(lastSync) > threshold {
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "CMS-DELIVERY",
+						Level:   "ERROR",
+						Message: fmt.Sprintf("STALE MIRROR DETECTED: placement %q last synced at %s (threshold %s)", placementName, lastSync.Format(time.RFC3339), threshold),
+					})
+					// Architecture #3: Lazy Self-Heal
+					// Attempt a synchronous evaluate once before failing.
+					s.evaluate(ctx)
+					// Re-check after evaluate
+					if refreshedSync, ok := s.cacheMemory.LastSync.Get(placementName); ok && time.Since(refreshedSync) <= threshold {
+						logger.LSystem(ctx, entity.SystemLog{
+							Service: "CMS-DELIVERY",
+							Level:   "INFO",
+							Message: fmt.Sprintf("Mirror for %q self-healed successfully", placementName),
+						})
+					} else {
+						// Architecture #5: Strict Integrity Fail-Fast
+						return nil, fmt.Errorf("data integrity error: mirror for placement %q is stale and cannot be verified", placementName)
+					}
+				}
+			}
+		}
+
 		result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName))
 		if !ok {
 			missedPlacements[placementName] = struct{}{}
@@ -391,12 +571,14 @@ func (s *CMSDeliveryService) Start(ctx context.Context) error {
 	s.stopCh = make(chan struct{})
 	s.done = make(chan struct{})
 
+	// Start background synchronization loops
 	go s.runLoop(ctx)
+	go s.subscribeToUpdates(ctx)
 
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: fmt.Sprintf("Background ticker started (interval=%s)", s.tickInterval),
+		Message: fmt.Sprintf("Background ticker and subscriber started (interval=%s)", s.tickInterval),
 	})
 	return nil
 }
@@ -410,13 +592,19 @@ func (s *CMSDeliveryService) Stop() error {
 	}
 	s.running = false
 	close(s.stopCh)
+	if s.subCancel != nil {
+		s.subCancel()
+	}
 	s.mu.Unlock()
 
 	<-s.done
+	if s.subDone != nil {
+		<-s.subDone
+	}
 	logger.LSystem(context.Background(), entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: "Background ticker stopped",
+		Message: "Background ticker and subscriber stopped",
 	})
 	return nil
 }
@@ -425,35 +613,56 @@ func (s *CMSDeliveryService) Stop() error {
 func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 	defer close(s.done)
 
-	// Fire immediately on start.
-	s.evaluate(ctx)
-
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
 
+	// Initial pull
+	s.evaluate(ctx)
+
 	for {
 		select {
-		case <-s.stopCh:
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			s.evaluate(ctx)
+		case <-s.done:
+			return
 		}
 	}
 }
 
-// evaluate queries all active schedules from the database,
-// groups them by placement, and for each placement:
-//
-// On Evaluate failure for a single placement the error is logged and the loop
-// continues with the next placement.
-func (s *CMSDeliveryService) evaluate(ctx context.Context) {
-	occurrences, err := s.occurrenceRepo.ListActiveAt(ctx, time.Now())
+// evaluate pulls active schedules from the backbone and synchronizes the local mirror.
+func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...string) {
+	var occurrences []*entity.ScheduleOccurrence
+	var err error
+
+	if len(placementNames) > 0 {
+		occurrences, err = s.occurrenceRepo.ListActiveByPlacementsAt(ctx, placementNames, time.Now())
+	} else {
+		occurrences, err = s.occurrenceRepo.ListActiveAt(ctx, time.Now())
+	}
+
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "CMS-DELIVERY",
 			Level:   "ERROR",
-			Message: fmt.Sprintf("evaluate: list active occurrences: %v", err),
+			Message: fmt.Sprintf("evaluate: failed to list active occurrences: %v", err),
 		})
+		return
+	}
+
+	// Targeted refresh cleanup: if a placement has no active schedules in DB,
+	// we must clear its local cache entry.
+	if len(placementNames) > 0 && len(occurrences) == 0 {
+		for _, name := range placementNames {
+			if s.cacheMemory != nil {
+				s.cacheMemory.Schedules.Delete(cmsPlacementSchedulesKey(name))
+				s.cacheMemory.VersionHashes.Delete(name)
+				s.cacheMemory.LastSync.Set(name, time.Now(), s.resultTTL)
+				// Clear metric for this placement
+				s.mPlacementVersion.DeletePartialMatch(prometheus.Labels{"placement_name": name})
+			}
+		}
 		return
 	}
 
@@ -490,6 +699,10 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 	}
 
 	if len(groups) == 0 {
+		// If no groups found, clear all schedules and rules in cache
+		if s.cacheMemory != nil {
+			s.cacheMemory.UpdateSchedules(nil, nil, nil, s.resultTTL, s.updateVersionMetric)
+		}
 		return
 	}
 
@@ -499,12 +712,183 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 		Message: fmt.Sprintf("evaluate: processing %d placements (%d schedules)", len(groups), len(schedules)),
 	})
 
-	// UC2: cache lean schedules (DecisionRule stripped) for later retrieval in
-	// GetPersonalizedContent. Rule data is already stored individually under
-	// ruleDecisionCacheKey, so embedding it in every schedule would duplicate it
-	// once per schedule that shares the same rule.
+	// Fetch all rules for these schedules to ensure rule cache is also mirrored.
+	scheduleIDs := make([]uuid.UUID, 0, len(schedules))
+	for _, sched := range schedules {
+		scheduleIDs = append(scheduleIDs, sched.ID)
+	}
+	rules, err := s.decisionRepo.GetDecisionRuleByScheduleIDs(ctx, scheduleIDs)
+	if err != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("evaluate: failed to fetch rules for %d schedules: %v", len(scheduleIDs), err),
+		})
+		// Continue with schedules only if rules can't be fetched bulk;
+		// they will be fetched on demand.
+	}
+
+	// Prepare new cache sets
+	newSchedules := make(map[string][]*entity.Schedule)
+	newRules := make(map[string]*entity.DecisionRule)
+	newVersions := make(map[string]string)
+
 	for placementName, g := range groups {
-		s.cacheMemory.Schedules.Set(cmsPlacementSchedulesKey(placementName), g.schedules, s.resultTTL)
+		key := cmsPlacementSchedulesKey(placementName)
+		newSchedules[key] = g.schedules
+
+		// Compute version hash for this placement's schedules
+		hash := sha256.New()
+		for _, s := range g.schedules {
+			hash.Write([]byte(s.ID.String()))
+			hash.Write([]byte(s.UpdatedAt.String()))
+		}
+		newVersions[placementName] = hex.EncodeToString(hash.Sum(nil))
+	}
+	if len(rules) > 0 {
+		for _, rule := range rules {
+			newRules[ruleDecisionCacheKey(rule.ID.String())] = rule
+		}
+	}
+
+	// Perform re-population
+	if s.cacheMemory != nil {
+		if len(placementNames) > 0 {
+			// In targeted refresh, we only update specific keys.
+			// We don't use UpdateSchedules because that method performs a full-slice delete of other keys.
+			// Instead, we update these specific ones and their LastSync.
+			now := time.Now()
+			for name, g := range groups {
+				key := cmsPlacementSchedulesKey(name)
+				s.cacheMemory.Schedules.Set(key, g.schedules, s.resultTTL)
+				s.cacheMemory.LastSync.Set(name, now, s.resultTTL)
+
+				// Version hash
+				hash := sha256.New()
+				for _, sched := range g.schedules {
+					hash.Write([]byte(sched.ID.String()))
+					hash.Write([]byte(sched.UpdatedAt.String()))
+				}
+				hashStr := hex.EncodeToString(hash.Sum(nil))
+				s.cacheMemory.VersionHashes.Set(name, hashStr, s.resultTTL)
+
+				// Update metrics
+				s.updateVersionMetric(name, hashStr)
+			}
+			// Update rules for these specific schedules
+			for _, rule := range rules {
+				s.cacheMemory.DecisionRule.Set(ruleDecisionCacheKey(rule.ID.String()), rule, s.resultTTL)
+			}
+			// Prune rules not referenced by current in-memory schedules
+			s.cacheMemory.PruneOrphanedRules()
+		} else {
+			// Full-slice re-population
+			s.cacheMemory.UpdateSchedules(newSchedules, newRules, newVersions, s.resultTTL, s.updateVersionMetric)
+		}
+	}
+}
+
+// updateVersionMetric updates the Prometheus gauge for a placement's version.
+func (s *CMSDeliveryService) updateVersionMetric(placement, newVersion string) {
+	if s.mPlacementVersion == nil {
+		return
+	}
+
+	// Retrieve old version to clean up labels
+	if s.cacheMemory != nil && s.cacheMemory.VersionHashes != nil {
+		if oldVersion, ok := s.cacheMemory.VersionHashes.Get(placement); ok && oldVersion != newVersion {
+			s.mPlacementVersion.DeleteLabelValues(placement, oldVersion)
+		}
+	}
+
+	s.mPlacementVersion.WithLabelValues(placement, newVersion).Set(1)
+}
+
+// subscribeToUpdates listens on the Redis Pub/Sub channel for sync pings.
+func (s *CMSDeliveryService) subscribeToUpdates(ctx context.Context) {
+	s.mu.Lock()
+	s.subCtx, s.subCancel = context.WithCancel(ctx)
+	s.subDone = make(chan struct{})
+	s.mu.Unlock()
+
+	defer close(s.subDone)
+
+	const channel = "cms:sync:ping"
+	msgs, err := s.cacheRepo.Subscribe(s.subCtx, channel)
+	if err != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "ERROR",
+			Message: fmt.Sprintf("subscriber: failed to subscribe to %q: %v", channel, err),
+		})
+		return
+	}
+
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "CMS-DELIVERY",
+		Level:   "INFO",
+		Message: fmt.Sprintf("subscriber: listening on %q", channel),
+	})
+
+	for {
+		select {
+		case <-s.subCtx.Done():
+			return
+		case msg, ok := <-msgs:
+			if !ok {
+				return
+			}
+
+			// Try to unmarshal structured message
+			var ping SyncPingMessage
+			if err := json.Unmarshal([]byte(msg), &ping); err != nil {
+				logger.LSystem(s.subCtx, entity.SystemLog{
+					Service: "CMS-DELIVERY",
+					Level:   "INFO",
+					Message: fmt.Sprintf("subscriber: received raw ping %q, triggering full evaluate", msg),
+				})
+			} else {
+				// Priority 2: Consistency Check
+				// If we have a version hash, check if we already have this version.
+				if s.cacheMemory != nil && ping.VersionHash != "" {
+					if localHash, ok := s.cacheMemory.VersionHashes.Get(ping.PlacementName); ok && localHash == ping.VersionHash {
+						logger.LSystem(s.subCtx, entity.SystemLog{
+							Service: "CMS-DELIVERY",
+							Level:   "INFO",
+							Message: fmt.Sprintf("subscriber: version %s for %q already mirrored, skipping pull", ping.VersionHash, ping.PlacementName),
+						})
+						continue
+					}
+				}
+				logger.LSystem(s.subCtx, entity.SystemLog{
+					Service: "CMS-DELIVERY",
+					Level:   "INFO",
+					Message: fmt.Sprintf("subscriber: received ping for %q (version %s), triggering evaluate", ping.PlacementName, ping.VersionHash),
+				})
+			}
+
+			// Priority 2: Jittered Synchronization
+			// Flatten the load curve during cluster-wide updates.
+			// Start with a minimum 50ms buffer to avoid 0ms collisions.
+			jitter := time.Duration(rand.Intn(450)+50) * time.Millisecond
+			select {
+			case <-s.subCtx.Done():
+				return
+			case <-time.After(jitter):
+				// Re-verify version after jitter to prevent race condition between multiple pods
+				if s.cacheMemory != nil && ping.VersionHash != "" {
+					if localHash, ok := s.cacheMemory.VersionHashes.Get(ping.PlacementName); ok && localHash == ping.VersionHash {
+						continue
+					}
+				}
+
+				if ping.PlacementName != "" {
+					s.evaluate(s.subCtx, ping.PlacementName)
+				} else {
+					s.evaluate(s.subCtx)
+				}
+			}
+		}
 	}
 }
 

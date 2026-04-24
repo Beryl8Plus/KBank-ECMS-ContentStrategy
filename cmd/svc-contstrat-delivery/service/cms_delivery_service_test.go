@@ -25,9 +25,13 @@ func newTestMemCache(t *testing.T, ns string) *MemoryCache {
 	t.Helper()
 	s := cache.NewCacheMemory[[]*entity.Schedule](ns+"_schedules", 0.95, time.Hour)
 	r := cache.NewCacheMemory[*entity.DecisionRule](ns+"_rules", 0.95, time.Hour)
+	v := cache.NewCacheMemory[string](ns+"_versions", 0.95, time.Hour)
+	l := cache.NewCacheMemory[time.Time](ns+"_syncs", 0.95, time.Hour)
 	t.Cleanup(s.Stop)
 	t.Cleanup(r.Stop)
-	return &MemoryCache{Schedules: s, DecisionRule: r}
+	t.Cleanup(v.Stop)
+	t.Cleanup(l.Stop)
+	return &MemoryCache{Schedules: s, DecisionRule: r, VersionHashes: v, LastSync: l}
 }
 
 // newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no evaluator).
@@ -103,15 +107,25 @@ func (m *mockCacheRepo) Delete(ctx context.Context, key string) error {
 	}
 	return nil
 }
+func (m *mockCacheRepo) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
+	return make(chan string), nil
+}
 
 // mockOccurrenceRepo is a minimal mock for domainrepo.ScheduleOccurrenceRepository.
 type mockOccurrenceRepo struct {
-	listActiveAtFn func(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
+	listActiveAtFn             func(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
+	listActiveByPlacementsAtFn func(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error)
 }
 
 func (m *mockOccurrenceRepo) ListActiveAt(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error) {
 	if m.listActiveAtFn != nil {
 		return m.listActiveAtFn(ctx, at)
+	}
+	return nil, nil
+}
+func (m *mockOccurrenceRepo) ListActiveByPlacementsAt(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error) {
+	if m.listActiveByPlacementsAtFn != nil {
+		return m.listActiveByPlacementsAtFn(ctx, placementNames, at)
 	}
 	return nil, nil
 }
@@ -594,4 +608,191 @@ func TestGetCacheStatus_WithCache(t *testing.T) {
 
 	_, _, err := svc.GetCacheStatus(context.Background())
 	require.NoError(t, err)
+}
+
+// TestMemoryCache_UpdateSchedules verifies that UpdateSchedules correctly synchronizes
+// the local cache with the provided sets, including deleting stale keys.
+func TestMemoryCache_UpdateSchedules(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "update_schedules_test")
+
+	// Setup initial state
+	oldSchedKey := cmsPlacementSchedulesKey("old-placement")
+	keepSchedKey := cmsPlacementSchedulesKey("keep-placement")
+	oldRuleKey := ruleDecisionCacheKey(uuid.New().String())
+	keepRuleKey := ruleDecisionCacheKey(uuid.New().String())
+
+	mem.Schedules.Set(oldSchedKey, []*entity.Schedule{}, time.Hour)
+	mem.Schedules.Set(keepSchedKey, []*entity.Schedule{}, time.Hour)
+	mem.DecisionRule.Set(oldRuleKey, &entity.DecisionRule{}, time.Hour)
+	mem.DecisionRule.Set(keepRuleKey, &entity.DecisionRule{}, time.Hour)
+
+	// New state
+	newSchedKey := cmsPlacementSchedulesKey("new-placement")
+	newRuleKey := ruleDecisionCacheKey(uuid.New().String())
+
+	newSchedules := map[string][]*entity.Schedule{
+		keepSchedKey: {},
+		newSchedKey:  {},
+	}
+	newRules := map[string]*entity.DecisionRule{
+		keepRuleKey: {},
+		newRuleKey:  {},
+	}
+	newVersions := map[string]string{
+		"keep-placement": "v2",
+		"new-placement":  "v1",
+	}
+
+	mem.UpdateSchedules(newSchedules, newRules, newVersions, time.Hour, nil)
+
+	// Verify Schedules
+	_, ok := mem.Schedules.Get(oldSchedKey)
+	assert.False(t, ok, "old schedule key should be deleted")
+	_, ok = mem.Schedules.Get(keepSchedKey)
+	assert.True(t, ok, "keep schedule key should be present")
+	_, ok = mem.Schedules.Get(newSchedKey)
+	assert.True(t, ok, "new schedule key should be present")
+
+	// Verify Rules
+	_, ok = mem.DecisionRule.Get(oldRuleKey)
+	assert.False(t, ok, "old rule key should be deleted")
+	_, ok = mem.DecisionRule.Get(keepRuleKey)
+	assert.True(t, ok, "keep rule key should be present")
+	_, ok = mem.DecisionRule.Get(newRuleKey)
+	assert.True(t, ok, "new rule key should be present")
+
+	// Verify Versions
+	v, ok := mem.VersionHashes.Get("keep-placement")
+	assert.True(t, ok)
+	assert.Equal(t, "v2", v)
+
+	// Verify LastSync
+	ls, ok := mem.LastSync.Get("keep-placement")
+	assert.True(t, ok)
+	assert.WithinDuration(t, time.Now(), ls, 5*time.Second)
+}
+
+// TestGetPersonalizedContent_StalenessFailFast verifies that GetPersonalizedContent returns
+// an integrity error when the requested placement's mirror is stale.
+func TestGetPersonalizedContent_StalenessFailFast(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "staleness_fail_fast")
+	placementName := "hero"
+
+	// Mock stale state: last sync was 1 hour ago
+	mem.LastSync.Set(placementName, time.Now().Add(-1*time.Hour), time.Hour)
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placementName), []*entity.Schedule{}, time.Hour)
+
+	// Service with 1m tick interval -> 2m threshold
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, &mockOccurrenceRepo{
+		listActiveAtFn: func(_ context.Context, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+			return nil, nil // Return nothing to simulate failed refresh/sync
+		},
+	}, nil, nil, mem, time.Hour, time.Minute)
+
+	_, err := svc.GetPersonalizedContent(context.Background(), "cis1", "user1", []string{placementName}, nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "data integrity error")
+	assert.Contains(t, err.Error(), placementName)
+}
+
+// TestCMSDeliveryService_TargetedEvaluate verifies that evaluate only fetches specific placements
+// when requested.
+func TestCMSDeliveryService_TargetedEvaluate(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "targeted_evaluate")
+	placementName := "hero"
+
+	calledTargeted := false
+	repo := &mockOccurrenceRepo{
+		listActiveByPlacementsAtFn: func(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error) {
+			calledTargeted = true
+			assert.Equal(t, []string{placementName}, placementNames)
+			return []*entity.ScheduleOccurrence{
+				{
+					Schedule: &entity.Schedule{
+						BaseModel: entity.BaseModel{ID: uuid.New(), UpdatedAt: time.Now()},
+						Placement: &entity.Placement{PlacementName: placementName},
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, repo, &mockDecisionRuleRepo{}, nil, mem, time.Hour, time.Minute)
+
+	svc.evaluate(context.Background(), placementName)
+
+	assert.True(t, calledTargeted, "targeted fetch should have been called")
+	_, ok := mem.Schedules.Get(cmsPlacementSchedulesKey(placementName))
+	assert.True(t, ok, "cache should be populated for targeted placement")
+	_, ok = mem.LastSync.Get(placementName)
+	assert.True(t, ok, "LastSync should be updated for targeted placement")
+}
+
+// TestMemoryCache_PruneOrphanedRules verifies that rules are evicted when no longer referenced.
+func TestMemoryCache_PruneOrphanedRules(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "prune_orphaned_rules")
+
+	ruleID1 := uuid.New()
+	ruleID2 := uuid.New()
+	placement1 := "hero"
+	placement2 := "banner"
+
+	// Initial state: 2 placements, 2 rules
+	schedules1 := []*entity.Schedule{
+		{BaseModel: entity.BaseModel{ID: uuid.New()}, DecisionRuleID: ruleID1},
+	}
+	schedules2 := []*entity.Schedule{
+		{BaseModel: entity.BaseModel{ID: uuid.New()}, DecisionRuleID: ruleID2},
+	}
+
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placement1), schedules1, time.Hour)
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placement2), schedules2, time.Hour)
+	mem.DecisionRule.Set(ruleDecisionCacheKey(ruleID1.String()), &entity.DecisionRule{}, time.Hour)
+	mem.DecisionRule.Set(ruleDecisionCacheKey(ruleID2.String()), &entity.DecisionRule{}, time.Hour)
+
+	// Verify both rules exist
+	_, ok := mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID1.String()))
+	assert.True(t, ok)
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID2.String()))
+	assert.True(t, ok)
+
+	// 1. Remove schedule 1 from placement 1 (leaving rule 1 orphaned)
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placement1), []*entity.Schedule{}, time.Hour)
+	mem.PruneOrphanedRules()
+
+	// Verify rule 1 is gone, rule 2 remains
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID1.String()))
+	assert.False(t, ok, "rule 1 should be pruned")
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID2.String()))
+	assert.True(t, ok, "rule 2 should remain")
+
+	// 2. Add rule 1 back to placement 2 (sharing rule 2)
+	schedules2Updated := []*entity.Schedule{
+		{BaseModel: entity.BaseModel{ID: uuid.New()}, DecisionRuleID: ruleID2},
+		{BaseModel: entity.BaseModel{ID: uuid.New()}, DecisionRuleID: ruleID1},
+	}
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placement2), schedules2Updated, time.Hour)
+	mem.DecisionRule.Set(ruleDecisionCacheKey(ruleID1.String()), &entity.DecisionRule{}, time.Hour)
+	mem.PruneOrphanedRules()
+
+	// Both should exist now
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID1.String()))
+	assert.True(t, ok)
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID2.String()))
+	assert.True(t, ok)
+
+	// 3. Clear placement 2 entirely
+	mem.Schedules.Set(cmsPlacementSchedulesKey(placement2), []*entity.Schedule{}, time.Hour)
+	mem.PruneOrphanedRules()
+
+	// Both rules should be gone
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID1.String()))
+	assert.False(t, ok)
+	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID2.String()))
+	assert.False(t, ok)
 }

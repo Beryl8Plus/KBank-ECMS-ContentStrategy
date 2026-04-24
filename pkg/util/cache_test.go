@@ -30,6 +30,9 @@ func (m *mockCache) Delete(_ context.Context, _ string) error                   
 func (m *mockCache) GetSet(ctx context.Context, key string, expiration time.Duration, loader func(context.Context) (string, error)) (string, error) {
 	return m.getSetFn(ctx, key, expiration, loader)
 }
+func (m *mockCache) Subscribe(_ context.Context, _ string) (<-chan string, error) {
+	return nil, nil
+}
 
 // ---- helpers -------------------------------------------------------------
 

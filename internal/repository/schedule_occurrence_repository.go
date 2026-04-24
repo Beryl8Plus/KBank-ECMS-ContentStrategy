@@ -143,3 +143,29 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 	}
 	return occurrences, nil
 }
+
+// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
+	ctx context.Context,
+	placementNames []string,
+	at time.Time,
+) ([]*entity.ScheduleOccurrence, error) {
+	if len(placementNames) == 0 {
+		return nil, nil
+	}
+
+	var occurrences []*entity.ScheduleOccurrence
+	atStr := at.Format(time.RFC3339)
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN \"SCHEDULES\" ON \"SCHEDULES\".\"ID\" = \"SCHEDULE_OCCURRENCES\".\"SCHEDULE_ID\"").
+		Joins("JOIN \"PLACEMENTS\" ON \"PLACEMENTS\".\"ID\" = \"SCHEDULES\".\"PLACEMENT_ID\"").
+		Preload("Schedule").
+		Preload("Schedule.Placement").
+		Where("\"PLACEMENTS\".\"PLACEMENT_NAME\" IN ?", placementNames).
+		Where("\"SCHEDULE_OCCURRENCES\".\"STATUS\" = ?", "ACTIVE").
+		Where("\"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_START\" <= ? AND \"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_END\" > ?", atStr, atStr).
+		Find(&occurrences).Error; err != nil {
+		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, atStr, err)
+	}
+	return occurrences, nil
+}
