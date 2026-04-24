@@ -48,7 +48,6 @@ func NewScheduleOccurrenceHandler(svc *service.ScheduleOccurrenceService) *Sched
 func (h *ScheduleOccurrenceHandler) ListOccurrencesBySchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setScheduleResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid schedule ID"})
 		return
 	}
@@ -60,7 +59,6 @@ func (h *ScheduleOccurrenceHandler) ListOccurrencesBySchedule(c *gin.Context) {
 
 	occurrences, total, err := h.service.ListByScheduleID(c.Request.Context(), id, page, limit)
 	if err != nil {
-		setScheduleResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve occurrences"})
 		return
 	}
@@ -72,7 +70,6 @@ func (h *ScheduleOccurrenceHandler) ListOccurrencesBySchedule(c *gin.Context) {
 
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 
-	setScheduleResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{
 		Data: responses,
 		Pagination: &dto.Pagination{
@@ -102,7 +99,6 @@ func (h *ScheduleOccurrenceHandler) ListActiveOccurrences(c *gin.Context) {
 	if raw := c.Query("at"); raw != "" {
 		parsed, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			setScheduleResponseHeaders(c, "400", "Bad Request")
 			c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "at must be a valid RFC3339 timestamp (e.g. 2026-04-21T10:00:00Z)"})
 			return
 		}
@@ -111,7 +107,6 @@ func (h *ScheduleOccurrenceHandler) ListActiveOccurrences(c *gin.Context) {
 
 	occurrences, err := h.service.ListActiveAt(c.Request.Context(), at)
 	if err != nil {
-		setScheduleResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve active occurrences"})
 		return
 	}
@@ -121,6 +116,5 @@ func (h *ScheduleOccurrenceHandler) ListActiveOccurrences(c *gin.Context) {
 		responses = append(responses, dto.ToScheduleOccurrenceResponse(o))
 	}
 
-	setScheduleResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: responses})
 }

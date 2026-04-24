@@ -11,6 +11,7 @@ import (
 // Called by the router layer after the engine is created.
 func Apply(r *gin.Engine, db *gorm.DB, rateLimit entity.RateLimit) {
 	r.Use(CORSMiddleware())
+	r.Use(ResponseHeaderMiddleware())
 	r.Use(RateLimiterMiddleware(rateLimit.RPS, rateLimit.Burst))
 	r.Use(ConcurrencyMiddleware(rateLimit.MCR))
 	r.Use(LoggerMiddleware())
