@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,9 +19,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Return ContentResult entries that Mass Type
+// Return ContentResult entries that Mass Type In Redis Cache
 // func cmsPlacementKey(name string) string {
-// 	return "cms:placement:" + name
+// 	return "cms:mass:placement:" + name
 // }
 
 // Return Schedule entries for a placement, used for cache keys and DB queries.
@@ -45,8 +45,11 @@ type MemoryCache struct {
 func (m *MemoryCache) getStatus() (isMemPressure bool, memoryUsagePct float64) {
 	isMemPressureDecision, memoryUsagePctDecision := m.DecisionRule.Status()
 	isMemPressureSchedule, memoryUsagePctSchedule := m.Schedules.Status()
+	// Avg the memory usage percentage across both caches to get an overall view of memory pressure,
+	// since both caches contribute to total memory usage. This is a simplification;
+	// in a real implementation we might want to weight them differently or track total memory usage directly.
 	isMemPressure = isMemPressureDecision || isMemPressureSchedule
-	memoryUsagePct = math.Max(memoryUsagePctDecision, memoryUsagePctSchedule)
+	memoryUsagePct = (memoryUsagePctDecision + memoryUsagePctSchedule) / 2
 	return isMemPressure, memoryUsagePct
 }
 
@@ -108,6 +111,36 @@ func (s *CMSDeliveryService) GetCacheKeys(ctx context.Context) ([]string, error)
 	}
 
 	return keys, nil
+}
+
+// GetCacheValue returns the cached value for the given key. This is used for monitoring and debugging purposes to inspect the contents of specific cache entries.
+func (s *CMSDeliveryService) GetCacheValue(ctx context.Context, key string) (json.RawMessage, error) {
+	// For simplicity, this implementation only checks In-memory cache.
+	if s.cacheMemory != nil {
+		prefixes := []string{"schedules:", "rule:"}
+		if !slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
+			return nil, fmt.Errorf("GetCacheValue: unsupported key prefix for key %q", key)
+		}
+		// for key "schedules:", return the cached []*entity.Schedule as JSON; for key "rule:{id}", return the cached *entity.DecisionRule as JSON.
+		if strings.HasPrefix(key, "schedules:") {
+			if val, ok := s.cacheMemory.Schedules.Get(key); ok && val != nil {
+				valJSON, err := json.Marshal(val)
+				if err != nil {
+					return nil, fmt.Errorf("GetCacheValue: marshal error for key %q: %w", key, err)
+				}
+				return valJSON, nil
+			}
+		} else if strings.HasPrefix(key, "rule:") {
+			if val, ok := s.cacheMemory.DecisionRule.Get(key); ok && val != nil {
+				valJSON, err := json.Marshal(val)
+				if err != nil {
+					return nil, fmt.Errorf("GetCacheValue: marshal error for key %q: %w", key, err)
+				}
+				return valJSON, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("GetCacheValue: key %q not found in in-memory cache", key)
 }
 
 // GetCacheStatus returns whether the in-memory cache is under heap pressure
@@ -207,6 +240,9 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			Level:   "INFO",
 			Message: fmt.Sprintf("schedule cache miss for %d placement(s), triggering evaluate", len(missedPlacements)),
 		})
+		// Evaluate synchronously here to ensure caches are populated before the retry.
+		// This adds latency to the request but ensures a better experience for subsequent requests,
+		// which is critical if the cache miss was caused by an eviction of active placements.
 		s.evaluate(ctx)
 		for placementName := range missedPlacements {
 			if result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName)); ok {
@@ -299,28 +335,22 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 // focused and testable independently.
 func (s *CMSDeliveryService) evaluatePlacement(
 	ctx context.Context,
-	cisID, userID, name string,
+	cisID, userID string,
+	placementName string,
 	schedules []*entity.Schedule,
 	resolvedUserAttrs map[string]json.RawMessage,
 ) []dto.ContentResult {
 	var entries []dto.ContentResult
 	// Evaluate the placement logic immediately if the evaluator and occurrenceRepo are configured; otherwise, return no results (cache miss).
 	if s.evaluator != nil && s.occurrenceRepo != nil {
-		results, err := s.evaluator.Evaluate(ctx, name, schedules, resolvedUserAttrs)
+		passing, err := s.evaluator.Evaluate(ctx, placementName, schedules, resolvedUserAttrs)
 		if err != nil {
 			logger.LSystem(ctx, entity.SystemLog{
 				Service: "CMS-DELIVERY",
 				Level:   "WARN",
-				Message: fmt.Sprintf("Evaluate failed for %q: %v", name, err),
+				Message: fmt.Sprintf("Evaluate failed for %q: %v", placementName, err),
 			})
 			return nil
-		}
-		// filter is LogicEval is true, which means the logic expression passed. The rest of the fields are used for caching and response construction.
-		var passing []dto.ContentResult
-		for _, item := range results {
-			if item.LogicEval {
-				passing = append(passing, item)
-			}
 		}
 		entries = passing
 	} else {
@@ -330,7 +360,7 @@ func (s *CMSDeliveryService) evaluatePlacement(
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), name),
+		Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), placementName),
 	})
 	return entries
 }
@@ -414,13 +444,7 @@ func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 // evaluate queries all active schedules from the database,
 // groups them by placement, and for each placement:
 //
-//  1. L1 — caches each schedule's rules in CacheMemory.
-//  2. Calls gRPC Evaluate to obtain ContentResult entries
-//     (each entry includes a LogicHash and Conditions).
-//  3. L2 — writes each entry's JSON to Redis under cms:rule_logic:v1:{hash}.
-//  4. L3 — writes the full entries slice to Redis under cms:placement:logic:{name}.
-//
-// On gRPC failure for a single placement the error is logged and the loop
+// On Evaluate failure for a single placement the error is logged and the loop
 // continues with the next placement.
 func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 	occurrences, err := s.occurrenceRepo.ListActiveAt(ctx, time.Now())
@@ -484,7 +508,7 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 	}
 }
 
-// // setCache writes value to both the in-memory cache (if configured) and Redis.
+// setCache writes value to both the in-memory cache (if configured) and Redis.
 // func setCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string, value T, ttl time.Duration) error {
 // 	// checking value is string to avoid unnecessary JSON marshal for string values (e.g. rule logic hashes). If value is not string, marshal to JSON before writing to Redis.
 // 	if strVal, ok := any(value).(string); ok {
@@ -497,7 +521,7 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context) {
 // 	return repo.Set(ctx, key, string(valueJSON), ttl)
 // }
 
-// // getCache retrieves a value by key, checking in-memory cache first then falling back to Redis.
+// getCache retrieves a value by key, checking in-memory cache first then falling back to Redis.
 // func getCache[T any](ctx context.Context, repo domainrepo.RedisCacheRepository, key string) (T, error) {
 // 	var zero T
 // 	val, err := repo.Get(ctx, key)

@@ -122,27 +122,25 @@ db-mock-create-sql:
 ##   make db-mock-generate-decision-rule name=decision_rule_example_data count=100
 db-mock-generate-decision-rule:
 	go run ./scripts/mockdata -name=$${name:-decision_rule_example_data} -count=$${count:-50}
-	@if [ -n "$(REDIS_CONTAINER)" ]; then \
-		echo "Seeding Redis..."; \
-		docker exec -i $(REDIS_CONTAINER) sh < scripts/seed-redis-user-attrs.sh; \
-	else \
-		echo "Redis container not running — skipping live seed (scripts/seed-redis-user-attrs.sh updated)"; \
-	fi
-
-## Generate decision rule mock SQL + Redis seed to an explicit output path.
-## Usage:
-##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mocks/20260417000000_custom.sql
-##   make db-mock-generate-decision-rule-custom-out out=cmd/migrate/mocks/20260417000000_custom.sql count=20
-db-mock-generate-decision-rule-custom-out:
-	@if [ -z "$(out)" ]; then echo "Usage: make db-mock-generate-decision-rule-custom-out out=<output_sql_path> [count=<mock_count>]"; exit 1; fi
-	go run ./scripts/mockdata -out=$(out) -count=$${count:-50}
 
 ## Run mock data sql using goose (local only)
 db-mock-data-sql-up:
-	$(GOOSE) -dir $(GOOSE_MOCK_DIR) -table $(GOOSE_MOCK_TABLE) postgres $(GOOSE_DB_DSN) up
+	@docker exec $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -c \
+		"INSERT INTO $(GOOSE_MOCK_TABLE) (version_id, is_applied) SELECT 0, true WHERE NOT EXISTS (SELECT 1 FROM $(GOOSE_MOCK_TABLE) WHERE version_id = 0);"
+	@output="$$( $(GOOSE) -dir $(GOOSE_MOCK_DIR) -table $(GOOSE_MOCK_TABLE) postgres $(GOOSE_DB_DSN) up 2>&1 )"; status=$$?; \
+	printf '%s\n' "$$output"; \
+	if [ $$status -ne 0 ] && ! printf '%s\n' "$$output" | grep -q "goose run: no next version found"; then \
+		exit $$status; \
+	fi
 
 db-mock-data-sql-down:
-	$(GOOSE) -dir $(GOOSE_MOCK_DIR) -table $(GOOSE_MOCK_TABLE) postgres $(GOOSE_DB_DSN) down
+	@docker exec $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -c \
+		"INSERT INTO $(GOOSE_MOCK_TABLE) (version_id, is_applied) SELECT 0, true WHERE NOT EXISTS (SELECT 1 FROM $(GOOSE_MOCK_TABLE) WHERE version_id = 0);"
+	@output="$$( $(GOOSE) -dir $(GOOSE_MOCK_DIR) -table $(GOOSE_MOCK_TABLE) postgres $(GOOSE_DB_DSN) down 2>&1 )"; status=$$?; \
+	printf '%s\n' "$$output"; \
+	if [ $$status -ne 0 ] && ! printf '%s\n' "$$output" | grep -q "goose run: no next version found"; then \
+		exit $$status; \
+	fi
 
 ## Show schema migration status (migration_tracking.goose_migrations)
 db-migration-status:
@@ -168,10 +166,10 @@ db-create:
 db-clear:
 	@echo "Clearing all tables in $${DB_NAME:-kbank_ecms}..."
 	@docker exec $(POSTGRES_CONTAINER) psql -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -tAc \
-		"SELECT 'TRUNCATE ' || string_agg(quote_ident(tablename), ', ') || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public' HAVING count(*) > 0;" | \
+		"SELECT 'TRUNCATE ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public' OR (schemaname = 'migration_tracking' AND tablename = 'mock_migrations') HAVING count(*) > 0;" | \
 		docker exec -i $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms}
 	@docker exec $(POSTGRES_CONTAINER) psql -q -U $${DB_USER:-postgres} -d $${DB_NAME:-kbank_ecms} -c \
-		"TRUNCATE $(GOOSE_MOCK_TABLE);" 2>/dev/null || true
+		"INSERT INTO $(GOOSE_MOCK_TABLE) (version_id, is_applied) VALUES (0, true);"
 	@echo "Done. All rows cleared."
 
 ## Reset the database (drop → create → migrate)

@@ -33,6 +33,9 @@ type DeliveryService interface {
 	// This is used for monitoring and debugging purposes to see which cache keys are currently stored in Memory.
 	GetCacheKeys(ctx context.Context) ([]string, error)
 
+	// GetCacheValue returns the cached value for the given key. This is used for monitoring and debugging purposes to inspect the contents of specific cache entries.
+	GetCacheValue(ctx context.Context, key string) (json.RawMessage, error)
+
 	// GetCacheStatus returns whether the cache is under memory pressure and the current memory usage percentage.
 	GetCacheStatus(ctx context.Context) (isMemPressure bool, memoryUsagePct float64, err error)
 }

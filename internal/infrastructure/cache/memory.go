@@ -106,17 +106,21 @@ func (rc *CacheMemory[T]) Get(key string) (T, bool) {
 	return v.(T), true
 }
 
-// Set adds a value with the given TTL. Under memory pressure new entries are
-// rejected and the key is evicted if it already exists.
+// Set adds or replaces a value with the given TTL.
+// Under memory pressure, existing keys are still updated (stale data is replaced
+// with fresh evaluated data, which is net-zero on memory). Only brand-new keys
+// are rejected to avoid growing the memory footprint.
+// Critical eviction (>80%) is handled by monitorMemory flushing the whole cache.
 func (rc *CacheMemory[T]) Set(key string, value T, ttl time.Duration) {
 	rc.mu.RLock()
 	pressure := rc.isMemPressure
 	rc.mu.RUnlock()
 
 	if pressure {
-		rc.cache.Delete(key)
-		rc.updateMetrics()
-		return
+		if _, exists := rc.cache.Get(key); !exists {
+			rc.updateMetrics()
+			return
+		}
 	}
 
 	rc.cache.Set(key, value, ttl)

@@ -20,6 +20,7 @@ func RegisterRoutes(
 	purges := r.Group("/purge_requests")
 	{
 		purges.GET("", handler.getStatus)
+		purges.GET("/value", handler.getCacheValue)
 		purges.POST("", handler.flushCache)
 	}
 }

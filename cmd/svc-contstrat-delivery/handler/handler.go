@@ -120,6 +120,33 @@ func (h *Handler) getStatus(c *gin.Context) {
 	}})
 }
 
+// getCacheValue handles GET /purge_requests/value?key={key}
+//
+// @Summary Get cache value
+// @Description Returns the cached value for a given key. Used for monitoring and debugging.
+// @Tags svc-contstrat-delivery
+// @Accept json
+// @Produce json
+// @Param key query string true "The cache key to retrieve"
+// @Success 200 {object} dto.APIResponse{data=json.RawMessage}
+// @Failure 400 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /purge_requests/value [get]
+func (h *Handler) getCacheValue(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "key query parameter is required"})
+		return
+	}
+	value, err := h.svc.GetCacheValue(c.Request.Context(), key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, dto.APIResponse{Data: value})
+}
+
 // flushCache handles POST /purge_requests
 //
 // @Summary Flush content cache

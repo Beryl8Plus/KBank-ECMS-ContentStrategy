@@ -46,9 +46,9 @@ func TestGet_MissOnNonExistentKey(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestSet_RejectsUnderMemPressure verifies that entries are not stored when
-// memory pressure is active.
-func TestSet_RejectsUnderMemPressure(t *testing.T) {
+// TestSet_RejectsNewEntryUnderMemPressure verifies that a brand-new key is not
+// stored when memory pressure is active (avoids growing memory footprint).
+func TestSet_RejectsNewEntryUnderMemPressure(t *testing.T) {
 	c := newTestCache(t)
 
 	c.mu.Lock()
@@ -58,7 +58,26 @@ func TestSet_RejectsUnderMemPressure(t *testing.T) {
 	c.Set("key", "value", 10*time.Second)
 
 	_, ok := c.Get("key")
-	assert.False(t, ok, "entry should not be stored under memory pressure")
+	assert.False(t, ok, "new entry should not be stored under memory pressure")
+}
+
+// TestSet_UpdatesExistingEntryUnderMemPressure verifies that an already-cached
+// key is refreshed (net-zero memory change) even when memory pressure is active.
+// This allows the evaluate background tick to keep L1 data fresh under pressure
+// without growing the total cache footprint.
+func TestSet_UpdatesExistingEntryUnderMemPressure(t *testing.T) {
+	c := newTestCache(t)
+	c.Set("key", "original", 10*time.Second)
+
+	c.mu.Lock()
+	c.isMemPressure = true
+	c.mu.Unlock()
+
+	c.Set("key", "refreshed", 10*time.Second)
+
+	got, ok := c.Get("key")
+	require.True(t, ok, "existing entry must be refreshable under memory pressure")
+	assert.Equal(t, "refreshed", got, "value must be updated to the fresh evaluated data")
 }
 
 // TestPurgeExpired_RemovesOnlyExpiredKeys verifies that purgeExpired removes
@@ -97,4 +116,46 @@ func TestClear_RemovesAllKeys(t *testing.T) {
 	c.Clear()
 
 	assert.Equal(t, 0, c.cache.ItemCount(), "cache should be empty after Clear")
+}
+
+// TestKeys_ReturnsAllStoredKeys verifies that Keys returns every key currently held in the cache.
+func TestKeys_ReturnsAllStoredKeys(t *testing.T) {
+	c := newTestCache(t)
+	c.Set("alpha", "1", 10*time.Second)
+	c.Set("beta", "2", 10*time.Second)
+	c.Set("gamma", "3", 10*time.Second)
+
+	keys := c.Keys()
+	assert.ElementsMatch(t, []string{"alpha", "beta", "gamma"}, keys)
+}
+
+// TestKeys_EmptyAfterClear verifies that Keys returns an empty slice once the cache is cleared.
+func TestKeys_EmptyAfterClear(t *testing.T) {
+	c := newTestCache(t)
+	c.Set("x", "v", 10*time.Second)
+	c.Clear()
+
+	assert.Empty(t, c.Keys())
+}
+
+// TestStatus_DefaultsToNoPressure verifies Status returns false/0 before the memory monitor fires.
+func TestStatus_DefaultsToNoPressure(t *testing.T) {
+	c := newTestCache(t)
+	pressure, pct := c.Status()
+	assert.False(t, pressure)
+	assert.Equal(t, 0.0, pct)
+}
+
+// TestStatus_ReflectsInternalState verifies Status returns the values set by monitorMemory.
+func TestStatus_ReflectsInternalState(t *testing.T) {
+	c := newTestCache(t)
+
+	c.mu.Lock()
+	c.isMemPressure = true
+	c.lastUsedPct = 0.72
+	c.mu.Unlock()
+
+	pressure, pct := c.Status()
+	assert.True(t, pressure)
+	assert.InDelta(t, 0.72, pct, 0.0001)
 }

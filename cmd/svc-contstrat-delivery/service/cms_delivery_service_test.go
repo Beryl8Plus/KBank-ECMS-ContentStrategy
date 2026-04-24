@@ -476,3 +476,122 @@ func TestGetPersonalizedContent_CacheMissPersistsGracefully(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GetCacheKeys tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestGetCacheKeys_NilCache verifies GetCacheKeys returns an empty slice when no in-memory cache is configured.
+func TestGetCacheKeys_NilCache(t *testing.T) {
+	t.Parallel()
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0)
+
+	keys, err := svc.GetCacheKeys(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, keys)
+}
+
+// TestGetCacheKeys_WithEntries verifies GetCacheKeys returns keys from both Schedules and DecisionRule caches.
+func TestGetCacheKeys_WithEntries(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_keys_test")
+	schedKey := cmsPlacementSchedulesKey("hero")
+	mem.Schedules.Set(schedKey, []*entity.Schedule{}, time.Hour)
+	ruleID := uuid.New()
+	ruleKey := ruleDecisionCacheKey(ruleID.String())
+	mem.DecisionRule.Set(ruleKey, &entity.DecisionRule{BaseModel: entity.BaseModel{ID: ruleID}}, time.Hour)
+
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	keys, err := svc.GetCacheKeys(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, keys, 2)
+	assert.Contains(t, keys, schedKey)
+	assert.Contains(t, keys, ruleKey)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GetCacheValue tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestGetCacheValue_ScheduleKey verifies that GetCacheValue returns JSON-encoded schedules for a schedules: key.
+func TestGetCacheValue_ScheduleKey(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_value_schedule_test")
+	key := cmsPlacementSchedulesKey("hero")
+	mem.Schedules.Set(key, []*entity.Schedule{}, time.Hour)
+
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	val, err := svc.GetCacheValue(context.Background(), key)
+	require.NoError(t, err)
+	assert.NotNil(t, val)
+	// Confirm the value is valid JSON.
+	var decoded []*entity.Schedule
+	require.NoError(t, json.Unmarshal(val, &decoded))
+}
+
+// TestGetCacheValue_RuleKey verifies that GetCacheValue returns JSON-encoded rule for a rule: key.
+func TestGetCacheValue_RuleKey(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_value_rule_test")
+	ruleID := uuid.New()
+	key := ruleDecisionCacheKey(ruleID.String())
+	mem.DecisionRule.Set(key, &entity.DecisionRule{BaseModel: entity.BaseModel{ID: ruleID}}, time.Hour)
+
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	val, err := svc.GetCacheValue(context.Background(), key)
+	require.NoError(t, err)
+	assert.NotNil(t, val)
+	// Confirm the value is valid JSON.
+	var decoded entity.DecisionRule
+	require.NoError(t, json.Unmarshal(val, &decoded))
+}
+
+// TestGetCacheValue_UnsupportedPrefix verifies that GetCacheValue returns an error for an unrecognised key prefix.
+func TestGetCacheValue_UnsupportedPrefix(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_value_unsupported_test")
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	_, err := svc.GetCacheValue(context.Background(), "cms:placement:hero")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported key prefix")
+}
+
+// TestGetCacheValue_KeyNotFound verifies that GetCacheValue returns an error when the key is absent from the cache.
+func TestGetCacheValue_KeyNotFound(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_value_not_found_test")
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	_, err := svc.GetCacheValue(context.Background(), ruleDecisionCacheKey("nonexistent"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GetCacheStatus tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestGetCacheStatus_NilCache verifies GetCacheStatus returns false/0 when no in-memory cache is configured.
+func TestGetCacheStatus_NilCache(t *testing.T) {
+	t.Parallel()
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0)
+
+	pressure, pct, err := svc.GetCacheStatus(context.Background())
+	require.NoError(t, err)
+	assert.False(t, pressure)
+	assert.Equal(t, 0.0, pct)
+}
+
+// TestGetCacheStatus_WithCache verifies GetCacheStatus returns values from the in-memory cache without error.
+func TestGetCacheStatus_WithCache(t *testing.T) {
+	t.Parallel()
+	mem := newTestMemCache(t, "get_cache_status_test")
+	svc := newSvcCacheOnly(&mockCacheRepo{}, mem)
+
+	_, _, err := svc.GetCacheStatus(context.Background())
+	require.NoError(t, err)
+}
