@@ -11,7 +11,7 @@ ATLAS_EMPTY_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
+.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
 
 ## Install protoc Go plugins
 proto-install:
@@ -188,8 +188,25 @@ db-schema-inspect:
 db-schema-sql:
 	@echo "Generating SQL schema from database..."
 	@if [ ! -d "cmd/migrate/migrations-prod" ]; then mkdir -p cmd/migrate/migrations-prod; fi
-	@atlas schema diff --from $(ATLAS_EMPTY_URL) --to $(ATLAS_DB_URL) > cmd/migrate/migrations-prod/database_schema.sql
+	@atlas schema diff --from $(ATLAS_EMPTY_URL) --to $(ATLAS_DB_URL) \
+    --exclude "migration_tracking.*" \
+		--exclude "goose_migrations" \
+		--exclude "mock_migrations" \
+		--exclude "seed_migrations" \
+    > cmd/migrate/migrations-prod/database_schema.sql
 	@echo "Schema saved to cmd/migrate/migrations-prod/database_schema.sql"
+
+## Generate SQL rollback (DROP) from the current database state — reverse of db-schema-sql
+db-schema-rollback-sql:
+	@echo "Generating SQL rollback from database..."
+	@if [ ! -d "cmd/migrate/migrations-prod" ]; then mkdir -p cmd/migrate/migrations-prod; fi
+	@atlas schema diff --from $(ATLAS_DB_URL) --to $(ATLAS_EMPTY_URL) \
+		--exclude "migration_tracking.*" \
+		--exclude "goose_migrations" \
+		--exclude "mock_migrations" \
+		--exclude "seed_migrations" \
+		> cmd/migrate/migrations-prod/database_rollback.sql
+	@echo "Rollback saved to cmd/migrate/migrations-prod/database_rollback.sql"
 
 ## Set a key/value in the local Redis container: make redis-set key=<key> val=<value>
 redis-set:

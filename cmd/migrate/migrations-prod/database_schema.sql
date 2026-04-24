@@ -1,3 +1,23 @@
+-- Create "login_token_histories" table
+CREATE TABLE "login_token_histories" (
+  "ID" uuid NOT NULL DEFAULT gen_random_uuid(),
+  "CREATED_AT" timestamptz NULL,
+  "CREATED_BY" uuid NULL,
+  "UPDATED_AT" timestamptz NULL,
+  "UPDATED_BY" uuid NULL,
+  "DELETED_AT" timestamptz NULL,
+  "USER_NAME" character varying(255) NULL,
+  "ACCESS_TOKEN" character varying(255) NULL,
+  "EXPIRE_DATE" timestamptz NULL,
+  "USERNAME" character varying(255) NULL,
+  PRIMARY KEY ("ID")
+);
+-- Create index "idx_login_token_histories_deleted_at" to table: "login_token_histories"
+CREATE INDEX "idx_login_token_histories_deleted_at" ON "login_token_histories" ("DELETED_AT");
+-- Create index "idx_login_token_histories_user_name" to table: "login_token_histories"
+CREATE UNIQUE INDEX "idx_login_token_histories_user_name" ON "login_token_histories" ("USER_NAME");
+-- Create index "idx_login_token_histories_username" to table: "login_token_histories"
+CREATE UNIQUE INDEX "idx_login_token_histories_username" ON "login_token_histories" ("USERNAME");
 -- Create "calendars" table
 CREATE TABLE "calendars" (
   "ID" uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -29,23 +49,12 @@ CREATE TABLE "clen_schema_registry" (
 );
 -- Create index "idx_clen_schema_registry_deleted_at" to table: "clen_schema_registry"
 CREATE INDEX "idx_clen_schema_registry_deleted_at" ON "clen_schema_registry" ("DELETED_AT");
--- Create "login_token_histories" table
-CREATE TABLE "login_token_histories" (
-  "ID" uuid NOT NULL DEFAULT gen_random_uuid(),
-  "CREATED_AT" timestamptz NULL,
-  "CREATED_BY" uuid NULL,
-  "UPDATED_AT" timestamptz NULL,
-  "UPDATED_BY" uuid NULL,
-  "DELETED_AT" timestamptz NULL,
-  "USERNAME" character varying(255) NULL,
-  "ACCESS_TOKEN" character varying(255) NULL,
-  "EXPIRE_DATE" timestamptz NULL,
-  PRIMARY KEY ("ID")
+-- Create "decision_rule_id_sequences" table
+CREATE TABLE "decision_rule_id_sequences" (
+  "year_month" text NOT NULL,
+  "last_seq" integer NOT NULL DEFAULT 0,
+  CONSTRAINT "pk_decision_rule_id_seq" PRIMARY KEY ("year_month")
 );
--- Create index "idx_login_token_histories_deleted_at" to table: "login_token_histories"
-CREATE INDEX "idx_login_token_histories_deleted_at" ON "login_token_histories" ("DELETED_AT");
--- Create index "idx_login_token_histories_username" to table: "login_token_histories"
-CREATE UNIQUE INDEX "idx_login_token_histories_username" ON "login_token_histories" ("USERNAME");
 -- Create "calendar_dates" table
 CREATE TABLE "calendar_dates" (
   "ID" uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -125,18 +134,23 @@ CREATE TABLE "decision_rules" (
   "UPDATED_AT" timestamptz NULL,
   "UPDATED_BY" uuid NULL,
   "DELETED_AT" timestamptz NULL,
+  "DECISION_RULE_RUNNING" character varying(255) NOT NULL,
   "NAME" character varying(255) NOT NULL,
   "TYPE" character varying(255) NOT NULL,
   "EVALUATE_TYPE" character varying(255) NOT NULL,
   "CONTENT_PATH" character varying(255) NOT NULL,
+  "CAMPAIGN_CODE" character varying(25) NULL,
   "SCORE" numeric NULL DEFAULT 0,
   "STATUS" character varying(255) NULL,
+  "SUB_STATUS" character varying(255) NULL,
   "INACTIVE_BY" uuid NULL,
   PRIMARY KEY ("ID"),
   CONSTRAINT "fk_decision_rules_inactive_by_user" FOREIGN KEY ("INACTIVE_BY") REFERENCES "users" ("ID") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
 -- Create index "idx_decision_rules_active_status" to table: "decision_rules"
 CREATE INDEX "idx_decision_rules_active_status" ON "decision_rules" ("STATUS") WHERE ((("STATUS")::text = 'ACTIVE'::text) AND ("DELETED_AT" IS NULL));
+-- Create index "idx_decision_rules_decision_rule_running" to table: "decision_rules"
+CREATE UNIQUE INDEX "idx_decision_rules_decision_rule_running" ON "decision_rules" ("DECISION_RULE_RUNNING");
 -- Create index "idx_decision_rules_deleted_at" to table: "decision_rules"
 CREATE INDEX "idx_decision_rules_deleted_at" ON "decision_rules" ("DELETED_AT");
 -- Create "channels" table
@@ -160,9 +174,6 @@ CREATE TABLE "placements" (
   "UPDATED_AT" timestamptz NULL,
   "UPDATED_BY" uuid NULL,
   "DELETED_AT" timestamptz NULL,
-  "NAME" character varying(255) NULL,
-  "DESCRIPTION" text NULL,
-  "MAX_RESULTS" bigint NULL DEFAULT 10,
   "PLACEMENT_NAME" character varying(255) NULL,
   "CHANNEL_ID" uuid NOT NULL,
   PRIMARY KEY ("ID"),
@@ -333,7 +344,3 @@ CREATE TABLE "schedule_occurrences" (
 CREATE UNIQUE INDEX "idx_occurrence_schedule_start_end" ON "schedule_occurrences" ("SCHEDULE_ID", "OCCURRENCE_START", "OCCURRENCE_END");
 -- Create index "idx_schedule_occurrences_deleted_at" to table: "schedule_occurrences"
 CREATE INDEX "idx_schedule_occurrences_deleted_at" ON "schedule_occurrences" ("DELETED_AT");
--- Drop "seed_migrations" table
-DROP TABLE "seed_migrations";
--- Drop "goose_migrations" table
-DROP TABLE "goose_migrations";
