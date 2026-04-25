@@ -24,14 +24,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Return ContentResult entries that Mass Type In Redis Cache
-// func cmsPlacementKey(name string) string {
-// 	return "cms:mass:placement:" + name
-// }
+func computePlacementHash(schedules []*entity.Schedule) string {
+	h := sha256.New()
+	for _, s := range schedules {
+		h.Write([]byte(s.ID.String()))
+		h.Write([]byte(s.UpdatedAt.String()))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 // Return Schedule entries for a placement, used for cache keys and DB queries.
 func cmsPlacementSchedulesKey(name string) string {
-	return "schedules:placement:" + name + ""
+	return "schedules:placement:" + name
 }
 
 // Return logic entries for a placement, used for cache keys.
@@ -168,11 +172,10 @@ func (m *MemoryCache) getStatus() (isMemPressure bool, memoryUsagePct float64) {
 }
 
 // CMSDeliveryService implements DeliveryService.
-// Primary path: reads pre-computed content results from Redis.
-// Fallback path (cache miss): queries active schedules from PostgreSQL and
-// delegates evaluation to cms-runtime via gRPC, then caches the result.
-// Background ticker: periodically queries DB, delegates evaluation to gRPC,
-// and writes L1/L2/L3 caches for all active placements.
+// Primary path: serves content from the in-memory mirror populated by the background ticker.
+// Fallback path (cache miss): queries active schedules from PostgreSQL, evaluates rules
+// in-process via LocalEvaluator, and populates the mirror.
+// Background ticker: periodically queries DB and refreshes the L1/L2 in-memory caches for all active placements.
 type CMSDeliveryService struct {
 	cacheRepo      domainrepo.RedisCacheRepository
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository // nil disables fallback
@@ -197,8 +200,8 @@ type CMSDeliveryService struct {
 }
 
 // NewCMSDeliveryService creates a CMSDeliveryService.
-//   - occurrenceRepo may be nil to disable the gRPC fallback.
-//   - evaluator may be nil to disable the gRPC fallback.
+//   - occurrenceRepo may be nil to disable the DB fallback.
+//   - evaluator may be nil to disable in-process rule evaluation.
 //   - cacheMemory may be nil to disable local rule caching.
 //   - resultTTL is the Redis TTL for results written by the fallback path.
 //   - tickInterval is how often the background ticker fires (0 disables ticker).
@@ -306,24 +309,29 @@ func (s *CMSDeliveryService) GetCacheStatus(ctx context.Context) (isMemPressure 
 // ALL Redis placement caches are flushed via FlushDB.
 func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []string, isEvaluate bool) error {
 	if len(placementNames) == 0 {
+		// Full flush: wipe Redis and in-memory caches entirely.
 		if err := s.cacheRepo.FlushDB(ctx); err != nil {
 			return fmt.Errorf("flushing all caches: %w", err)
 		}
-		return nil
-	}
-
-	for _, name := range placementNames {
-		placementNameKey := cmsPlacementSchedulesKey(name)
-		schedules, ok := s.cacheMemory.Schedules.Get(placementNameKey)
-		if ok && schedules != nil {
-			for _, sched := range schedules {
-				if sched.DecisionRule != nil {
-					decisionRuleKey := ruleDecisionCacheKey(sched.DecisionRule.ID.String())
-					s.cacheMemory.DecisionRule.Delete(decisionRuleKey)
+		if s.cacheMemory != nil {
+			s.cacheMemory.Schedules.Clear()
+			s.cacheMemory.DecisionRule.Clear()
+		}
+	} else if s.cacheMemory != nil {
+		// Selective flush: evict only the named placements from the in-memory mirror.
+		// Redis is left intact; the next evaluate() tick will re-populate it.
+		for _, name := range placementNames {
+			placementNameKey := cmsPlacementSchedulesKey(name)
+			schedules, ok := s.cacheMemory.Schedules.Get(placementNameKey)
+			if ok && schedules != nil {
+				for _, sched := range schedules {
+					if sched.DecisionRule != nil {
+						s.cacheMemory.DecisionRule.Delete(ruleDecisionCacheKey(sched.DecisionRule.ID.String()))
+					}
 				}
 			}
+			s.cacheMemory.Schedules.Delete(placementNameKey)
 		}
-		s.cacheMemory.Schedules.Delete(placementNameKey)
 	}
 
 	// After a full flush, proactively re-populate caches for all active placements to avoid cache stampede on first request.
@@ -481,8 +489,8 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	}
 
 	// 3.1 Process each placement concurrently via errgroup.
-	// Bounded concurrency avoids overwhelming the gRPC backend during
-	// cache-miss storms while still providing significant speedup.
+	// Bounded concurrency limits parallelism during cache-miss storms
+	// while still providing significant speedup.
 	// Each goroutine writes to its own slot (no mutex needed), preserving
 	// placementNames order in the merged result.
 	const maxPlacementConcurrency = 10
@@ -546,8 +554,8 @@ func (s *CMSDeliveryService) evaluatePlacement(
 }
 
 // ---------------------------------------------------------------------------
-// Background ticker — periodically evaluates all active placements via gRPC
-// and populates L1 (CacheMemory), L2 (rule-logic hashes), L3 (placement-logic).
+// Background ticker — periodically evaluates all active placements in-process
+// and populates L1 (CacheMemory) and L2 (version hashes).
 // ---------------------------------------------------------------------------
 
 // Start launches the background evaluation ticker.
@@ -623,10 +631,10 @@ func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.stopCh:
+			return
 		case <-ticker.C:
 			s.evaluate(ctx)
-		case <-s.done:
-			return
 		}
 	}
 }
@@ -737,13 +745,7 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 		key := cmsPlacementSchedulesKey(placementName)
 		newSchedules[key] = g.schedules
 
-		// Compute version hash for this placement's schedules
-		hash := sha256.New()
-		for _, s := range g.schedules {
-			hash.Write([]byte(s.ID.String()))
-			hash.Write([]byte(s.UpdatedAt.String()))
-		}
-		newVersions[placementName] = hex.EncodeToString(hash.Sum(nil))
+		newVersions[placementName] = computePlacementHash(g.schedules)
 	}
 	if len(rules) > 0 {
 		for _, rule := range rules {
@@ -763,13 +765,7 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 				s.cacheMemory.Schedules.Set(key, g.schedules, s.resultTTL)
 				s.cacheMemory.LastSync.Set(name, now, s.resultTTL)
 
-				// Version hash
-				hash := sha256.New()
-				for _, sched := range g.schedules {
-					hash.Write([]byte(sched.ID.String()))
-					hash.Write([]byte(sched.UpdatedAt.String()))
-				}
-				hashStr := hex.EncodeToString(hash.Sum(nil))
+				hashStr := computePlacementHash(g.schedules)
 				s.cacheMemory.VersionHashes.Set(name, hashStr, s.resultTTL)
 
 				// Update metrics

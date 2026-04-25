@@ -47,6 +47,7 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 			TLSConfig: &tls.Config{
 				MinVersion:         tls.VersionTLS12,
 				InsecureSkipVerify: true, // Skip certificate verification for internal IP-based connections
+				// InsecureSkipVerify: false, //nolint:gosec // Azure Redis Enterprise presents a valid TLS certificate; validation is required
 			},
 		}
 
@@ -65,7 +66,11 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 					Scopes: []string{redisResourceID + "/.default"},
 				})
 				if err != nil {
-					fmt.Printf("failed to get redis token: %v\n", err)
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "REDIS",
+						Level:   "ERROR",
+						Message: fmt.Sprintf("failed to get redis token: %v", err),
+					})
 					return principalID, ""
 				}
 				return principalID, token.Token
@@ -192,7 +197,11 @@ func (r *RedisRepository) Subscribe(ctx context.Context, channel string) (<-chan
 				select {
 				case ch <- msg.Payload:
 				default:
-					// Log dropped message if buffer is full
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "REDIS",
+						Level:   "WARN",
+						Message: fmt.Sprintf("pubsub: message dropped on channel %q — consumer buffer full", channel),
+					})
 				}
 			}
 		}
