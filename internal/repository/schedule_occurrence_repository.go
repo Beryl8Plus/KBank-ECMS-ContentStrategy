@@ -137,7 +137,7 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 	if err := r.db.WithContext(ctx).
 		Preload("Schedule").
 		Preload("Schedule.Placement").
-		Where("\"STATUS\" = ?", "ACTIVE").
+		Where("\"STATUS\" = ?", enums.OccurrenceStatusActive).
 		Where("\"OCCURRENCE_START\" <= ? AND \"OCCURRENCE_END\" > ?", atStr, atStr).
 		Find(&occurrences).Error; err != nil {
 		return nil, fmt.Errorf("listing active occurrences at %s: %w", atStr, err)
@@ -154,7 +154,7 @@ func (r *ScheduleOccurrencePostgresRepository) ExpireEndedOccurrences(
 ) (int64, error) {
 	result := r.db.WithContext(ctx).
 		Model(&entity.ScheduleOccurrence{}).
-		Where("\"STATUS\" = ? AND \"OCCURRENCE_END\" <= ?", "ACTIVE", now).
+		Where("\"STATUS\" = ? AND \"OCCURRENCE_END\" <= ?", enums.OccurrenceStatusActive, now).
 		Update("STATUS", enums.OccurrenceStatusExpired)
 	if result.Error != nil {
 		return 0, fmt.Errorf("expiring ended occurrences: %w", result.Error)
@@ -180,7 +180,7 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
 		Preload("Schedule").
 		Preload("Schedule.Placement").
 		Where("\"PLACEMENTS\".\"PLACEMENT_NAME\" IN ?", placementNames).
-		Where("\"SCHEDULE_OCCURRENCES\".\"STATUS\" = ?", "ACTIVE").
+		Where("\"SCHEDULE_OCCURRENCES\".\"STATUS\" = ?", enums.OccurrenceStatusActive).
 		Where("\"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_START\" <= ? AND \"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_END\" > ?", atStr, atStr).
 		Find(&occurrences).Error; err != nil {
 		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, atStr, err)
