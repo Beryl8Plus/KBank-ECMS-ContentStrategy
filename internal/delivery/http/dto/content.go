@@ -17,13 +17,13 @@ const (
 )
 
 type ContentRequestQueryParams struct {
-	RequestType    enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory"`
-	Mode           string            `form:"mode"`
-	Channel        string            `form:"channel" binding:"required"`
-	Placements     []string          `form:"placement" binding:"required,min=1,dive,required"`
-	CustomerID     string            `form:"customerId" binding:"required"`
-	CustomerIDType CustomerIdType    `form:"customerIdType" binding:"omitempty,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID"`
-	PageSize       int               `form:"pageSize,default=10" binding:"omitempty,max=2000"`
+	RequestType    enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory" json:"requestType"`
+	Mode           string            `form:"mode" json:"mode"`
+	Channel        string            `form:"channel" binding:"required" json:"channel"`
+	Placements     []string          `form:"placement" binding:"required,min=1,dive,required" json:"placement"`
+	CustomerID     string            `form:"customerId" binding:"required" json:"customerId"`
+	CustomerIDType CustomerIdType    `form:"customerIdType" binding:"omitempty,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID" json:"customerIdType"`
+	PageSize       int               `form:"pageSize,default=10" binding:"omitempty,max=2000" json:"pageSize"`
 }
 
 // FlushRequest is the request body for POST /flush.
