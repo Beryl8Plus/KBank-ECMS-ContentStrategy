@@ -31,7 +31,7 @@ func ProvideMatConfig() service.MaterializationConfig {
 	return service.MaterializationConfig{}
 }
 
-// ProvideWorkerConfig returns the default OccurrenceWorkerConfig (1h materialize, 24h cleanup).
+// ProvideWorkerConfig returns the default OccurrenceWorkerConfig (1h materialize, cleanup at 00:00).
 func ProvideWorkerConfig() service.OccurrenceWorkerConfig {
 	return service.OccurrenceWorkerConfig{}
 }
