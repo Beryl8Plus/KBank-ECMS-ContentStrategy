@@ -51,13 +51,13 @@ func NewPublisher(redis domainrepo.RedisCacheRepository) *Publisher {
 	return &Publisher{redis: redis}
 }
 
-// PingPlacement publishes a SyncPingMessage to ChannelCMSSyncPing. Pass an
+// PingSync publishes a SyncPingMessage to ChannelCMSSyncPing. Pass an
 // empty versionHash to force subscribers to refresh; pass a non-empty
 // decisionRuleID to have subscribers explicitly delete the cached rule.
 //
 // Errors are returned to the caller but are also logged so fire-and-forget
 // usage at HTTP request boundaries can ignore them safely.
-func (p *Publisher) PingPlacement(ctx context.Context, placementName, decisionRuleID, versionHash string) error {
+func (p *Publisher) PingSync(ctx context.Context, placementName, decisionRuleID, versionHash string) error {
 	if p == nil || p.redis == nil {
 		return nil
 	}

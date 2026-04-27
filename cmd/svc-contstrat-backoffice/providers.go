@@ -12,6 +12,8 @@ import (
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
+
+	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
 
 // Application holds the two top-level components returned by Wire.
@@ -98,6 +100,9 @@ var ProviderSet = wire.NewSet(
 	service.NewScheduleMaterializationService,
 	ProvideWorkerConfig,
 	service.NewOccurrenceWorker,
+
+	// Activation service for decision rule wizard
+	localservice.NewActivationService,
 
 	// Handlers
 	handler.NewScheduleHandler,

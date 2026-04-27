@@ -13,6 +13,8 @@ import (
 	"kbank-ecms/internal/delivery/http/dto"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/service"
+
+	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
 
 // decisionRuleWizardServicer is the interface the handler depends on.
@@ -29,12 +31,13 @@ type decisionRuleWizardServicer interface {
 
 // DecisionRuleWizardHandler handles HTTP requests for the wizard API.
 type DecisionRuleWizardHandler struct {
-	service decisionRuleWizardServicer
+	service         decisionRuleWizardServicer
+	activateService *localservice.ActivationService
 }
 
 // NewDecisionRuleWizardHandler creates a new DecisionRuleWizardHandler.
-func NewDecisionRuleWizardHandler(svc *service.DecisionRuleWizardService) *DecisionRuleWizardHandler {
-	return &DecisionRuleWizardHandler{service: svc}
+func NewDecisionRuleWizardHandler(svc *service.DecisionRuleWizardService, activateSvc *localservice.ActivationService) *DecisionRuleWizardHandler {
+	return &DecisionRuleWizardHandler{service: svc, activateService: activateSvc}
 }
 
 // CreateDecisionRule handles POST /decision-rules.
@@ -199,11 +202,18 @@ func (h *DecisionRuleWizardHandler) ActivateDecisionRule(c *gin.Context) {
 	if !ok {
 		return
 	}
-	resp, err := h.service.ActivateStep4(c.Request.Context(), id)
+
+	ctx := c.Request.Context()
+
+	resp, err := h.service.ActivateStep4(ctx, id)
 	if err != nil {
 		h.handleError(c, err)
 		return
 	}
+
+	// Publish cache-invalidation pings for all placements touched by this decision rule's schedules.
+	h.activateService.ActivatePublish(ctx, resp.ID, resp.Schedules)
+
 	c.JSON(http.StatusOK, dto.APIResponse{Data: resp})
 }
 

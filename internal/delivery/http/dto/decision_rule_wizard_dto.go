@@ -165,6 +165,7 @@ type WizardStep4Response struct {
 	ID                  uuid.UUID                `json:"id"`
 	DecisionRuleRunning string                   `json:"decisionRuleId"`
 	Status              enums.DecisionRuleStatus `json:"status"`
+	Schedules           []*entity.Schedule
 }
 
 // WizardScheduleResponse describes one saved schedule with placement details.

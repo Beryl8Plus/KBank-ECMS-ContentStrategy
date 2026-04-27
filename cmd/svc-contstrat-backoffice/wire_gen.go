@@ -9,6 +9,7 @@ package main
 import (
 	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
+	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/pubsub"
@@ -34,7 +35,8 @@ func InitializeApp(db *gorm.DB, redisCache repository.RedisCacheRepository, rate
 	placementPostgresRepository := repository2.NewPlacementPostgresRepository(db)
 	publisher := pubsub.NewPublisher(redisCache)
 	decisionRuleWizardService := service.NewDecisionRuleWizardService(decisionRuleWizardPostgresRepository, attributePostgresRepository, placementPostgresRepository, publisher)
-	decisionRuleWizardHandler := handler.NewDecisionRuleWizardHandler(decisionRuleWizardService)
+	activationService := service2.NewActivationService(publisher)
+	decisionRuleWizardHandler := handler.NewDecisionRuleWizardHandler(decisionRuleWizardService, activationService)
 	scheduleOccurrencePostgresRepository := repository2.NewScheduleOccurrencePostgresRepository(db)
 	scheduleOccurrenceService := service.NewScheduleOccurrenceService(scheduleOccurrencePostgresRepository)
 	scheduleOccurrenceHandler := handler.NewScheduleOccurrenceHandler(scheduleOccurrenceService)
