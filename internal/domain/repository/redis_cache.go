@@ -25,4 +25,7 @@ type RedisCacheRepository interface {
 
 	// Subscribe listens to a Redis channel and returns a channel for messages.
 	Subscribe(ctx context.Context, channel string) (<-chan string, error)
+
+	// Publish broadcasts payload on the given Pub/Sub channel.
+	Publish(ctx context.Context, channel string, payload string) error
 }

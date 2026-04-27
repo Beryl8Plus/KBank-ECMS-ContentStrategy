@@ -18,6 +18,7 @@ import (
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/internal/infrastructure/pubsub"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,12 +47,10 @@ func ruleDecisionCacheKey(id string) string {
 // compile-time interface guard.
 var _ DeliveryService = (*CMSDeliveryService)(nil)
 
-// SyncPingMessage represents the structured payload for Redis Pub/Sub pings.
-// Carrying a version hash allows pods to avoid redundant refreshes.
-type SyncPingMessage struct {
-	PlacementName string `json:"placement_name"`
-	VersionHash   string `json:"version_hash"`
-}
+// SyncPingMessage is re-exported from the shared pubsub package so existing
+// call sites in this package keep compiling while the message contract lives
+// in one place.
+type SyncPingMessage = pubsub.SyncPingMessage
 
 // MemoryCache represents the L1 in-memory mirror.
 type MemoryCache struct {
@@ -809,7 +808,7 @@ func (s *CMSDeliveryService) subscribeToUpdates(ctx context.Context) {
 
 	defer close(s.subDone)
 
-	const channel = "cms:sync:ping"
+	const channel = pubsub.ChannelCMSSyncPing
 	msgs, err := s.cacheRepo.Subscribe(s.subCtx, channel)
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
@@ -875,6 +874,17 @@ func (s *CMSDeliveryService) subscribeToUpdates(ctx context.Context) {
 				if s.cacheMemory != nil && ping.VersionHash != "" {
 					if localHash, ok := s.cacheMemory.VersionHashes.Get(ping.PlacementName); ok && localHash == ping.VersionHash {
 						continue
+					}
+				}
+
+				// Targeted invalidation: when the publisher names a specific
+				// decision rule (e.g. on activate), drop both cache entries
+				// before re-evaluating so the next read can never observe a
+				// stale `rule:{id}` mirror, even briefly.
+				if s.cacheMemory != nil && ping.DecisionRuleID != "" {
+					s.cacheMemory.DecisionRule.Delete(ruleDecisionCacheKey(ping.DecisionRuleID))
+					if ping.PlacementName != "" {
+						s.cacheMemory.Schedules.Delete(cmsPlacementSchedulesKey(ping.PlacementName))
 					}
 				}
 

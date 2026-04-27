@@ -114,6 +114,7 @@ func (m *mockCacheRepo) Subscribe(ctx context.Context, channel string) (<-chan s
 	}
 	return make(chan string), nil
 }
+func (m *mockCacheRepo) Publish(_ context.Context, _ string, _ string) error { return nil }
 
 // mockOccurrenceRepo is a minimal mock for domainrepo.ScheduleOccurrenceRepository.
 type mockOccurrenceRepo struct {

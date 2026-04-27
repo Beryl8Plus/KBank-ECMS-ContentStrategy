@@ -49,12 +49,6 @@ func main() {
 	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Start App"})
 	logger.LStartup(ctx, entity.StartupLog{Service: "MAIN", Level: "INFO", Message: "Loading runtime settings for new service"})
 
-	REDIS := entity.RedisConfig{
-		Host:     os.Getenv("REDIS_HOST"),
-		Port:     os.Getenv("REDIS_PORT"),
-		Password: os.Getenv("REDIS_PASSWORD"),
-	}
-
 	rateLimit := entity.RateLimit{RPS: 50, Burst: 100, MCR: 10}
 	if cfgRateLimit, err := util.LoadNewServiceRateLimit("./configs/newservice_inbound_config.yaml"); err == nil {
 		rateLimit = cfgRateLimit
@@ -72,8 +66,14 @@ func main() {
 		POSTGRES.SSLMode = ssl
 	}
 
-	// Initialize Redis Repository
-	if _, err := repository.NewRedisRepository(ctx, REDIS); err != nil {
+	// Initialize Redis Repository. If Redis is unavailable the publisher
+	// becomes a no-op and cache invalidation falls back to TTL.
+	redisCache, err := repository.NewRedisRepository(ctx, entity.RedisConfig{
+		Host:     os.Getenv("REDIS_HOST"),
+		Port:     os.Getenv("REDIS_PORT"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+	})
+	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "MAIN",
 			Level:   "ERROR",
@@ -93,7 +93,7 @@ func main() {
 	}
 
 	// Build router + occurrence worker via Google Wire
-	app, err := InitializeApp(db, rateLimit)
+	app, err := InitializeApp(db, redisCache, rateLimit)
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "MAIN",

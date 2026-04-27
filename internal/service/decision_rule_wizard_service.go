@@ -15,6 +15,8 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/internal/infrastructure/pubsub"
 )
 
 // Sentinel errors mapped to HTTP status codes in the handler.
@@ -36,15 +38,19 @@ type DecisionRuleWizardService struct {
 	repo          domainrepo.DecisionRuleWizardRepository
 	attrRepo      domainrepo.AttributeRepository
 	placementRepo domainrepo.PlacementRepository
+	publisher     *pubsub.Publisher
 }
 
 // NewDecisionRuleWizardService creates a new DecisionRuleWizardService.
+// publisher may be nil; cache invalidation pings are then suppressed and
+// delivery pods rely on TTL expiry instead.
 func NewDecisionRuleWizardService(
 	repo domainrepo.DecisionRuleWizardRepository,
 	attrRepo domainrepo.AttributeRepository,
 	placementRepo domainrepo.PlacementRepository,
+	publisher *pubsub.Publisher,
 ) *DecisionRuleWizardService {
-	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo}
+	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo, publisher: publisher}
 }
 
 // ── Step 1 ───────────────────────────────────────────────────────────────────
@@ -460,11 +466,50 @@ func (s *DecisionRuleWizardService) ActivateStep4(ctx context.Context, id uuid.U
 		return nil, err
 	}
 
+	s.invalidateCachesForActivation(ctx, id, schedules)
+
 	return &dto.WizardStep4Response{
 		ID:                  dr.ID,
 		DecisionRuleRunning: dr.DecisionRuleRunning,
 		Status:              enums.DecisionRuleStatusActive,
 	}, nil
+}
+
+// invalidateCachesForActivation publishes a sync ping per distinct placement
+// touched by the activated decision rule so delivery pods drop their cached
+// `schedules:placement:{name}` and `rule:{id}` entries and re-evaluate.
+//
+// Failures are logged and swallowed: the activation has already succeeded,
+// and stale entries will fall out of cache via TTL.
+func (s *DecisionRuleWizardService) invalidateCachesForActivation(ctx context.Context, ruleID uuid.UUID, schedules []*entity.Schedule) {
+	if s.publisher == nil || len(schedules) == 0 {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(schedules))
+	for _, sc := range schedules {
+		if sc == nil || sc.Placement == nil {
+			continue
+		}
+		name := sc.Placement.PlacementName
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+
+		// Empty version hash → forces subscriber to refresh regardless of
+		// any previously-mirrored version.
+		if err := s.publisher.PingPlacement(ctx, name, ruleID.String(), ""); err != nil {
+			logger.LSystem(ctx, entity.SystemLog{
+				Service: "DECISION-RULE-WIZARD",
+				Level:   "WARN",
+				Message: fmt.Sprintf("activate: cache-invalidation ping failed for placement=%q rule=%s: %v", name, ruleID, err),
+			})
+		}
+	}
 }
 
 // GetSchedules returns the schedules for the edit-mode view (Step 3 read).
