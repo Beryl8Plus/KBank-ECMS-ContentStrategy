@@ -4,7 +4,6 @@ import (
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/service"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,13 +34,6 @@ func NewRuleManagementHandler(svc *service.RuleManagementService) *RuleManagemen
 func (h *RuleManagementHandler) IngressRuleManagement(c *gin.Context) {
 	var req dto.RuleManagementRequest
 	_ = c.ShouldBindJSON(&req)
-
-	c.Header("Content-Type", "application/json; charset=UTF-8")
-	c.Header("Request-ID", c.GetHeader("requestID"))
-	c.Header("Request-Time", time.Now().Format("2006-01-02T15:04:05.000"))
-	c.Header("Status-Code", "200")
-	c.Header("Status-Msg", "OK")
-	c.Header("Access-Control-Expose-Headers", "Request-ID, Request-Time, Status-Code, Status-Msg")
 
 	result := h.service.ProcessRuleManagement()
 

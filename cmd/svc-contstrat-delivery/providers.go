@@ -8,11 +8,11 @@ import (
 	"gorm.io/gorm"
 
 	cmshandler "kbank-ecms/cmd/svc-contstrat-delivery/handler"
+	evaluator "kbank-ecms/cmd/svc-contstrat-delivery/internal/evaluator"
 	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
-	domainservice "kbank-ecms/internal/domain/service"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/repository"
 )
@@ -21,7 +21,7 @@ import (
 func ProvideRouter(
 	db *gorm.DB,
 	rateLimit entity.RateLimit,
-	svc domainservice.DeliveryService,
+	svc deliveryservice.DeliveryService,
 ) *gin.Engine {
 	r := deliveryhttp.InitNewRouter(db, rateLimit)
 	cmshandler.RegisterRoutes(r, svc)
@@ -33,8 +33,8 @@ func ProvideCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
-	evaluator domainservice.RuntimeEvaluator,
-	cacheMemory *cache.CacheMemory[any],
+	evaluator deliveryservice.RuntimeEvaluator,
+	cacheMemory *deliveryservice.MemoryCache,
 ) *deliveryservice.CMSDeliveryService {
 	resultTTL := parseDurationEnv("CMS_RUNTIME_TTL", 15*time.Minute)
 	tickInterval := parseDurationEnv("CMS_RUNTIME_INTERVAL", 5*time.Minute)
@@ -46,11 +46,28 @@ func ProvideCMSDeliveryService(
 }
 
 // ProvideCacheMemory provides the L1 cache.
-func ProvideCacheMemory() (*cache.CacheMemory[any], func()) {
-	c := cache.NewCacheMemory[any]("cms_rule", 0.60)
-	return c, func() {
-		c.Stop()
+func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
+	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
+	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
+	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", 0.60, 24*time.Hour)
+	lastSync := cache.NewCacheMemory[time.Time]("cms-runtime-syncs", 0.60, 24*time.Hour)
+	memoryCache := deliveryservice.MemoryCache{
+		Schedules:     schedules,
+		DecisionRule:  decisionRule,
+		VersionHashes: versionHashes,
+		LastSync:      lastSync,
 	}
+	return &memoryCache, func() {
+		schedules.Stop()
+		decisionRule.Stop()
+		versionHashes.Stop()
+		lastSync.Stop()
+	}
+}
+
+// ProvideRuntimeEvaluator constructs the LocalEvaluator as the RuntimeEvaluator implementation.
+func ProvideRuntimeEvaluator() *evaluator.LocalEvaluator {
+	return evaluator.NewLocalEvaluator()
 }
 
 // App groups the dependencies needed by main.
@@ -74,11 +91,13 @@ var ProviderSet = wire.NewSet(
 
 	repository.NewDecisionRulePostgresRepository,
 	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
+	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
+	wire.Bind(new(deliveryservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
 
+	// Providers
 	ProvideCacheMemory,
+	ProvideRuntimeEvaluator,
 	ProvideCMSDeliveryService,
-	wire.Bind(new(domainservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
-
 	ProvideRouter,
 	ProvideApp,
 )

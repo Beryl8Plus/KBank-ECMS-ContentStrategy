@@ -47,6 +47,7 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 			TLSConfig: &tls.Config{
 				MinVersion:         tls.VersionTLS12,
 				InsecureSkipVerify: true, // Skip certificate verification for internal IP-based connections
+				// InsecureSkipVerify: false, //nolint:gosec // Azure Redis Enterprise presents a valid TLS certificate; validation is required
 			},
 		}
 
@@ -65,7 +66,11 @@ func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepo
 					Scopes: []string{redisResourceID + "/.default"},
 				})
 				if err != nil {
-					fmt.Printf("failed to get redis token: %v\n", err)
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "REDIS",
+						Level:   "ERROR",
+						Message: fmt.Sprintf("failed to get redis token: %v", err),
+					})
 					return principalID, ""
 				}
 				return principalID, token.Token
@@ -159,4 +164,48 @@ func (r *RedisRepository) GetSet(ctx context.Context, key string, expiration tim
 // Delete removes the key from Redis. Returns nil if the key does not exist.
 func (r *RedisRepository) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
+}
+
+// Subscribe listens to a Redis channel and returns a channel for messages.
+func (r *RedisRepository) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
+	pubsub := r.client.Subscribe(ctx, channel)
+
+	// Wait for confirmation that subscription is created
+	_, err := pubsub.Receive(ctx)
+	if err != nil {
+		pubsub.Close()
+		return nil, fmt.Errorf("subscribe to %q: %w", channel, err)
+	}
+
+	// Use a buffered channel to prevent blocking the Redis client background goroutine
+	ch := make(chan string, 100)
+	go func() {
+		defer close(ch)
+		defer pubsub.Close()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-pubsub.Channel():
+				if !ok {
+					// go-redis handles reconnection and resubscription internally.
+					// If ok is false, it means the pubsub is closed or the context is done.
+					return
+				}
+				// Non-blocking send to avoid stalling the goroutine if the consumer is slow
+				select {
+				case ch <- msg.Payload:
+				default:
+					logger.LSystem(ctx, entity.SystemLog{
+						Service: "REDIS",
+						Level:   "WARN",
+						Message: fmt.Sprintf("pubsub: message dropped on channel %q — consumer buffer full", channel),
+					})
+				}
+			}
+		}
+	}()
+
+	return ch, nil
 }

@@ -26,6 +26,7 @@ type mockOccurrenceRepository struct {
 	deletePastFn       func(ctx context.Context, before time.Time) error
 	listActiveAtFn     func(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
 	listByScheduleIDFn func(ctx context.Context, scheduleID uuid.UUID, page, limit int) ([]*entity.ScheduleOccurrence, int64, error)
+	expireEndedFn      func(ctx context.Context, now time.Time) (int64, error)
 }
 
 func (m *mockOccurrenceRepository) UpsertOccurrences(ctx context.Context, occurrences []*entity.ScheduleOccurrence) error {
@@ -56,11 +57,22 @@ func (m *mockOccurrenceRepository) ListActiveAt(ctx context.Context, at time.Tim
 	return nil, nil
 }
 
+func (m *mockOccurrenceRepository) ListActiveByPlacementsAt(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error) {
+	return nil, nil
+}
+
 func (m *mockOccurrenceRepository) ListByScheduleID(ctx context.Context, scheduleID uuid.UUID, page, limit int) ([]*entity.ScheduleOccurrence, int64, error) {
 	if m.listByScheduleIDFn != nil {
 		return m.listByScheduleIDFn(ctx, scheduleID, page, limit)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockOccurrenceRepository) ExpireEndedOccurrences(ctx context.Context, now time.Time) (int64, error) {
+	if m.expireEndedFn != nil {
+		return m.expireEndedFn(ctx, now)
+	}
+	return 0, nil
 }
 
 // ---------------------------------------------------------------------------

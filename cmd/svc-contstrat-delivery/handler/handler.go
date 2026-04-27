@@ -2,11 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
+	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
-	"kbank-ecms/internal/domain/service"
+	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +17,11 @@ import (
 
 // Handler handles HTTP requests for the cms-delivery module.
 type Handler struct {
-	svc service.DeliveryService
+	svc deliveryservice.DeliveryService
 }
 
 // NewHandler creates a new cms-delivery Handler.
-func NewHandler(svc service.DeliveryService) *Handler {
+func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 	return &Handler{svc: svc}
 }
 
@@ -82,18 +85,66 @@ func (h *Handler) getContent(c *gin.Context) {
 // getCacheStatus handles GET /purge_requests
 //
 // @Summary Get cache status
-// @Description Returns list purge request status.
+// @Description Returns in-memory cache keys, heap pressure flag, and heap usage ratio.
 // @Tags svc-contstrat-delivery
 // @Accept json
 // @Produce json
-// @Success 200 {object} dto.APIResponse{data=map[string]string}
+// @Success 200 {object} dto.APIResponse{data=dto.CacheStatusResponse}
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
 // @Router /purge_requests [get]
 func (h *Handler) getStatus(c *gin.Context) {
-	// TODO: Implement actual status retrieval logic. For now, return a placeholder response.
+	ctx := c.Request.Context()
 
-	c.JSON(http.StatusOK, dto.APIResponse{})
+	isMemPressure, memUsagePct, err := h.svc.GetCacheStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+
+	keys, err := h.svc.GetCacheKeys(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "SVS-CONTSTRAT-DELIVERY",
+		Message: fmt.Sprintf("cache status: pressure=%v usage=%.2f%% keys=%d", isMemPressure, memUsagePct*100, len(keys)),
+	})
+
+	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.CacheStatusResponse{
+		IsMemPressure:  isMemPressure,
+		MemoryUsagePct: memUsagePct,
+		CacheKeys:      keys,
+	}})
+}
+
+// getCacheValue handles GET /purge_requests/value?key={key}
+//
+// @Summary Get cache value
+// @Description Returns the cached value for a given key. Used for monitoring and debugging.
+// @Tags svc-contstrat-delivery
+// @Accept json
+// @Produce json
+// @Param key query string true "The cache key to retrieve"
+// @Success 200 {object} dto.APIResponse{data=json.RawMessage}
+// @Failure 400 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /purge_requests/value [get]
+func (h *Handler) getCacheValue(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "key query parameter is required"})
+		return
+	}
+	value, err := h.svc.GetCacheValue(c.Request.Context(), key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, dto.APIResponse{Data: value})
 }
 
 // flushCache handles POST /purge_requests

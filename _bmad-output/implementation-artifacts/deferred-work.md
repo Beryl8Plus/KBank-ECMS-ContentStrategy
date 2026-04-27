@@ -11,6 +11,13 @@ Pre-existing issues surfaced during adversarial review — not introduced by the
 - **Service errors always return 422** — infrastructure failures (DB down, timeout) are returned as 422 Unprocessable Entity instead of 500 Internal Server Error.
 - **Test helper `performRequest` ignores `http.NewRequest` error** — a construction failure causes a nil-dereference panic instead of a useful test failure.
 
+## From: fix-schedule-cache-miss-evaluate-fallback (2026-04-24)
+
+Pre-existing issues surfaced during adversarial review — not introduced by the cache-miss fix:
+
+- **Thundering herd on evaluate() inline call** — `GetPersonalizedContent` now calls `s.evaluate(ctx)` synchronously on cache miss. No singleflight or mutex guard prevents N concurrent requests from each triggering a full `ListActiveAt` scan simultaneously. The background ticker normally keeps the cache warm so this path is rarely hit, but consider wrapping with `golang.org/x/sync/singleflight` keyed on a constant if load testing shows contention.
+- **`cacheMemory` nil dereference in hot path** — `GetPersonalizedContent` (line ~195), `FlushCache` (line ~137), and `evaluate()` (line ~478) all dereference `s.cacheMemory` without a nil guard, despite the constructor comment saying `cacheMemory may be nil`. In practice `ProvideCacheMemory` always returns a non-nil value, but add explicit nil guards for correctness.
+
 ## Deferred from: code review of 2-1-cms-runtime-service-interfaces (2026-04-08)
 
 Pre-existing design decisions and implementation concerns surfaced during adversarial review — not in scope for this interfaces-only story:

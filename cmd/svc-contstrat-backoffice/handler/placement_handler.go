@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,15 +32,6 @@ func NewPlacementHandler(svc *service.PlacementService) *PlacementHandler {
 	return &PlacementHandler{service: svc}
 }
 
-func setPlacementResponseHeaders(c *gin.Context, statusCode string, statusMsg string) {
-	c.Header("Content-Type", "application/json; charset=UTF-8")
-	c.Header("Request-ID", c.GetHeader("requestID"))
-	c.Header("Request-Time", time.Now().Format("2006-01-02T15:04:05.000"))
-	c.Header("Status-Code", statusCode)
-	c.Header("Status-Msg", statusMsg)
-	c.Header("Access-Control-Expose-Headers", "Request-ID, Request-Time, Status-Code, Status-Msg")
-}
-
 // CreatePlacement handles POST /placements.
 //
 // @Summary Create a placement
@@ -59,7 +49,6 @@ func setPlacementResponseHeaders(c *gin.Context, statusCode string, statusMsg st
 func (h *PlacementHandler) CreatePlacement(c *gin.Context) {
 	var req dto.CreatePlacementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setPlacementResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
@@ -70,7 +59,6 @@ func (h *PlacementHandler) CreatePlacement(c *gin.Context) {
 	}
 
 	if err := h.service.CreatePlacement(c.Request.Context(), placement); err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to create placement"})
 		return
 	}
@@ -78,12 +66,10 @@ func (h *PlacementHandler) CreatePlacement(c *gin.Context) {
 	// Fetch with Channel preloaded so the response is complete.
 	created, err := h.service.GetPlacementByID(c.Request.Context(), placement.ID)
 	if err != nil || created == nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve created placement"})
 		return
 	}
 
-	setPlacementResponseHeaders(c, "201", "Created")
 	c.JSON(http.StatusCreated, dto.APIResponse{Data: dto.ToPlacementResponse(created)})
 }
 
@@ -109,7 +95,6 @@ func (h *PlacementHandler) ListPlacements(c *gin.Context) {
 
 	placements, total, err := h.service.ListPlacementsPaginated(c.Request.Context(), page, limit)
 	if err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve placements"})
 		return
 	}
@@ -121,7 +106,6 @@ func (h *PlacementHandler) ListPlacements(c *gin.Context) {
 
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 
-	setPlacementResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{
 		Data: responses,
 		Pagination: &dto.Pagination{
@@ -150,24 +134,20 @@ func (h *PlacementHandler) ListPlacements(c *gin.Context) {
 func (h *PlacementHandler) GetPlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setPlacementResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid placement ID"})
 		return
 	}
 
 	placement, err := h.service.GetPlacementByID(c.Request.Context(), id)
 	if err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve placement"})
 		return
 	}
 	if placement == nil {
-		setPlacementResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "placement not found"})
 		return
 	}
 
-	setPlacementResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToPlacementResponse(placement)})
 }
 
@@ -190,26 +170,22 @@ func (h *PlacementHandler) GetPlacement(c *gin.Context) {
 func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setPlacementResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid placement ID"})
 		return
 	}
 
 	existing, err := h.service.GetPlacementByID(c.Request.Context(), id)
 	if err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve placement"})
 		return
 	}
 	if existing == nil {
-		setPlacementResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "placement not found"})
 		return
 	}
 
 	var req dto.UpdatePlacementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setPlacementResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
@@ -219,7 +195,6 @@ func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 	existing.Channel = nil // cleared so GORM does not attempt to upsert the association
 
 	if err := h.service.UpdatePlacement(c.Request.Context(), existing); err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to update placement"})
 		return
 	}
@@ -227,12 +202,10 @@ func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 	// Re-fetch to get the updated Channel embedded in the response.
 	updated, err := h.service.GetPlacementByID(c.Request.Context(), id)
 	if err != nil || updated == nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve updated placement"})
 		return
 	}
 
-	setPlacementResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToPlacementResponse(updated)})
 }
 
@@ -252,13 +225,11 @@ func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 func (h *PlacementHandler) DeletePlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setPlacementResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid placement ID"})
 		return
 	}
 
 	if err := h.service.DeletePlacement(c.Request.Context(), id); err != nil {
-		setPlacementResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to delete placement"})
 		return
 	}

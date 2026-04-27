@@ -9,6 +9,7 @@ func RegisterRoutes(
 	ruleManagementHandler *RuleManagementHandler,
 	scheduleHandler *ScheduleHandler,
 	decisionRuleHandler *DecisionRuleHandler,
+	wizardHandler *DecisionRuleWizardHandler,
 	occurrenceHandler *ScheduleOccurrenceHandler,
 	attributeHandler *AttributeHandler,
 	channelHandler *ChannelHandler,
@@ -28,7 +29,18 @@ func RegisterRoutes(
 
 	decisionRules := r.Group("/decision-rules")
 	{
+		// Existing route (static prefix takes precedence over :id param)
 		decisionRules.GET("/schedule/:scheduleId", decisionRuleHandler.GetDecisionRuleBySchedule)
+
+		// Wizard routes
+		decisionRules.POST("", wizardHandler.CreateDecisionRule)
+		decisionRules.GET("", wizardHandler.ListDecisionRules)
+		decisionRules.GET("/:id/conditions", wizardHandler.GetConditions)
+		decisionRules.GET("/:id/rule-sets", wizardHandler.GetRuleSets)
+		decisionRules.PUT("/:id/rule-sets", wizardHandler.SaveRuleSets)
+		decisionRules.GET("/:id/schedules", wizardHandler.GetSchedules)
+		decisionRules.PUT("/:id/schedules", wizardHandler.SaveSchedules)
+		decisionRules.PUT("/:id/activate", wizardHandler.ActivateDecisionRule)
 	}
 
 	scheduleOccurrences := r.Group("/schedule-occurrences")

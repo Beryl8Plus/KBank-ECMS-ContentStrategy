@@ -1,6 +1,9 @@
 package dto
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 // CustomerIdType identifies the scheme used for customerId.
 type CustomerIdType string
@@ -17,6 +20,24 @@ type FlushRequest struct {
 
 type FlushResponse struct {
 	Message string `json:"message"`
+}
+
+// CacheStatusResponse is the response body for GET /purge_requests.
+type CacheStatusResponse struct {
+	IsMemPressure  bool     `json:"isMemPressure"`
+	MemoryUsagePct float64  `json:"memoryUsagePct"`
+	CacheKeys      []string `json:"cacheKeys"`
+}
+
+func (r CacheStatusResponse) MarshalJSON() ([]byte, error) {
+	type Alias CacheStatusResponse
+	// Ensure MemoryUsagePct is rounded to 4 decimal places for cleaner JSON output
+	r.MemoryUsagePct = math.Round(r.MemoryUsagePct*10000) / 10000
+	return json.Marshal(&struct {
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	})
 }
 
 // ContentResult represents a single evaluated content item for a placement.

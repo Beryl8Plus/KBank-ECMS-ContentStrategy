@@ -20,6 +20,7 @@ func BuildPlacementLogicEntries(
 	source string,
 	campaign *dto.Campaign,
 ) []dto.ContentResult {
+	// Support type Mass, that no rules or variations, just a single content path and score.
 	if len(rule.Rules) == 0 {
 		// No variations — single entry with base score, empty expected values.
 		entry := buildLogicEntry(rule, sched, nil, rule.Score, source, campaign, nil)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,15 +32,6 @@ func NewChannelHandler(svc *service.ChannelService) *ChannelHandler {
 	return &ChannelHandler{service: svc}
 }
 
-func setChannelResponseHeaders(c *gin.Context, statusCode string, statusMsg string) {
-	c.Header("Content-Type", "application/json; charset=UTF-8")
-	c.Header("Request-ID", c.GetHeader("requestID"))
-	c.Header("Request-Time", time.Now().Format("2006-01-02T15:04:05.000"))
-	c.Header("Status-Code", statusCode)
-	c.Header("Status-Msg", statusMsg)
-	c.Header("Access-Control-Expose-Headers", "Request-ID, Request-Time, Status-Code, Status-Msg")
-}
-
 // CreateChannel handles POST /channels.
 //
 // @Summary Create a channel
@@ -59,7 +49,6 @@ func setChannelResponseHeaders(c *gin.Context, statusCode string, statusMsg stri
 func (h *ChannelHandler) CreateChannel(c *gin.Context) {
 	var req dto.CreateChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setChannelResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
@@ -69,12 +58,10 @@ func (h *ChannelHandler) CreateChannel(c *gin.Context) {
 	}
 
 	if err := h.service.CreateChannel(c.Request.Context(), channel); err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to create channel"})
 		return
 	}
 
-	setChannelResponseHeaders(c, "201", "Created")
 	c.JSON(http.StatusCreated, dto.APIResponse{Data: dto.ToChannelResponse(channel)})
 }
 
@@ -100,7 +87,6 @@ func (h *ChannelHandler) ListChannels(c *gin.Context) {
 
 	channels, total, err := h.service.ListChannelsPaginated(c.Request.Context(), page, limit)
 	if err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve channels"})
 		return
 	}
@@ -112,7 +98,6 @@ func (h *ChannelHandler) ListChannels(c *gin.Context) {
 
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 
-	setChannelResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{
 		Data: responses,
 		Pagination: &dto.Pagination{
@@ -141,24 +126,20 @@ func (h *ChannelHandler) ListChannels(c *gin.Context) {
 func (h *ChannelHandler) GetChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setChannelResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid channel ID"})
 		return
 	}
 
 	channel, err := h.service.GetChannelByID(c.Request.Context(), id)
 	if err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve channel"})
 		return
 	}
 	if channel == nil {
-		setChannelResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "channel not found"})
 		return
 	}
 
-	setChannelResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToChannelResponse(channel)})
 }
 
@@ -181,26 +162,22 @@ func (h *ChannelHandler) GetChannel(c *gin.Context) {
 func (h *ChannelHandler) UpdateChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setChannelResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid channel ID"})
 		return
 	}
 
 	existing, err := h.service.GetChannelByID(c.Request.Context(), id)
 	if err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve channel"})
 		return
 	}
 	if existing == nil {
-		setChannelResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "channel not found"})
 		return
 	}
 
 	var req dto.UpdateChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setChannelResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
@@ -208,12 +185,10 @@ func (h *ChannelHandler) UpdateChannel(c *gin.Context) {
 	existing.ChannelName = req.ChannelName
 
 	if err := h.service.UpdateChannel(c.Request.Context(), existing); err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to update channel"})
 		return
 	}
 
-	setChannelResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToChannelResponse(existing)})
 }
 
@@ -233,13 +208,11 @@ func (h *ChannelHandler) UpdateChannel(c *gin.Context) {
 func (h *ChannelHandler) DeleteChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setChannelResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid channel ID"})
 		return
 	}
 
 	if err := h.service.DeleteChannel(c.Request.Context(), id); err != nil {
-		setChannelResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to delete channel"})
 		return
 	}

@@ -68,26 +68,6 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       SWAGGER_HOST: localhost:8082
-      CMS_RUNTIME_GRPC_ADDR: svc-contstrat-runtime:50051
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      svc-contstrat-runtime:
-        condition: service_started
-
-  svc-contstrat-runtime:
-    build: .
-    command: ["./svc-contstrat-runtime"]
-    ports:
-      - "50051:50051"
-    env_file:
-      - .env
-    environment:
-      DB_HOST: postgres
-      REDIS_HOST: redis
-      CMS_RUNTIME_GRPC_PORT: "50051"
     depends_on:
       postgres:
         condition: service_healthy

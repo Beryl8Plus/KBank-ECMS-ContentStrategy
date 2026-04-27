@@ -9,15 +9,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
-	"kbank-ecms/internal/domain/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var _ service.DeliveryService = (*mockDeliveryService)(nil)
+var _ deliveryservice.DeliveryService = (*mockDeliveryService)(nil)
 
 func init() {
 	gin.SetMode(gin.TestMode)
@@ -28,6 +28,9 @@ func init() {
 type mockDeliveryService struct {
 	getPersonalizedFn func(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error)
 	flushFn           func(ctx context.Context, placements []string, isEvaluate bool) error
+	keysFn            func(ctx context.Context) ([]string, error)
+	getValueFn        func(ctx context.Context, key string) (json.RawMessage, error)
+	statusFn          func(ctx context.Context) (isMemPressure bool, memoryUsagePct float64, err error)
 }
 
 func (m *mockDeliveryService) GetPersonalizedContent(ctx context.Context, cisID, userID string, placements []string, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
@@ -44,13 +47,36 @@ func (m *mockDeliveryService) FlushCache(ctx context.Context, placements []strin
 	return nil
 }
 
+func (m *mockDeliveryService) GetCacheKeys(ctx context.Context) ([]string, error) {
+	if m.keysFn != nil {
+		return m.keysFn(ctx)
+	}
+	return []string{}, nil
+}
+
+func (m *mockDeliveryService) GetCacheStatus(ctx context.Context) (bool, float64, error) {
+	if m.statusFn != nil {
+		return m.statusFn(ctx)
+	}
+	return false, 0.0, nil
+}
+
+func (m *mockDeliveryService) GetCacheValue(ctx context.Context, key string) (json.RawMessage, error) {
+	if m.getValueFn != nil {
+		return m.getValueFn(ctx, key)
+	}
+	return nil, nil
+}
+
 // ---- helpers -------------------------------------------------------------
 
-func setupRouter(svc service.DeliveryService) *gin.Engine {
+func setupRouter(svc deliveryservice.DeliveryService) *gin.Engine {
 	r := gin.New()
 	h := NewHandler(svc)
 	r.GET("/content", h.getContent)
 	r.POST("/flush", h.flushCache)
+	r.GET("/purge_requests", h.getStatus)
+	r.GET("/purge_requests/value", h.getCacheValue)
 	return r
 }
 
@@ -237,4 +263,117 @@ func TestHandler_GetContent_CISID_UsesCustomerId(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "12345", capturedCISID)
+}
+
+// TestHandler_GetStatus_OK verifies GET /purge_requests returns 200 with pressure flag, usage, and keys.
+func TestHandler_GetStatus_OK(t *testing.T) {
+	t.Parallel()
+
+	r := setupRouter(&mockDeliveryService{
+		statusFn: func(_ context.Context) (bool, float64, error) {
+			return true, 0.75, nil
+		},
+		keysFn: func(_ context.Context) ([]string, error) {
+			return []string{"cms:placement:hero:schedules", "rule:abc"}, nil
+		},
+	})
+
+	w := doRequest(t, r, http.MethodGet, "/purge_requests", "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var apiResp dto.APIResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
+	dataBytes, err := json.Marshal(apiResp.Data)
+	require.NoError(t, err)
+	var body dto.CacheStatusResponse
+	require.NoError(t, json.Unmarshal(dataBytes, &body))
+	assert.True(t, body.IsMemPressure)
+	assert.InDelta(t, 0.75, body.MemoryUsagePct, 0.0001)
+	assert.Equal(t, []string{"cms:placement:hero:schedules", "rule:abc"}, body.CacheKeys)
+}
+
+// TestHandler_GetStatus_CacheStatusError verifies GET /purge_requests returns 500 when GetCacheStatus fails.
+func TestHandler_GetStatus_CacheStatusError(t *testing.T) {
+	t.Parallel()
+
+	r := setupRouter(&mockDeliveryService{
+		statusFn: func(_ context.Context) (bool, float64, error) {
+			return false, 0, errors.New("status unavailable")
+		},
+	})
+
+	w := doRequest(t, r, http.MethodGet, "/purge_requests", "")
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	var apiResp dto.APIResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
+	assert.Contains(t, apiResp.Error, "status unavailable")
+}
+
+// TestHandler_GetStatus_CacheKeysError verifies GET /purge_requests returns 500 when GetCacheKeys fails.
+func TestHandler_GetStatus_CacheKeysError(t *testing.T) {
+	t.Parallel()
+
+	r := setupRouter(&mockDeliveryService{
+		statusFn: func(_ context.Context) (bool, float64, error) {
+			return false, 0.3, nil
+		},
+		keysFn: func(_ context.Context) ([]string, error) {
+			return nil, errors.New("keys unavailable")
+		},
+	})
+
+	w := doRequest(t, r, http.MethodGet, "/purge_requests", "")
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	var apiResp dto.APIResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
+	assert.Contains(t, apiResp.Error, "keys unavailable")
+}
+
+// TestHandler_GetCacheValue_MissingKey verifies GET /purge_requests/value without key param returns 400.
+func TestHandler_GetCacheValue_MissingKey(t *testing.T) {
+	t.Parallel()
+
+	r := setupRouter(&mockDeliveryService{})
+	w := doRequest(t, r, http.MethodGet, "/purge_requests/value", "")
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	var apiResp dto.APIResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
+	assert.Contains(t, apiResp.Error, "key")
+}
+
+// TestHandler_GetCacheValue_OK verifies GET /purge_requests/value?key=... returns 200 with the value from the service.
+func TestHandler_GetCacheValue_OK(t *testing.T) {
+	t.Parallel()
+
+	var capturedKey string
+	r := setupRouter(&mockDeliveryService{
+		getValueFn: func(_ context.Context, key string) (json.RawMessage, error) {
+			capturedKey = key
+			return json.RawMessage(`{"id":"abc"}`), nil
+		},
+	})
+	w := doRequest(t, r, http.MethodGet, "/purge_requests/value?key=rule:abc", "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "rule:abc", capturedKey)
+}
+
+// TestHandler_GetCacheValue_ServiceError verifies GET /purge_requests/value returns 500 when the service errors.
+func TestHandler_GetCacheValue_ServiceError(t *testing.T) {
+	t.Parallel()
+
+	r := setupRouter(&mockDeliveryService{
+		getValueFn: func(_ context.Context, _ string) (json.RawMessage, error) {
+			return nil, errors.New("key not found in cache")
+		},
+	})
+	w := doRequest(t, r, http.MethodGet, "/purge_requests/value?key=rule:missing", "")
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	var apiResp dto.APIResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
+	assert.Contains(t, apiResp.Error, "key not found in cache")
 }

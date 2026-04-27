@@ -9,6 +9,7 @@ const (
 	OccurrenceStatusActive    OccurrenceStatus = "ACTIVE"
 	OccurrenceStatusCancelled OccurrenceStatus = "CANCELLED"
 	OccurrenceStatusModified  OccurrenceStatus = "MODIFIED"
+	OccurrenceStatusExpired   OccurrenceStatus = "EXPIRED"
 )
 
 // String returns the string representation of the OccurrenceStatus.
@@ -19,7 +20,7 @@ func (o OccurrenceStatus) String() string {
 // IsValid reports whether o is a known OccurrenceStatus constant.
 func (o OccurrenceStatus) IsValid() bool {
 	switch o {
-	case OccurrenceStatusActive, OccurrenceStatusCancelled, OccurrenceStatusModified:
+	case OccurrenceStatusActive, OccurrenceStatusCancelled, OccurrenceStatusModified, OccurrenceStatusExpired:
 		return true
 	}
 	return false
@@ -30,7 +31,7 @@ func (o OccurrenceStatus) IsValid() bool {
 func (o OccurrenceStatus) Parse(s string) (OccurrenceStatus, error) {
 	v := OccurrenceStatus(s)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid OccurrenceStatus %q: must be one of ACTIVE, CANCELLED, MODIFIED", s)
+		return "", fmt.Errorf("invalid OccurrenceStatus %q: must be one of ACTIVE, CANCELLED, MODIFIED, EXPIRED", s)
 	}
 	return v, nil
 }

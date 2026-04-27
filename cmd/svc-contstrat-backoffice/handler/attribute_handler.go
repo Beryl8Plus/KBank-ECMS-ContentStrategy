@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,15 +32,6 @@ func NewAttributeHandler(svc *service.AttributeService) *AttributeHandler {
 	return &AttributeHandler{service: svc}
 }
 
-func setAttributeResponseHeaders(c *gin.Context, statusCode string, statusMsg string) {
-	c.Header("Content-Type", "application/json; charset=UTF-8")
-	c.Header("Request-ID", c.GetHeader("requestID"))
-	c.Header("Request-Time", time.Now().Format("2006-01-02T15:04:05.000"))
-	c.Header("Status-Code", statusCode)
-	c.Header("Status-Msg", statusMsg)
-	c.Header("Access-Control-Expose-Headers", "Request-ID, Request-Time, Status-Code, Status-Msg")
-}
-
 // CreateAttribute handles POST /attributes.
 //
 // @Summary Create an attribute
@@ -59,13 +49,11 @@ func setAttributeResponseHeaders(c *gin.Context, statusCode string, statusMsg st
 func (h *AttributeHandler) CreateAttribute(c *gin.Context) {
 	var req dto.CreateAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	if !req.DataType.IsValid() {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid dataType: must be Text, Date, Number, or Boolean"})
 		return
 	}
@@ -82,12 +70,10 @@ func (h *AttributeHandler) CreateAttribute(c *gin.Context) {
 	}
 
 	if err := h.service.CreateAttribute(c.Request.Context(), attribute); err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to create attribute"})
 		return
 	}
 
-	setAttributeResponseHeaders(c, "201", "Created")
 	c.JSON(http.StatusCreated, dto.APIResponse{Data: dto.ToAttributeResponse(attribute)})
 }
 
@@ -113,7 +99,6 @@ func (h *AttributeHandler) ListAttributes(c *gin.Context) {
 
 	attributes, total, err := h.service.ListAttributesPaginated(c.Request.Context(), page, limit)
 	if err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve attributes"})
 		return
 	}
@@ -125,7 +110,6 @@ func (h *AttributeHandler) ListAttributes(c *gin.Context) {
 
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 
-	setAttributeResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{
 		Data: responses,
 		Pagination: &dto.Pagination{
@@ -154,24 +138,20 @@ func (h *AttributeHandler) ListAttributes(c *gin.Context) {
 func (h *AttributeHandler) GetAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid attribute ID"})
 		return
 	}
 
 	attribute, err := h.service.GetAttributeByID(c.Request.Context(), id)
 	if err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve attribute"})
 		return
 	}
 	if attribute == nil {
-		setAttributeResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "attribute not found"})
 		return
 	}
 
-	setAttributeResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToAttributeResponse(attribute)})
 }
 
@@ -194,32 +174,27 @@ func (h *AttributeHandler) GetAttribute(c *gin.Context) {
 func (h *AttributeHandler) UpdateAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid attribute ID"})
 		return
 	}
 
 	existing, err := h.service.GetAttributeByID(c.Request.Context(), id)
 	if err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to retrieve attribute"})
 		return
 	}
 	if existing == nil {
-		setAttributeResponseHeaders(c, "404", "Not Found")
 		c.JSON(http.StatusNotFound, dto.APIResponse{Error: "attribute not found"})
 		return
 	}
 
 	var req dto.UpdateAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
 		return
 	}
 
 	if !req.DataType.IsValid() {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid dataType: must be Text, Date, Number, or Boolean"})
 		return
 	}
@@ -234,12 +209,10 @@ func (h *AttributeHandler) UpdateAttribute(c *gin.Context) {
 	existing.IsActive = req.IsActive
 
 	if err := h.service.UpdateAttribute(c.Request.Context(), existing); err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to update attribute"})
 		return
 	}
 
-	setAttributeResponseHeaders(c, "200", "OK")
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.ToAttributeResponse(existing)})
 }
 
@@ -259,13 +232,11 @@ func (h *AttributeHandler) UpdateAttribute(c *gin.Context) {
 func (h *AttributeHandler) DeleteAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		setAttributeResponseHeaders(c, "400", "Bad Request")
 		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "invalid attribute ID"})
 		return
 	}
 
 	if err := h.service.DeleteAttribute(c.Request.Context(), id); err != nil {
-		setAttributeResponseHeaders(c, "500", "Internal Server Error")
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: "failed to delete attribute"})
 		return
 	}

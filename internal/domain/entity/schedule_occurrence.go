@@ -18,10 +18,10 @@ import (
 //	#00004_fix_schedule_occurrence_unique_index.sql (non-partial, required for ON CONFLICT)
 type ScheduleOccurrence struct {
 	BaseModel
-	ScheduleID      uuid.UUID              `gorm:"type:uuid;not null"    json:"scheduleId"`
-	Schedule        *Schedule              `gorm:"foreignKey:ScheduleID" json:"schedule,omitempty"`
-	OccurrenceStart time.Time              `gorm:"type:timestamptz"      json:"occurrenceStart"`
-	OccurrenceEnd   time.Time              `gorm:"type:timestamptz"      json:"occurrenceEnd"`
-	Status          enums.OccurrenceStatus `gorm:"size:255"              json:"status"`
-	Source          enums.OccurrenceSource `gorm:"size:255"              json:"source"`
+	ScheduleID      uuid.UUID              `gorm:"type:uuid;not null"                                                  json:"scheduleId"`
+	Schedule        *Schedule              `gorm:"foreignKey:ScheduleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"schedule,omitempty"`
+	OccurrenceStart time.Time              `gorm:"type:timestamptz"                                                    json:"occurrenceStart"`
+	OccurrenceEnd   time.Time              `gorm:"type:timestamptz"                                                    json:"occurrenceEnd"`
+	Status          enums.OccurrenceStatus `gorm:"size:255"                                                            json:"status"`
+	Source          enums.OccurrenceSource `gorm:"size:255"                                                            json:"source"`
 }

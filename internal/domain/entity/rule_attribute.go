@@ -5,7 +5,7 @@ import (
 	"gorm.io/datatypes"
 )
 
-// RuleAttribute is a sub-rule / variation within a DecisionRule.
+// RuleAttribute stores the value a specific Rule assigns to one attribute column.
 //
 // Table: rule_attributes
 type RuleAttribute struct {

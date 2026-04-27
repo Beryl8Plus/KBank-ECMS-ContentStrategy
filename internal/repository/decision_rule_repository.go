@@ -62,3 +62,62 @@ func (r *DecisionRulePostgresRepository) GetDecisionRuleByScheduleID(ctx context
 
 	return &decisionRule, nil
 }
+
+// GetDecisionRuleByScheduleIDs retrieves the DecisionRules associated with the given
+// schedule IDs, preloaded with RuleConditions, Attributes, Rules, and RuleAttributes.
+// Returns a map of scheduleID to DecisionRule. ScheduleIDs with no matching decision rule are omitted.
+func (r *DecisionRulePostgresRepository) GetDecisionRuleByScheduleIDs(ctx context.Context, scheduleIDs []uuid.UUID) (map[uuid.UUID]*entity.DecisionRule, error) {
+	var schedules []entity.Schedule
+	err := r.db.WithContext(ctx).
+		Select(`"ID"`, `"DECISION_RULE_ID"`).
+		Where(`"ID" IN ?`, scheduleIDs).
+		Find(&schedules).Error
+	if err != nil {
+		return nil, fmt.Errorf("getting schedules by ids: %w", err)
+	}
+
+	drIDToScheduleIDs := make(map[uuid.UUID][]uuid.UUID)
+	for _, s := range schedules {
+		if s.DecisionRuleID != uuid.Nil {
+			drIDToScheduleIDs[s.DecisionRuleID] = append(drIDToScheduleIDs[s.DecisionRuleID], s.ID)
+		}
+	}
+
+	if len(drIDToScheduleIDs) == 0 {
+		return make(map[uuid.UUID]*entity.DecisionRule), nil
+	}
+
+	drIDs := make([]uuid.UUID, 0, len(drIDToScheduleIDs))
+	for id := range drIDToScheduleIDs {
+		drIDs = append(drIDs, id)
+	}
+
+	var decisionRules []entity.DecisionRule
+	err = r.db.WithContext(ctx).
+		Where(`"ID" IN ?`, drIDs).
+		Preload("RuleConditions").
+		Preload("RuleConditions.Attribute").
+		Preload("Rules").
+		Preload("Rules.RuleAttributes").
+		Find(&decisionRules).Error
+	if err != nil {
+		return nil, fmt.Errorf("getting decision rules by ids: %w", err)
+	}
+
+	drByID := make(map[uuid.UUID]*entity.DecisionRule, len(decisionRules))
+	for i := range decisionRules {
+		drByID[decisionRules[i].ID] = &decisionRules[i]
+	}
+
+	result := make(map[uuid.UUID]*entity.DecisionRule)
+	for drID, sIDs := range drIDToScheduleIDs {
+		dr, ok := drByID[drID]
+		if !ok {
+			continue
+		}
+		for _, sID := range sIDs {
+			result[sID] = dr
+		}
+	}
+	return result, nil
+}

@@ -22,4 +22,7 @@ type RedisCacheRepository interface {
 	// Delete removes the value stored at key.
 	// Returns nil if the key does not exist.
 	Delete(ctx context.Context, key string) error
+
+	// Subscribe listens to a Redis channel and returns a channel for messages.
+	Subscribe(ctx context.Context, channel string) (<-chan string, error)
 }

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 )
 
@@ -140,6 +141,49 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 		Where("\"OCCURRENCE_START\" <= ? AND \"OCCURRENCE_END\" > ?", atStr, atStr).
 		Find(&occurrences).Error; err != nil {
 		return nil, fmt.Errorf("listing active occurrences at %s: %w", atStr, err)
+	}
+	return occurrences, nil
+}
+
+// ExpireEndedOccurrences bulk-updates every ACTIVE occurrence whose
+// occurrence_end ≤ now to EXPIRED in a single UPDATE statement.
+// Returns the number of rows affected.
+func (r *ScheduleOccurrencePostgresRepository) ExpireEndedOccurrences(
+	ctx context.Context,
+	now time.Time,
+) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Model(&entity.ScheduleOccurrence{}).
+		Where("\"STATUS\" = ? AND \"OCCURRENCE_END\" <= ?", "ACTIVE", now).
+		Update("STATUS", enums.OccurrenceStatusExpired)
+	if result.Error != nil {
+		return 0, fmt.Errorf("expiring ended occurrences: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
+	ctx context.Context,
+	placementNames []string,
+	at time.Time,
+) ([]*entity.ScheduleOccurrence, error) {
+	if len(placementNames) == 0 {
+		return nil, nil
+	}
+
+	var occurrences []*entity.ScheduleOccurrence
+	atStr := at.Format(time.RFC3339)
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN \"SCHEDULES\" ON \"SCHEDULES\".\"ID\" = \"SCHEDULE_OCCURRENCES\".\"SCHEDULE_ID\"").
+		Joins("JOIN \"PLACEMENTS\" ON \"PLACEMENTS\".\"ID\" = \"SCHEDULES\".\"PLACEMENT_ID\"").
+		Preload("Schedule").
+		Preload("Schedule.Placement").
+		Where("\"PLACEMENTS\".\"PLACEMENT_NAME\" IN ?", placementNames).
+		Where("\"SCHEDULE_OCCURRENCES\".\"STATUS\" = ?", "ACTIVE").
+		Where("\"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_START\" <= ? AND \"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_END\" > ?", atStr, atStr).
+		Find(&occurrences).Error; err != nil {
+		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, atStr, err)
 	}
 	return occurrences, nil
 }
