@@ -21,12 +21,12 @@ Draft and open GitHub pull requests using MCP GitHub tools, following Convention
 
 ## Defaults
 
-| Setting | Value |
-|---------|-------|
-| Base branch | `develop` |
-| Draft | `false` |
-| Title max length | 72 chars |
-| Title style | Conventional Commit `type(scope): summary` |
+| Setting          | Value                                      |
+| ---------------- | ------------------------------------------ |
+| Base branch      | `develop`                                  |
+| Draft            | `false`                                    |
+| Title max length | 72 chars                                   |
+| Title style      | Conventional Commit `type(scope): summary` |
 
 ## MCP Tool Priority
 
@@ -53,6 +53,7 @@ git status --short
 ```
 
 Also check for a PR template:
+
 - `.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`
 - `.github/pull_request_template.md`
 
@@ -63,14 +64,17 @@ git ls-remote --exit-code origin "$(git branch --show-current)"
 ```
 
 If the branch is not on remote, **warn the user** and offer:
+
 ```bash
 git push -u origin <branch>
 ```
+
 Do not proceed with PR creation until the branch is pushed.
 
 ### Step 3 — Draft the title
 
 Rules:
+
 - Format: `type(scope): summary`
 - Types: `feat | fix | refactor | docs | test | chore | perf | ci | build | revert`
 - Scope: extract ticket ID from branch name if present (e.g. `feat/KER2-58-something` → scope `KER2-58`), or use the dominant module (`cache`, `delivery`, `backoffice`, `migrations`)
@@ -85,21 +89,26 @@ Use the project PR template structure:
 
 ```markdown
 # Description
+
 - **What:** <what changed>
 - **Why:** <motivation / ticket link>
 - **How:** <implementation approach, no low-level details>
 
 # Related issues / refs
+
 - Refs: #<ticket>
 
 # Breaking changes
+
 <!-- none → omit this section -->
 
 # Tests
+
 - Unit / integration tests added or updated: <yes/no + notes>
 - Manual test steps (if applicable): <steps>
 
 # Checklist
+
 - [ ] Tests added/updated
 - [ ] Documentation updated (where applicable)
 - [ ] CI passes
@@ -109,6 +118,7 @@ Use the project PR template structure:
 ### Step 5 — Show proposal and confirm
 
 Display the proposed title and full body. Ask the user:
+
 > "Shall I create this PR? (yes / edit / cancel)"
 
 **Do not call any write tool until the user confirms.**
@@ -168,6 +178,7 @@ When the user wants to update an existing PR:
 User: `/open-pr`
 
 Expected output:
+
 ```
 Branch: feat/KER2-58-expiry-worker
 Commits ahead of develop: 3
