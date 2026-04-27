@@ -6,7 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// RuleCondition defines a single condition entry in the rule engine.
+// RuleCondition defines a single condition entry in the decision rule engine.
+// Rows with AttributeID = nil are group containers (type = "group").
 //
 // Table: rule_conditions
 type RuleCondition struct {
@@ -16,10 +17,11 @@ type RuleCondition struct {
 	DecisionRule          *DecisionRule           `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"        json:"decisionRule,omitempty"`
 	ParentRuleConditionID *uuid.UUID              `gorm:"type:uuid"                                                                      json:"parentRuleConditionId"`
 	ParentRuleCondition   *RuleCondition          `gorm:"foreignKey:ParentRuleConditionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"parentRuleCondition,omitempty"`
+	RuleConditionChildren []RuleCondition         `gorm:"foreignKey:ParentRuleConditionID;references:ID"                                 json:"ruleConditionChildren,omitempty"`
 	AttributeID           uuid.UUID               `gorm:"type:uuid;not null"                                                             json:"attributeId"`
 	Attribute             *Attribute              `gorm:"foreignKey:AttributeID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"           json:"attribute,omitempty"`
-	LogicalOperator       enums.LogicalOperator   `gorm:"size:255"                                                                       json:"logicalOperator"`
-	ConnectorOperator     enums.ConnectorOperator `gorm:"size:255"                                                                       json:"connectorOperator"`
+	LogicalOperator       enums.LogicalOperator   `gorm:"size:50"                                                                        json:"logicalOperator"`
+	ConnectorOperator     enums.ConnectorOperator `gorm:"size:50"                                                                        json:"connectorOperator"`
 }
 
 // TableName overrides default GORM table name to use plural form matching DBML.

@@ -59,6 +59,14 @@ type channelDef struct {
 	ChannelName string
 }
 
+// placementDef holds one fixed placement tied to a channel.
+type placementDef struct {
+	ID            string
+	PlacementName string
+	ChannelID     string
+	ChannelName   string
+}
+
 // attributeDef describes one CLEN attribute.
 type attributeDef struct {
 	ID           string
@@ -135,11 +143,12 @@ func main() {
 
 	schemaID := gofakeit.UUID()
 	channels := buildChannels()
+	placements := buildPlacements(channels)
 	attributes := buildAttributes()
-	mockSets := buildMockSets(*count, channels, attributes)
+	mockSets := buildMockSets(*count, placements, attributes)
 	users := buildUsers(attributes)
 
-	sqlContent := buildSQL(timeSeed, schemaID, channels, attributes, mockSets)
+	sqlContent := buildSQL(timeSeed, schemaID, channels, placements, attributes, mockSets)
 	if err := os.MkdirAll(filepath.Dir(resolvedOutputPath), 0o755); err != nil {
 		fail("create output directory: %v", err)
 	}
@@ -210,6 +219,22 @@ func buildChannels() []channelDef {
 	}
 }
 
+// buildPlacements creates exactly one placement per channel, keeping the
+// placement/channel relationship 1-to-1 as defined in the entity schema.
+func buildPlacements(channels []channelDef) []placementDef {
+	names := []string{"wsaHomeBanner", "wsaPortBanner", "wsaSplash", "wsaLandingPage"}
+	placements := make([]placementDef, len(channels))
+	for i, ch := range channels {
+		placements[i] = placementDef{
+			ID:            gofakeit.UUID(),
+			PlacementName: names[i],
+			ChannelID:     ch.ID,
+			ChannelName:   ch.ChannelName,
+		}
+	}
+	return placements
+}
+
 func buildAttributes() []attributeDef {
 	return []attributeDef{
 		{
@@ -255,8 +280,7 @@ func buildAttributes() []attributeDef {
 	}
 }
 
-func buildMockSets(count int, channels []channelDef, attributes []attributeDef) []mockSet {
-	placementOptions := []string{"wsaHomeBanner", "wsaPortBanner", "wsaSplash", "wsaLandingPage"}
+func buildMockSets(count int, placements []placementDef, attributes []attributeDef) []mockSet {
 	variationPrefixes := []string{"Prime", "Growth", "Focus", "Priority", "Select", "Momentum", "Elite", "Core"}
 
 	segments := []string{"Mass", "Affluent", "VIP", "Young Wealth", "SME"}
@@ -264,9 +288,7 @@ func buildMockSets(count int, channels []channelDef, attributes []attributeDef) 
 
 	sets := make([]mockSet, 0, count)
 	for index := 1; index <= count; index++ {
-		placementIdx := gofakeit.Number(0, len(placementOptions)-1)
-		placementName := placementOptions[placementIdx]
-		channel := channels[placementIdx]
+		placement := placements[gofakeit.Number(0, len(placements)-1)]
 
 		primaryAttr := attributes[gofakeit.Number(0, len(attributes)-1)]
 		logicalOperator, _, _ := buildCondition(primaryAttr.FieldName, segments, regions)
@@ -293,15 +315,16 @@ func buildMockSets(count int, channels []channelDef, attributes []attributeDef) 
 			})
 		}
 
-		yearMonth := time.Now().UTC().Format("200601")
+		ruleUUID := gofakeit.UUID()
+		today := time.Now().UTC().Format("20060102")
 		sets = append(sets, mockSet{
-			ChannelID:              channel.ID,
-			PlacementID:            gofakeit.UUID(),
-			PlacementName:          placementName,
-			DecisionRuleID:         gofakeit.UUID(),
-			DecisionRuleBusinessID: fmt.Sprintf("RS-%s-%04d", yearMonth, index+1),
-			DecisionRuleName:       fmt.Sprintf("%s Rule %02d", placementName, index),
-			ContentPath:            fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(channel.ChannelName), strings.ToLower(placementName), index),
+			ChannelID:              placement.ChannelID,
+			PlacementID:            placement.ID,
+			PlacementName:          placement.PlacementName,
+			DecisionRuleID:         ruleUUID,
+			DecisionRuleBusinessID: fmt.Sprintf("RS_%s_%s", today, strings.ToUpper(ruleUUID[:4])),
+			DecisionRuleName:       fmt.Sprintf("%s Rule %02d", placement.PlacementName, index),
+			ContentPath:            fmt.Sprintf("personalizedContent/%s/%s-%02d", strings.ToLower(placement.ChannelName), strings.ToLower(placement.PlacementName), index),
 			DecisionScore:          decisionScore,
 			ConditionID:            gofakeit.UUID(),
 			AttributeID:            primaryAttr.ID,
@@ -386,7 +409,7 @@ func buildUsers(attributes []attributeDef) []userSeed {
 // SQL builder
 // ---------------------------------------------------------------------------
 
-func buildSQL(seed int64, schemaID string, channels []channelDef, attributes []attributeDef, sets []mockSet) string {
+func buildSQL(seed int64, schemaID string, channels []channelDef, placements []placementDef, attributes []attributeDef, sets []mockSet) string {
 	var buf bytes.Buffer
 
 	buf.WriteString("-- +goose Up\n")
@@ -400,7 +423,7 @@ func buildSQL(seed int64, schemaID string, channels []channelDef, attributes []a
 
 	writeInsert(&buf, "placements",
 		[]string{`"ID"`, `"PLACEMENT_NAME"`, `"CHANNEL_ID"`, `"CREATED_AT"`, `"UPDATED_AT"`},
-		placementValues(sets),
+		placementValues(placements),
 	)
 
 	writeInsert(&buf, "clen_schema_registry",
@@ -454,7 +477,7 @@ func buildSQL(seed int64, schemaID string, channels []channelDef, attributes []a
 	writeDelete(&buf, "decision_rules", `"ID"`, collectIDs(sets, func(s mockSet) string { return s.DecisionRuleID }))
 	writeDelete(&buf, "attributes", `"ID"`, collectAttributeIDs(attributes))
 	fmt.Fprintf(&buf, "DELETE FROM clen_schema_registry WHERE \"ID\" = %s;\n", sqlStringLiteral(schemaID))
-	writeDelete(&buf, "placements", `"ID"`, collectIDs(sets, func(s mockSet) string { return s.PlacementID }))
+	writeDelete(&buf, "placements", `"ID"`, collectPlacementIDs(placements))
 	writeDelete(&buf, "channels", `"ID"`, collectChannelIDs(channels))
 
 	return buf.String()
@@ -476,13 +499,13 @@ func channelValues(channels []channelDef) [][]string {
 	return out
 }
 
-func placementValues(sets []mockSet) [][]string {
-	out := make([][]string, 0, len(sets))
-	for _, s := range sets {
+func placementValues(placements []placementDef) [][]string {
+	out := make([][]string, 0, len(placements))
+	for _, p := range placements {
 		out = append(out, []string{
-			sqlStringLiteral(s.PlacementID),
-			sqlStringLiteral(s.PlacementName),
-			sqlStringLiteral(s.ChannelID),
+			sqlStringLiteral(p.ID),
+			sqlStringLiteral(p.PlacementName),
+			sqlStringLiteral(p.ChannelID),
 			"NOW()", "NOW()",
 		})
 	}
@@ -511,6 +534,8 @@ func attributeValues(schemaID string, attributes []attributeDef) [][]string {
 func decisionRuleValues(sets []mockSet) [][]string {
 	out := make([][]string, 0, len(sets))
 	for _, s := range sets {
+		// Match the format used by the Goose migration backfill:
+		// RS_YYYYMMDD_<first 4 chars of UUID, uppercase>
 		out = append(out, []string{
 			sqlStringLiteral(s.DecisionRuleID),
 			"(SELECT next_decision_rule_id())",
@@ -692,6 +717,14 @@ func writeDelete(buf *bytes.Buffer, table, column string, ids []string) {
 // ---------------------------------------------------------------------------
 // ID collectors
 // ---------------------------------------------------------------------------
+
+func collectPlacementIDs(placements []placementDef) []string {
+	ids := make([]string, 0, len(placements))
+	for _, p := range placements {
+		ids = append(ids, p.ID)
+	}
+	return ids
+}
 
 func collectChannelIDs(channels []channelDef) []string {
 	ids := make([]string, 0, len(channels))

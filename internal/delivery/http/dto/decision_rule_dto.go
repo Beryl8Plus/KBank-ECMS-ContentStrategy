@@ -16,10 +16,10 @@ type RuleConditionResponse struct {
 	Sequence              int                     `json:"sequence"`
 	DecisionRuleID        uuid.UUID               `json:"decisionRuleId"`
 	ParentRuleConditionID *uuid.UUID              `json:"parentRuleConditionId,omitempty"`
-	AttributeID           uuid.UUID               `json:"attributeId"`
+	AttributeID           uuid.UUID               `json:"attributeId,omitempty"`
 	Attribute             *AttributeResponse      `json:"attribute,omitempty"`
-	LogicalOperator       enums.LogicalOperator   `json:"logicalOperator"`
-	ConnectorOperator     enums.ConnectorOperator `json:"connectorOperator"`
+	LogicalOperator       enums.LogicalOperator   `json:"logicalOperator,omitempty"`
+	ConnectorOperator     enums.ConnectorOperator `json:"connectorOperator,omitempty"`
 	CreatedAt             time.Time               `json:"createdAt"`
 	UpdatedAt             time.Time               `json:"updatedAt"`
 }
@@ -97,8 +97,8 @@ func ToDecisionRuleResponse(dr *entity.DecisionRule) DecisionRuleResponse {
 				ParentRuleConditionID: rc.ParentRuleConditionID,
 				AttributeID:           rc.AttributeID,
 				Attribute:             toAttributeResponsePtr(rc.Attribute),
-				LogicalOperator:       rc.LogicalOperator,
-				ConnectorOperator:     rc.ConnectorOperator,
+				LogicalOperator:       enums.LogicalOperator(rc.LogicalOperator),
+				ConnectorOperator:     enums.ConnectorOperator(rc.ConnectorOperator),
 				CreatedAt:             rc.CreatedAt,
 				UpdatedAt:             rc.UpdatedAt,
 			}
