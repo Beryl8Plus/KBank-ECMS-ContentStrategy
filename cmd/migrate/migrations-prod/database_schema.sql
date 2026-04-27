@@ -9,15 +9,12 @@ CREATE TABLE "login_token_histories" (
   "USER_NAME" character varying(255) NULL,
   "ACCESS_TOKEN" character varying(255) NULL,
   "EXPIRE_DATE" timestamptz NULL,
-  "USERNAME" character varying(255) NULL,
   PRIMARY KEY ("ID")
 );
 -- Create index "idx_login_token_histories_deleted_at" to table: "login_token_histories"
 CREATE INDEX "idx_login_token_histories_deleted_at" ON "login_token_histories" ("DELETED_AT");
 -- Create index "idx_login_token_histories_user_name" to table: "login_token_histories"
 CREATE UNIQUE INDEX "idx_login_token_histories_user_name" ON "login_token_histories" ("USER_NAME");
--- Create index "idx_login_token_histories_username" to table: "login_token_histories"
-CREATE UNIQUE INDEX "idx_login_token_histories_username" ON "login_token_histories" ("USERNAME");
 -- Create "calendars" table
 CREATE TABLE "calendars" (
   "ID" uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -250,7 +247,7 @@ CREATE TABLE "rules" (
   "SCORE" numeric NULL,
   "ORDER_NO" integer NULL,
   PRIMARY KEY ("ID"),
-  CONSTRAINT "fk_decision_rules_rules" FOREIGN KEY ("DECISION_RULE_ID") REFERENCES "decision_rules" ("ID") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "fk_decision_rules_rules" FOREIGN KEY ("DECISION_RULE_ID") REFERENCES "decision_rules" ("ID") ON UPDATE CASCADE ON DELETE CASCADE
 );
 -- Create index "idx_rules_deleted_at" to table: "rules"
 CREATE INDEX "idx_rules_deleted_at" ON "rules" ("DELETED_AT");
@@ -286,7 +283,7 @@ CREATE TABLE "rule_conditions" (
   "LOGICAL_OPERATOR" character varying(255) NULL,
   "CONNECTOR_OPERATOR" character varying(255) NULL,
   PRIMARY KEY ("ID"),
-  CONSTRAINT "fk_decision_rules_rule_conditions" FOREIGN KEY ("DECISION_RULE_ID") REFERENCES "decision_rules" ("ID") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "fk_decision_rules_rule_conditions" FOREIGN KEY ("DECISION_RULE_ID") REFERENCES "decision_rules" ("ID") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "fk_rule_conditions_attribute" FOREIGN KEY ("ATTRIBUTE_ID") REFERENCES "attributes" ("ID") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "fk_rule_conditions_parent_rule_condition" FOREIGN KEY ("PARENT_RULE_CONDITION_ID") REFERENCES "rule_conditions" ("ID") ON UPDATE CASCADE ON DELETE CASCADE
 );
@@ -338,7 +335,7 @@ CREATE TABLE "schedule_occurrences" (
   "STATUS" character varying(255) NULL,
   "SOURCE" character varying(255) NULL,
   PRIMARY KEY ("ID"),
-  CONSTRAINT "fk_schedule_occurrences_schedule" FOREIGN KEY ("SCHEDULE_ID") REFERENCES "schedules" ("ID") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "fk_schedule_occurrences_schedule" FOREIGN KEY ("SCHEDULE_ID") REFERENCES "schedules" ("ID") ON UPDATE CASCADE ON DELETE CASCADE
 );
 -- Create index "idx_occurrence_schedule_start_end" to table: "schedule_occurrences"
 CREATE UNIQUE INDEX "idx_occurrence_schedule_start_end" ON "schedule_occurrences" ("SCHEDULE_ID", "OCCURRENCE_START", "OCCURRENCE_END");

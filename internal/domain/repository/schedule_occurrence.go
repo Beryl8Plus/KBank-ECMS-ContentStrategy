@@ -39,4 +39,9 @@ type ScheduleOccurrenceRepository interface {
 	// schedule, ordered by occurrence_start ascending.
 	// Returns the matching rows and the total row count (for pagination).
 	ListByScheduleID(ctx context.Context, scheduleID uuid.UUID, page, limit int) ([]*entity.ScheduleOccurrence, int64, error)
+
+	// ExpireEndedOccurrences bulk-updates every ACTIVE occurrence whose
+	// occurrence_end ≤ now to EXPIRED in a single statement.
+	// Returns the number of rows updated.
+	ExpireEndedOccurrences(ctx context.Context, now time.Time) (int64, error)
 }

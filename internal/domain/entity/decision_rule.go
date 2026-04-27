@@ -14,20 +14,20 @@ import (
 type DecisionRule struct {
 	BaseModel
 	// Human-readable running ID: RS-{YYYYMM}-{seq} e.g. RS-202503-0001
-	DecisionRuleRunning string                      `gorm:"size:255;not null;uniqueIndex" json:"decisionRuleId"`
-	Name                string                      `gorm:"size:255;not null"             json:"name"`
-	Type                enums.DecisionType          `gorm:"size:255;not null"             json:"type"`
-	EvaluateType        enums.EvaluateType          `gorm:"size:255;not null"             json:"evaluateType"`
-	ContentPath         string                      `gorm:"size:255;not null"             json:"contentPath"`
-	CampaignCode        string                      `gorm:"size:25"                       json:"campaignCode"`
-	Score               float64                     `gorm:"type:float;default:0"          json:"score"`
-	Status              enums.DecisionRuleStatus    `gorm:"size:255"                      json:"status"`
-	SubStatus           enums.DecisionRuleSubStatus `gorm:"size:255"                      json:"subStatus"`
-	InactiveBy          *uuid.UUID                  `gorm:"type:uuid"                     json:"inactiveBy"`
-	InactiveByUser      *User                       `gorm:"foreignKey:InactiveBy"         json:"inactiveByUser,omitempty"`
+	DecisionRuleRunning string                      `gorm:"size:255;not null;uniqueIndex"                                           json:"decisionRuleId"`
+	Name                string                      `gorm:"size:255;not null"                                                       json:"name"`
+	Type                enums.DecisionType          `gorm:"size:255;not null"                                                       json:"type"`
+	EvaluateType        enums.EvaluateType          `gorm:"size:255;not null"                                                       json:"evaluateType"`
+	ContentPath         string                      `gorm:"size:255;not null"                                                       json:"contentPath"`
+	CampaignCode        string                      `gorm:"size:25"                                                                 json:"campaignCode"`
+	Score               float64                     `gorm:"type:float;default:0"                                                    json:"score"`
+	Status              enums.DecisionRuleStatus    `gorm:"size:255"                                                                json:"status"`
+	SubStatus           enums.DecisionRuleSubStatus `gorm:"size:255"                                                                json:"subStatus"`
+	InactiveBy          *uuid.UUID                  `gorm:"type:uuid"                                                               json:"inactiveBy"`
+	InactiveByUser      *User                       `gorm:"foreignKey:InactiveBy"                                                   json:"inactiveByUser,omitempty"`
 	// Associations used by the rule evaluation engine.
-	RuleConditions []RuleCondition `gorm:"foreignKey:DecisionRuleID"     json:"ruleConditions,omitempty"`
-	Rules          []Rule          `gorm:"foreignKey:DecisionRuleID"     json:"rules,omitempty"`
+	RuleConditions []RuleCondition `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"ruleConditions,omitempty"`
+	Rules          []Rule          `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"rules,omitempty"`
 }
 
 // BeforeCreate auto-generates DecisionRuleID in RS-{YYYYMM}-{seq} format when not already set.

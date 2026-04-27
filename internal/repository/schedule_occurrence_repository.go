@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 )
 
@@ -142,6 +143,23 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 		return nil, fmt.Errorf("listing active occurrences at %s: %w", atStr, err)
 	}
 	return occurrences, nil
+}
+
+// ExpireEndedOccurrences bulk-updates every ACTIVE occurrence whose
+// occurrence_end ≤ now to EXPIRED in a single UPDATE statement.
+// Returns the number of rows affected.
+func (r *ScheduleOccurrencePostgresRepository) ExpireEndedOccurrences(
+	ctx context.Context,
+	now time.Time,
+) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Model(&entity.ScheduleOccurrence{}).
+		Where("\"STATUS\" = ? AND \"OCCURRENCE_END\" <= ?", "ACTIVE", now).
+		Update("STATUS", enums.OccurrenceStatusExpired)
+	if result.Error != nil {
+		return 0, fmt.Errorf("expiring ended occurrences: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // ListActiveByPlacementsAt returns active occurrences for specific placement names.

@@ -55,10 +55,11 @@ func newSvcWithFallback(
 
 // mockCacheRepo is a minimal mock for domainrepo.CacheRepository.
 type mockCacheRepo struct {
-	getFn    func(ctx context.Context, key string) (string, error)
-	setFn    func(ctx context.Context, key string, val string, exp time.Duration) error
-	deleteFn func(ctx context.Context, key string) error
-	flushFn  func(ctx context.Context) error
+	getFn       func(ctx context.Context, key string) (string, error)
+	setFn       func(ctx context.Context, key string, val string, exp time.Duration) error
+	deleteFn    func(ctx context.Context, key string) error
+	flushFn     func(ctx context.Context) error
+	subscribeFn func(ctx context.Context, channel string) (<-chan string, error)
 }
 
 func (m *mockCacheRepo) Get(ctx context.Context, key string) (string, error) {
@@ -108,6 +109,9 @@ func (m *mockCacheRepo) Delete(ctx context.Context, key string) error {
 	return nil
 }
 func (m *mockCacheRepo) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
+	if m.subscribeFn != nil {
+		return m.subscribeFn(ctx, channel)
+	}
 	return make(chan string), nil
 }
 
@@ -138,6 +142,9 @@ func (m *mockOccurrenceRepo) DeleteFutureByScheduleID(_ context.Context, _ uuid.
 func (m *mockOccurrenceRepo) DeletePastOccurrences(_ context.Context, _ time.Time) error { return nil }
 func (m *mockOccurrenceRepo) ListByScheduleID(_ context.Context, _ uuid.UUID, _, _ int) ([]*entity.ScheduleOccurrence, int64, error) {
 	return nil, 0, nil
+}
+func (m *mockOccurrenceRepo) ExpireEndedOccurrences(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }
 
 // mockDecisionRuleRepo is a minimal mock for domainrepo.DecisionRuleRepository.
@@ -795,4 +802,187 @@ func TestMemoryCache_PruneOrphanedRules(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID2.String()))
 	assert.False(t, ok)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// subscribeToUpdates tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// waitForSubDone blocks until the subscriber goroutine has initialised subDone.
+// subscribeToUpdates sets subDone under the mutex at the very start, so this
+// should return almost immediately.
+func waitForSubDone(t *testing.T, svc *CMSDeliveryService) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		svc.mu.Lock()
+		defer svc.mu.Unlock()
+		return svc.subDone != nil
+	}, time.Second, 5*time.Millisecond)
+}
+
+// TestSubscribeToUpdates_SkipsMatchingVersion proves that when the local
+// version hash already equals the incoming ping's hash, evaluate is never
+// called — the message is dropped before the jitter delay even fires.
+func TestSubscribeToUpdates_SkipsMatchingVersion(t *testing.T) {
+	t.Parallel()
+
+	msgCh := make(chan string, 1)
+	evaluateCalled := make(chan string, 1) // receives placement name if called
+
+	mem := newTestMemCache(t, "sub_skip_version")
+	mem.VersionHashes.Set("hero", "abc123", time.Hour)
+
+	occ := &mockOccurrenceRepo{
+		listActiveByPlacementsAtFn: func(_ context.Context, names []string, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+			if len(names) > 0 {
+				evaluateCalled <- names[0]
+			}
+			return nil, nil
+		},
+	}
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+	)
+
+	go svc.subscribeToUpdates(t.Context())
+	waitForSubDone(t, svc)
+
+	payload, _ := json.Marshal(SyncPingMessage{PlacementName: "hero", VersionHash: "abc123"})
+	msgCh <- string(payload)
+
+	// The version check fires synchronously before jitter, so 150 ms is more
+	// than enough time to confirm no evaluate was triggered.
+	select {
+	case name := <-evaluateCalled:
+		t.Fatalf("evaluate should not have been called, but got placement %q", name)
+	case <-time.After(150 * time.Millisecond):
+		// expected: skip
+	}
+}
+
+// TestSubscribeToUpdates_TriggersEvaluateForNewVersion proves that a
+// SyncPingMessage whose version hash is not in the local cache causes
+// evaluate to be called for the named placement.
+func TestSubscribeToUpdates_TriggersEvaluateForNewVersion(t *testing.T) {
+	t.Parallel()
+
+	msgCh := make(chan string, 1)
+	evaluateCalled := make(chan string, 1)
+
+	mem := newTestMemCache(t, "sub_new_version")
+	// "hero" has no cached version, so any hash must trigger a pull.
+
+	occ := &mockOccurrenceRepo{
+		listActiveByPlacementsAtFn: func(_ context.Context, names []string, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+			if len(names) > 0 {
+				evaluateCalled <- names[0]
+			}
+			return nil, nil
+		},
+	}
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+	)
+
+	go svc.subscribeToUpdates(t.Context())
+	waitForSubDone(t, svc)
+
+	payload, _ := json.Marshal(SyncPingMessage{PlacementName: "hero", VersionHash: "v2"})
+	msgCh <- string(payload)
+
+	// Jitter is at most 500 ms; allow 2 s for the evaluate to complete.
+	select {
+	case name := <-evaluateCalled:
+		assert.Equal(t, "hero", name)
+	case <-time.After(2 * time.Second):
+		t.Fatal("evaluate was not called within 2 s after receiving a new-version ping")
+	}
+}
+
+// TestSubscribeToUpdates_RawPayloadTriggersFull proves that an unparseable
+// (non-JSON) message triggers a full evaluate across all placements rather
+// than a targeted per-placement refresh.
+func TestSubscribeToUpdates_RawPayloadTriggersFull(t *testing.T) {
+	t.Parallel()
+
+	msgCh := make(chan string, 1)
+	fullEvaluateCalled := make(chan struct{}, 1)
+
+	occ := &mockOccurrenceRepo{
+		listActiveAtFn: func(_ context.Context, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+			fullEvaluateCalled <- struct{}{}
+			return nil, nil
+		},
+	}
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
+		occ, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+	)
+
+	go svc.subscribeToUpdates(t.Context())
+	waitForSubDone(t, svc)
+
+	msgCh <- "raw-ping-no-json"
+
+	select {
+	case <-fullEvaluateCalled:
+		// expected: full evaluate (no placement filter)
+	case <-time.After(2 * time.Second):
+		t.Fatal("full evaluate was not called within 2 s after receiving a raw ping")
+	}
+}
+
+// TestSubscribeToUpdates_SubscribeError proves that when the Redis Subscribe
+// call itself fails, the subscriber goroutine exits cleanly (subDone is closed).
+func TestSubscribeToUpdates_SubscribeError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) {
+			return nil, errors.New("redis: connection refused")
+		}},
+		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+	)
+
+	go svc.subscribeToUpdates(t.Context())
+	waitForSubDone(t, svc)
+
+	select {
+	case <-svc.subDone:
+		// expected: goroutine exited after subscribe error
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("subscriber goroutine did not exit after Subscribe returned an error")
+	}
+}
+
+// TestSubscribeToUpdates_ContextCancelExits proves that cancelling the parent
+// context causes the subscriber goroutine to exit promptly without leaking.
+func TestSubscribeToUpdates_ContextCancelExits(t *testing.T) {
+	t.Parallel()
+
+	// A never-closed channel simulates a live Redis subscription.
+	msgCh := make(chan string)
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
+		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go svc.subscribeToUpdates(ctx)
+	waitForSubDone(t, svc)
+
+	cancel()
+
+	select {
+	case <-svc.subDone:
+		// expected: clean exit
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("subscriber goroutine did not exit within 500 ms of context cancellation")
+	}
 }

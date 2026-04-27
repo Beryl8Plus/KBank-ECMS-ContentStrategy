@@ -53,14 +53,14 @@ type ScheduleMaterializationService struct {
 // NewScheduleMaterializationService creates a new
 // ScheduleMaterializationService.
 func NewScheduleMaterializationService(
+	cfg MaterializationConfig,
 	scheduleRepo domainrepo.ScheduleRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
-	cfg MaterializationConfig,
 ) *ScheduleMaterializationService {
 	return &ScheduleMaterializationService{
+		cfg:            cfg,
 		scheduleRepo:   scheduleRepo,
 		occurrenceRepo: occurrenceRepo,
-		cfg:            cfg,
 	}
 }
 
@@ -155,6 +155,25 @@ func (s *ScheduleMaterializationService) RegenerateForSchedule(
 		return fmt.Errorf("regenerating: upsert occurrences: %w", err)
 	}
 
+	return nil
+}
+
+// ExpireEndedOccurrences bulk-transitions every ACTIVE occurrence whose
+// occurrence_end ≤ NOW() to EXPIRED via a single UPDATE statement.
+// One structured AUDIT log entry is emitted per invocation so that
+// deactivation events are captured in Azure Monitor.
+func (s *ScheduleMaterializationService) ExpireEndedOccurrences(ctx context.Context) error {
+	now := time.Now().UTC()
+	count, err := s.occurrenceRepo.ExpireEndedOccurrences(ctx, now)
+	if err != nil {
+		return fmt.Errorf("expire occurrences: %w", err)
+	}
+	logger.LSystem(ctx, entity.SystemLog{
+		Service:     "MATERIALIZATION",
+		Level:       "INFO",
+		Message:     fmt.Sprintf("expired ended occurrences (count=%d cutoff=%s)", count, now.Format(time.RFC3339)),
+		SystemEvent: "OCCURRENCE_EXPIRY",
+	})
 	return nil
 }
 

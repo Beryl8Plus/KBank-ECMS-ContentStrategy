@@ -41,7 +41,7 @@ func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit) (*Application, error
 	placementHandler := handler.NewPlacementHandler(placementService)
 	engine := ProvideRouter(db, rateLimit, ruleManagementHandler, scheduleHandler, decisionRuleHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	materializationConfig := ProvideMatConfig()
-	scheduleMaterializationService := service.NewScheduleMaterializationService(schedulePostgresRepository, scheduleOccurrencePostgresRepository, materializationConfig)
+	scheduleMaterializationService := service.NewScheduleMaterializationService(materializationConfig, schedulePostgresRepository, scheduleOccurrencePostgresRepository)
 	occurrenceWorkerConfig := ProvideWorkerConfig()
 	occurrenceWorker := service.NewOccurrenceWorker(scheduleMaterializationService, occurrenceWorkerConfig)
 	application := NewApplication(engine, occurrenceWorker)
