@@ -15,12 +15,17 @@ func RegisterRoutes(
 ) {
 	handler := NewHandler(svc)
 
-	r.GET("/content", handler.getContent)
-
-	purges := r.Group("/purge_requests")
+	content := r.Group("/api/content-strategy/v1/")
 	{
-		purges.GET("", handler.getStatus)
-		purges.GET("/value", handler.getCacheValue)
-		purges.POST("", handler.flushCache)
+		// Get content by placements
+		content.GET("/personalized-content", handler.getContent)
+
+		// Purge endpoints for cache management
+		purges := content.Group("/purge_requests")
+		{
+			purges.GET("", handler.getStatus)
+			purges.GET("/value", handler.getCacheValue)
+			purges.POST("", handler.flushCache)
+		}
 	}
 }

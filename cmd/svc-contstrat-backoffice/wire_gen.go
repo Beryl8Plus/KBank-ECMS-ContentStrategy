@@ -9,8 +9,11 @@ package main
 import (
 	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
+	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/repository"
+	"kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/pubsub"
+	repository2 "kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
 )
 
@@ -18,26 +21,28 @@ import (
 
 // InitializeApp wires all dependencies and returns the Application bundle
 // (Gin engine + background occurrence worker).
-func InitializeApp(db *gorm.DB, rateLimit entity.RateLimit) (*Application, error) {
+func InitializeApp(db *gorm.DB, redisCache repository.RedisCacheRepository, rateLimit entity.RateLimit) (*Application, error) {
 	ruleManagementService := service.NewRuleManagementService()
 	ruleManagementHandler := handler.NewRuleManagementHandler(ruleManagementService)
-	schedulePostgresRepository := repository.NewSchedulePostgresRepository(db)
+	schedulePostgresRepository := repository2.NewSchedulePostgresRepository(db)
 	scheduleService := service.NewScheduleService(schedulePostgresRepository)
 	scheduleHandler := handler.NewScheduleHandler(scheduleService)
-	decisionRulePostgresRepository := repository.NewDecisionRulePostgresRepository(db)
+	decisionRulePostgresRepository := repository2.NewDecisionRulePostgresRepository(db)
 	decisionRuleService := service.NewDecisionRuleService(decisionRulePostgresRepository)
 	decisionRuleHandler := handler.NewDecisionRuleHandler(decisionRuleService)
-	decisionRuleWizardPostgresRepository := repository.NewDecisionRuleWizardPostgresRepository(db)
-	attributePostgresRepository := repository.NewAttributePostgresRepository(db)
-	placementPostgresRepository := repository.NewPlacementPostgresRepository(db)
-	decisionRuleWizardService := service.NewDecisionRuleWizardService(decisionRuleWizardPostgresRepository, attributePostgresRepository, placementPostgresRepository)
-	decisionRuleWizardHandler := handler.NewDecisionRuleWizardHandler(decisionRuleWizardService)
-	scheduleOccurrencePostgresRepository := repository.NewScheduleOccurrencePostgresRepository(db)
+	decisionRuleWizardPostgresRepository := repository2.NewDecisionRuleWizardPostgresRepository(db)
+	attributePostgresRepository := repository2.NewAttributePostgresRepository(db)
+	placementPostgresRepository := repository2.NewPlacementPostgresRepository(db)
+	publisher := pubsub.NewPublisher(redisCache)
+	decisionRuleWizardService := service.NewDecisionRuleWizardService(decisionRuleWizardPostgresRepository, attributePostgresRepository, placementPostgresRepository, publisher)
+	activationService := service2.NewActivationService(publisher)
+	decisionRuleWizardHandler := handler.NewDecisionRuleWizardHandler(decisionRuleWizardService, activationService)
+	scheduleOccurrencePostgresRepository := repository2.NewScheduleOccurrencePostgresRepository(db)
 	scheduleOccurrenceService := service.NewScheduleOccurrenceService(scheduleOccurrencePostgresRepository)
 	scheduleOccurrenceHandler := handler.NewScheduleOccurrenceHandler(scheduleOccurrenceService)
 	attributeService := service.NewAttributeService(attributePostgresRepository)
 	attributeHandler := handler.NewAttributeHandler(attributeService)
-	channelPostgresRepository := repository.NewChannelPostgresRepository(db)
+	channelPostgresRepository := repository2.NewChannelPostgresRepository(db)
 	channelService := service.NewChannelService(channelPostgresRepository)
 	channelHandler := handler.NewChannelHandler(channelService)
 	placementService := service.NewPlacementService(placementPostgresRepository)

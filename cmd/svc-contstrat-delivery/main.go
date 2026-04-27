@@ -65,7 +65,7 @@ func main() {
 	}
 
 	// Redis only — delivery service reads from cache, no PostgreSQL needed.
-	redisRepo, err := repository.NewRedisRepository(ctx, entity.RedisConfig{
+	redisCache, err := repository.NewRedisRepository(ctx, entity.RedisConfig{
 		Host:     os.Getenv("REDIS_HOST"),
 		Port:     os.Getenv("REDIS_PORT"),
 		Password: os.Getenv("REDIS_PASSWORD"),
@@ -87,7 +87,7 @@ func main() {
 	}
 
 	// Build app — wires service → handler → middleware → router
-	app, cleanup := InitializeApp(db, redisRepo, rateLimit)
+	app, cleanup := InitializeApp(db, redisCache, rateLimit)
 	defer cleanup()
 
 	// Start background ticker (no-op if tickInterval <= 0).

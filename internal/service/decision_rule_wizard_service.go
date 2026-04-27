@@ -15,6 +15,7 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/pubsub"
 )
 
 // Sentinel errors mapped to HTTP status codes in the handler.
@@ -39,10 +40,13 @@ type DecisionRuleWizardService struct {
 }
 
 // NewDecisionRuleWizardService creates a new DecisionRuleWizardService.
+// publisher may be nil; cache invalidation pings are then suppressed and
+// delivery pods rely on TTL expiry instead.
 func NewDecisionRuleWizardService(
 	repo domainrepo.DecisionRuleWizardRepository,
 	attrRepo domainrepo.AttributeRepository,
 	placementRepo domainrepo.PlacementRepository,
+	publisher *pubsub.Publisher,
 ) *DecisionRuleWizardService {
 	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo}
 }
@@ -448,7 +452,7 @@ func (s *DecisionRuleWizardService) ActivateStep4(ctx context.Context, id uuid.U
 		return nil, fmt.Errorf("%w: decision rule not found", ErrWizardNotFound)
 	}
 
-	schedules, err := s.repo.FindSchedulesByDecisionRuleID(ctx, id)
+	schedules, err := s.repo.FindSchedulesByDecisionRuleID(ctx, dr.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +460,7 @@ func (s *DecisionRuleWizardService) ActivateStep4(ctx context.Context, id uuid.U
 		return nil, fmt.Errorf("%w: decision rule has no schedules, complete step 3 first", ErrWizardValidation)
 	}
 
-	if err := s.repo.ActivateDecisionRule(ctx, id); err != nil {
+	if err := s.repo.ActivateDecisionRule(ctx, dr.ID); err != nil {
 		return nil, err
 	}
 
@@ -464,6 +468,7 @@ func (s *DecisionRuleWizardService) ActivateStep4(ctx context.Context, id uuid.U
 		ID:                  dr.ID,
 		DecisionRuleRunning: dr.DecisionRuleRunning,
 		Status:              enums.DecisionRuleStatusActive,
+		Schedules:           schedules,
 	}, nil
 }
 

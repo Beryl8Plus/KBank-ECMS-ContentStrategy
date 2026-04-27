@@ -114,6 +114,7 @@ func (m *mockCacheRepo) Subscribe(ctx context.Context, channel string) (<-chan s
 	}
 	return make(chan string), nil
 }
+func (m *mockCacheRepo) Publish(_ context.Context, _ string, _ string) error { return nil }
 
 // mockOccurrenceRepo is a minimal mock for domainrepo.ScheduleOccurrenceRepository.
 type mockOccurrenceRepo struct {
@@ -957,6 +958,63 @@ func TestSubscribeToUpdates_SubscribeError(t *testing.T) {
 		// expected: goroutine exited after subscribe error
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("subscriber goroutine did not exit after Subscribe returned an error")
+	}
+}
+
+// TestSubscribeToUpdates_ActivatePingDeletesBothCacheKeys proves that when a
+// SyncPingMessage carries a non-empty DecisionRuleID (as published by the
+// activate endpoint), both the rule and schedules cache entries are explicitly
+// deleted before evaluate is called — ensuring no delivery pod can briefly
+// observe a stale mirror between the delete and the re-evaluate.
+func TestSubscribeToUpdates_ActivatePingDeletesBothCacheKeys(t *testing.T) {
+	t.Parallel()
+
+	ruleID := uuid.New()
+	msgCh := make(chan string, 1)
+
+	mem := newTestMemCache(t, "sub_activate_delete")
+	// Pre-populate both entries that the activate ping is expected to clear.
+	mem.DecisionRule.Set(ruleDecisionCacheKey(ruleID.String()), &entity.DecisionRule{}, time.Hour)
+	mem.Schedules.Set(cmsPlacementSchedulesKey("hero"), []*entity.Schedule{}, time.Hour)
+
+	evaluateCalled := make(chan struct{}, 1)
+	occ := &mockOccurrenceRepo{
+		listActiveByPlacementsAtFn: func(_ context.Context, _ []string, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
+			select {
+			case evaluateCalled <- struct{}{}:
+			default:
+			}
+			return nil, nil
+		},
+	}
+
+	svc := NewCMSDeliveryService(
+		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+	)
+
+	go svc.subscribeToUpdates(t.Context())
+	waitForSubDone(t, svc)
+
+	payload, _ := json.Marshal(SyncPingMessage{
+		PlacementName:  "hero",
+		VersionHash:    "", // empty → bypass version-hash short-circuit
+		DecisionRuleID: ruleID.String(),
+	})
+	msgCh <- string(payload)
+
+	// Explicit deletes fire after jitter (50–500 ms); allow 2 s total.
+	require.Eventually(t, func() bool {
+		_, rulePresent := mem.DecisionRule.Get(ruleDecisionCacheKey(ruleID.String()))
+		_, schedPresent := mem.Schedules.Get(cmsPlacementSchedulesKey("hero"))
+		return !rulePresent && !schedPresent
+	}, 2*time.Second, 10*time.Millisecond, "expected both cache entries to be deleted after activate ping")
+
+	// Confirm evaluate was also triggered after the explicit deletion.
+	select {
+	case <-evaluateCalled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("evaluate was not called after the explicit cache deletion")
 	}
 }
 

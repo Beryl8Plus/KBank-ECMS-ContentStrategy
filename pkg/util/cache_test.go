@@ -33,6 +33,7 @@ func (m *mockCache) GetSet(ctx context.Context, key string, expiration time.Dura
 func (m *mockCache) Subscribe(_ context.Context, _ string) (<-chan string, error) {
 	return nil, nil
 }
+func (m *mockCache) Publish(_ context.Context, _ string, _ string) error { return nil }
 
 // ---- helpers -------------------------------------------------------------
 

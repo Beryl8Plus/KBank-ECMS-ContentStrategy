@@ -9,8 +9,11 @@ import (
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
+
+	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
 
 // Application holds the two top-level components returned by Wire.
@@ -78,6 +81,10 @@ var ProviderSet = wire.NewSet(
 	repository.NewPlacementPostgresRepository,
 	wire.Bind(new(domainrepo.PlacementRepository), new(*repository.PlacementPostgresRepository)),
 
+	// Pub/Sub publisher (Redis cache repo is supplied by main.go and may be nil
+	// when Redis is unavailable; pubsub.Publisher tolerates a nil dependency).
+	pubsub.NewPublisher,
+
 	// Services
 	service.NewScheduleService,
 	service.NewScheduleOccurrenceService,
@@ -93,6 +100,9 @@ var ProviderSet = wire.NewSet(
 	service.NewScheduleMaterializationService,
 	ProvideWorkerConfig,
 	service.NewOccurrenceWorker,
+
+	// Activation service for decision rule wizard
+	localservice.NewActivationService,
 
 	// Handlers
 	handler.NewScheduleHandler,

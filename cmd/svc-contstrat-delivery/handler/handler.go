@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -13,6 +14,7 @@ import (
 	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 // Handler handles HTTP requests for the cms-delivery module.
@@ -35,50 +37,82 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 // @Param requestType query string true "The type of content request" Enums(personalizedContent,staticContent,articleCategory)
 // @Param placement query []string true "One or more placement names" collectionFormat(multi) default(wsaHomeBanner, wsaPortBanner, wsaTransaction)
 // @Param customerId query string false "Customer identifier value (required when customerIdType=CIS_ID)"
-// @Param customerIdType query string false "Customer identifier scheme" Enums(CIS_ID)
+// @Param customerIdType query string false "Customer identifier scheme" Enums(CIS_ID, IP_ID, KPLUS_MOBILE_NUMBER, LINE_UUID) default(CIS_ID)
 // @Success 200 {object} dto.APIResponse{data=[]dto.ContentResult}
 // @Failure 400 {object} dto.APIResponse
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
 // @Router /content [get]
 func (h *Handler) getContent(c *gin.Context) {
-	requestType := enums.RequestType(c.Query("requestType"))
-	if !requestType.IsValid() {
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "requestType must be one of: personalizedContent, staticContent, articleCategory"})
-		return
-	}
-
-	placements := c.QueryArray("placement")
-	cisID := c.Query("customerId")
-	userID, _ := ctxconsts.GetUserID(c.Request.Context())
-
-	// Override cisID when the caller supplies an explicit CIS_ID customer identifier.
-	customerIdType := dto.CustomerIdType(c.Query("customerIdType"))
-	if customerIdType == dto.CustomerIdTypeCISID || customerIdType == "" {
-		if cisID == "" || (customerIdType == "" && cisID != "") {
-			c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "customerId is required when customerIdType is CIS_ID or unspecified"})
-			return
+	// Validate requestType query parameter
+	var req dto.ContentRequestQueryParams
+	if err := c.ShouldBindQuery(&req); err != nil {
+		var messageTranslator = func(fe validator.FieldError) string {
+			switch fe.Tag() {
+			case "required":
+				return "This field is required"
+			case "oneof":
+				return fmt.Sprintf("This field must be one of: %s", fe.Param())
+			case "required_if":
+				return "This field is required when the specified condition is met"
+			case "min":
+				return fmt.Sprintf("At least %s item,length(s) are required", fe.Param())
+			case "max":
+				return fmt.Sprintf("At most %s item,length(s) are allowed", fe.Param())
+			case "numeric":
+				return "This field must be a numeric string"
+			case "len":
+				return fmt.Sprintf("This field must be exactly %s characters long", fe.Param())
+			}
+			return fe.Error() // default error
 		}
+		if ve, ok := errors.AsType[validator.ValidationErrors](err); ok {
+			out := make([]dto.ValidationError, len(ve))
+			for i, fe := range ve {
+				out[i] = dto.ValidationError{
+					Field:   fe.Field(),
+					Message: messageTranslator(fe),
+				}
+			}
+			c.JSON(http.StatusBadRequest, dto.APIResponse{
+				Code:  enums.ErrorCodeBadRequest.String(),
+				Error: "Invalid query parameters",
+				Data:  out,
+			})
+		}
+		return
 	}
 
 	var results []dto.ContentResult
 	var err error
-	if cisID == "" {
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "customerId is required for personalized content"})
-		return
-	}
-
-	userIDStr := cisID
+	userID, _ := ctxconsts.GetUserID(c.Request.Context())
+	userIDStr := req.CustomerID
 	if userID != nil {
 		userIDStr = userID.String()
 	}
+	// TODO: call api CLEN req.CustomerID {cisId}, req.Channel {WAMP}
+	// get user attributes for this user from Redis (if available) to pass to the service for logic evaluation.
+	// This allows the service to evaluate placement logic that depends on user attributes without having to call Redis itself,
+	// keeping the service layer simpler and more focused on its core responsibility of content delivery.
 	userAttrs := make(map[string]json.RawMessage) // Service resolves cis_id:{customerId} from Redis when available.
-	results, err = h.svc.GetPersonalizedContent(c.Request.Context(), cisID, userIDStr, placements, userAttrs)
+	results, err = h.svc.GetPersonalizedContent(
+		c.Request.Context(),
+		req.CustomerID,
+		userIDStr,
+		req.Placements,
+		userAttrs,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{
+			Code:  enums.ErrorCodeInternalError.String(),
+			Error: err.Error(),
+		})
 		return
 	}
 	responseData := dto.ToContentResultResponses(results)
+	if req.PageSize > 0 && len(responseData) > req.PageSize {
+		responseData = responseData[:req.PageSize]
+	}
 	c.JSON(http.StatusOK, dto.APIResponse{Data: responseData})
 }
 
@@ -98,13 +132,19 @@ func (h *Handler) getStatus(c *gin.Context) {
 
 	isMemPressure, memUsagePct, err := h.svc.GetCacheStatus(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{
+			Code:  enums.ErrorCodeInternalError.String(),
+			Error: err.Error(),
+		})
 		return
 	}
 
 	keys, err := h.svc.GetCacheKeys(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{
+			Code:  enums.ErrorCodeInternalError.String(),
+			Error: err.Error(),
+		})
 		return
 	}
 
@@ -134,14 +174,21 @@ func (h *Handler) getStatus(c *gin.Context) {
 // @Security XUserIdAuth
 // @Router /purge_requests/value [get]
 func (h *Handler) getCacheValue(c *gin.Context) {
-	key := c.Query("key")
-	if key == "" {
-		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: "key query parameter is required"})
+	var req struct {
+		Key string `form:"key" binding:"required"`
+	}
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.APIResponse{
+			Code:  enums.ErrorCodeBadRequest.String(),
+			Error: "Missing required 'key' query parameter"})
 		return
 	}
-	value, err := h.svc.GetCacheValue(c.Request.Context(), key)
+	value, err := h.svc.GetCacheValue(c.Request.Context(), req.Key)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{
+			Code:  enums.ErrorCodeInternalError.String(),
+			Error: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, dto.APIResponse{Data: value})
@@ -165,7 +212,10 @@ func (h *Handler) flushCache(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	if err := h.svc.FlushCache(c.Request.Context(), req.Placements, req.IsEvaluate); err != nil {
-		c.JSON(http.StatusInternalServerError, dto.APIResponse{Error: err.Error()})
+		c.JSON(http.StatusInternalServerError, dto.APIResponse{
+			Code:  enums.ErrorCodeInternalError.String(),
+			Error: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, dto.APIResponse{Data: dto.FlushResponse{Message: "flushed"}})

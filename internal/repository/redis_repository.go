@@ -166,6 +166,14 @@ func (r *RedisRepository) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
 
+// Publish broadcasts payload to subscribers of the given Pub/Sub channel.
+func (r *RedisRepository) Publish(ctx context.Context, channel string, payload string) error {
+	if err := r.client.Publish(ctx, channel, payload).Err(); err != nil {
+		return fmt.Errorf("publish to %q: %w", channel, err)
+	}
+	return nil
+}
+
 // Subscribe listens to a Redis channel and returns a channel for messages.
 func (r *RedisRepository) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
 	pubsub := r.client.Subscribe(ctx, channel)
