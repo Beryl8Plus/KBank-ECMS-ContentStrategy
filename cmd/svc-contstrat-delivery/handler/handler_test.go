@@ -11,8 +11,10 @@ import (
 
 	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
 	"kbank-ecms/internal/delivery/http/dto"
+	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,14 +106,15 @@ func TestHandler_GetContent_OK(t *testing.T) {
 		{ContentPath: "/a", Score: 0.9, RuleSetType: "Mass"},
 	}
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, cisID, _ string, placements []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, cisID, userID string, placements []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
 			assert.Equal(t, "cis-123", cisID)
+			assert.Equal(t, "cis-123", userID)
 			assert.Equal(t, []string{"hero"}, placements)
 			return expected, nil
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var apiResp dto.APIResponse
@@ -133,7 +136,7 @@ func TestHandler_GetContent_ServiceError(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
@@ -178,9 +181,9 @@ func TestHandler_GetContent_InvalidRequestType(t *testing.T) {
 	r := setupRouter(&mockDeliveryService{})
 
 	for _, rt := range []string{"", "unknown", "PERSONALIZED"} {
-		url := "/content?placement=hero"
+		url := "/content?placement=hero&channel=web"
 		if rt != "" {
-			url = "/content?requestType=" + rt + "&placement=hero"
+			url = "/content?requestType=" + rt + "&placement=hero&channel=web"
 		}
 		w := doRequest(t, r, http.MethodGet, url, "")
 		assert.Equal(t, http.StatusBadRequest, w.Code, "requestType=%q should be rejected", rt)
@@ -201,7 +204,7 @@ func TestHandler_GetContent_ArticleCategory(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&channel=web&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, called, "GetPersonalizedContent should be called for articleCategory")
@@ -213,12 +216,12 @@ func TestHandler_GetContent_UnspecifiedCustomerIdTypeRejectsCustomerId(t *testin
 
 	r := setupRouter(&mockDeliveryService{})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&placement=hero&customerId=cis-123", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerId=cis-123", "")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var apiResp dto.APIResponse
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
-	assert.Contains(t, apiResp.Error, "customerId")
+	assert.Equal(t, "Invalid query parameters", apiResp.Error)
 }
 
 // TestHandler_GetContent_MissingCustomerId verifies any valid requestType without customerId returns 400.
@@ -228,7 +231,7 @@ func TestHandler_GetContent_MissingCustomerId(t *testing.T) {
 	r := setupRouter(&mockDeliveryService{})
 
 	for _, requestType := range []string{"personalizedContent", "staticContent", "articleCategory"} {
-		w := doRequest(t, r, http.MethodGet, "/content?requestType="+requestType+"&placement=hero", "")
+		w := doRequest(t, r, http.MethodGet, "/content?requestType="+requestType+"&placement=hero&channel=web", "")
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	}
 }
@@ -239,12 +242,12 @@ func TestHandler_GetContent_CISID_MissingCustomerId(t *testing.T) {
 
 	r := setupRouter(&mockDeliveryService{})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&placement=hero&customerIdType=CIS_ID", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID", "")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var apiResp dto.APIResponse
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&apiResp))
-	assert.Contains(t, apiResp.Error, "customerId")
+	assert.Equal(t, "Invalid query parameters", apiResp.Error)
 }
 
 // TestHandler_GetContent_CISID_UsesCustomerId verifies customerIdType=CIS_ID with customerId passes the value as cisID.
@@ -259,10 +262,37 @@ func TestHandler_GetContent_CISID_UsesCustomerId(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&placement=hero&customerIdType=CIS_ID&customerId=12345", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=12345", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "12345", capturedCISID)
+}
+
+// TestHandler_GetContent_WithUserIDInContext verifies that when ctxconsts.UserIDKey is present, it is passed as userID.
+func TestHandler_GetContent_WithUserIDInContext(t *testing.T) {
+	t.Parallel()
+
+	userID := uuid.New()
+	var capturedUserID string
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), ctxconsts.UserIDKey, userID)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	h := NewHandler(&mockDeliveryService{
+		getPersonalizedFn: func(_ context.Context, cisID, uID string, _ []string, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			capturedUserID = uID
+			return []dto.ContentResult{}, nil
+		},
+	})
+	r.GET("/content", h.getContent)
+
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=cis-123", "")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, userID.String(), capturedUserID)
 }
 
 // TestHandler_GetStatus_OK verifies GET /purge_requests returns 200 with pressure flag, usage, and keys.

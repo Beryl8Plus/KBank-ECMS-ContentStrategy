@@ -22,7 +22,7 @@ type ContentRequestQueryParams struct {
 	Channel        string            `form:"channel" binding:"required" json:"channel"`
 	Placements     []string          `form:"placement" binding:"required,min=1,dive,required" json:"placement"`
 	CustomerID     string            `form:"customerId" binding:"required" json:"customerId"`
-	CustomerIDType CustomerIdType    `form:"customerIdType" binding:"omitempty,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID" json:"customerIdType"`
+	CustomerIDType CustomerIdType    `form:"customerIdType" binding:"required,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID" json:"customerIdType"`
 	PageSize       int               `form:"pageSize,default=10" binding:"omitempty,max=2000" json:"pageSize"`
 }
 
