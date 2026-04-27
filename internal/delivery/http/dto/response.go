@@ -1,6 +1,9 @@
 package dto
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"kbank-ecms/internal/domain/entity/enums"
+)
 
 // Pagination holds metadata for paginated list responses.
 type Pagination struct {
@@ -18,11 +21,14 @@ type APIResponse struct {
 	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
+type ValidationError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
 func (r *APIResponse) ToSuccess() {
-	if r.Data == nil {
-		r.Code = "FAILED"
-	} else {
-		r.Code = "SUCCESS"
+	if r.Code == "" && r.Error == "" {
+		r.Code = enums.SuccessResponse.String()
 	}
 }
 

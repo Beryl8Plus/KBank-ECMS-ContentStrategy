@@ -369,39 +369,40 @@ func buildUsers(attributes []attributeDef) []userSeed {
 	}
 
 	return []userSeed{
+		// CIS_ID format: 10-digit numeric string; these IDs can be used directly in the generated Redis seed script and will match the attribute definitions in the SQL output.
 		// Core segment × region matrix (one user per segment)
-		{CisID: "cis-user-01", Segment: "Mass", UserAge: 28, Region: "Bangkok", RiskLevel: 2, Commentary: "Mass / Bangkok / age 28 / risk 2 — baseline mass user"},
-		{CisID: "cis-user-02", Segment: "Affluent", UserAge: 35, Region: "Central", RiskLevel: 3, Commentary: "Affluent / Central / age 35 / risk 3 — mid-risk affluent"},
-		{CisID: "cis-user-03", Segment: "VIP", UserAge: 45, Region: "North", RiskLevel: 4, Commentary: "VIP / North / age 45 / risk 4 — high-risk VIP"},
-		{CisID: "cis-user-04", Segment: "Young Wealth", UserAge: 24, Region: "Northeast", RiskLevel: 1, Commentary: "Young Wealth / Northeast / age 24 / risk 1 — low-risk young"},
-		{CisID: "cis-user-05", Segment: "SME", UserAge: 52, Region: "South", RiskLevel: 5, Commentary: "SME / South / age 52 / risk 5 — max-risk SME"},
+		{CisID: "0000000001", Segment: "Mass", UserAge: 28, Region: "Bangkok", RiskLevel: 2, Commentary: "Mass / Bangkok / age 28 / risk 2 — baseline mass user"},
+		{CisID: "0000000002", Segment: "Affluent", UserAge: 35, Region: "Central", RiskLevel: 3, Commentary: "Affluent / Central / age 35 / risk 3 — mid-risk affluent"},
+		{CisID: "0000000003", Segment: "VIP", UserAge: 45, Region: "North", RiskLevel: 4, Commentary: "VIP / North / age 45 / risk 4 — high-risk VIP"},
+		{CisID: "0000000004", Segment: "Young Wealth", UserAge: 24, Region: "Northeast", RiskLevel: 1, Commentary: "Young Wealth / Northeast / age 24 / risk 1 — low-risk young"},
+		{CisID: "0000000005", Segment: "SME", UserAge: 52, Region: "South", RiskLevel: 5, Commentary: "SME / South / age 52 / risk 5 — max-risk SME"},
 
 		// Edge-case age boundaries
-		{CisID: "cis-user-06", Segment: "Mass", UserAge: 60, Region: "Northeast", RiskLevel: 2, Commentary: "Mass / Northeast / age 60 / risk 2 — senior user triggering age >= rules"},
-		{CisID: "cis-user-07", Segment: "Affluent", UserAge: 20, Region: "South", RiskLevel: 1, Commentary: "Affluent / South / age 20 / risk 1 — youngest legal user"},
-		{CisID: "cis-user-08", Segment: "VIP", UserAge: 65, Region: "Bangkok", RiskLevel: 5, Commentary: "VIP / Bangkok / age 65 / risk 5 — oldest+max risk"},
+		{CisID: "0000000006", Segment: "Mass", UserAge: 60, Region: "Northeast", RiskLevel: 2, Commentary: "Mass / Northeast / age 60 / risk 2 — senior user triggering age >= rules"},
+		{CisID: "0000000007", Segment: "Affluent", UserAge: 20, Region: "South", RiskLevel: 1, Commentary: "Affluent / South / age 20 / risk 1 — youngest legal user"},
+		{CisID: "0000000008", Segment: "VIP", UserAge: 65, Region: "Bangkok", RiskLevel: 5, Commentary: "VIP / Bangkok / age 65 / risk 5 — oldest+max risk"},
 
 		// Cross-segment risk extremes
-		{CisID: "cis-user-09", Segment: "Young Wealth", UserAge: 22, Region: "Central", RiskLevel: 5, Commentary: "Young Wealth / Central / age 22 / risk 5 — young but high risk"},
-		{CisID: "cis-user-10", Segment: "SME", UserAge: 48, Region: "North", RiskLevel: 1, Commentary: "SME / North / age 48 / risk 1 — risk-averse SME"},
+		{CisID: "0000000009", Segment: "Young Wealth", UserAge: 22, Region: "Central", RiskLevel: 5, Commentary: "Young Wealth / Central / age 22 / risk 5 — young but high risk"},
+		{CisID: "0000000010", Segment: "SME", UserAge: 48, Region: "North", RiskLevel: 1, Commentary: "SME / North / age 48 / risk 1 — risk-averse SME"},
 
 		// Region coverage — Bangkok for each main segment
-		{CisID: "cis-user-11", Segment: "Mass", UserAge: 33, Region: "Bangkok", RiskLevel: 3, Commentary: "Mass / Bangkok / age 33 / risk 3"},
-		{CisID: "cis-user-12", Segment: "Affluent", UserAge: 40, Region: "Bangkok", RiskLevel: 4, Commentary: "Affluent / Bangkok / age 40 / risk 4"},
-		{CisID: "cis-user-13", Segment: "VIP", UserAge: 55, Region: "Bangkok", RiskLevel: 2, Commentary: "VIP / Bangkok / age 55 / risk 2 — low-risk VIP"},
+		{CisID: "0000000011", Segment: "Mass", UserAge: 33, Region: "Bangkok", RiskLevel: 3, Commentary: "Mass / Bangkok / age 33 / risk 3"},
+		{CisID: "0000000012", Segment: "Affluent", UserAge: 40, Region: "Bangkok", RiskLevel: 4, Commentary: "Affluent / Bangkok / age 40 / risk 4"},
+		{CisID: "0000000013", Segment: "VIP", UserAge: 55, Region: "Bangkok", RiskLevel: 2, Commentary: "VIP / Bangkok / age 55 / risk 2 — low-risk VIP"},
 
 		// Region coverage — Central
-		{CisID: "cis-user-14", Segment: "SME", UserAge: 42, Region: "Central", RiskLevel: 3, Commentary: "SME / Central / age 42 / risk 3"},
-		{CisID: "cis-user-15", Segment: "Mass", UserAge: 50, Region: "Central", RiskLevel: 5, Commentary: "Mass / Central / age 50 / risk 5"},
+		{CisID: "0000000014", Segment: "SME", UserAge: 42, Region: "Central", RiskLevel: 3, Commentary: "SME / Central / age 42 / risk 3"},
+		{CisID: "0000000015", Segment: "Mass", UserAge: 50, Region: "Central", RiskLevel: 5, Commentary: "Mass / Central / age 50 / risk 5"},
 
 		// Region coverage — North / Northeast / South
-		{CisID: "cis-user-16", Segment: "Young Wealth", UserAge: 29, Region: "North", RiskLevel: 2, Commentary: "Young Wealth / North / age 29 / risk 2"},
-		{CisID: "cis-user-17", Segment: "Affluent", UserAge: 38, Region: "Northeast", RiskLevel: 4, Commentary: "Affluent / Northeast / age 38 / risk 4"},
-		{CisID: "cis-user-18", Segment: "VIP", UserAge: 47, Region: "South", RiskLevel: 3, Commentary: "VIP / South / age 47 / risk 3"},
+		{CisID: "0000000016", Segment: "Young Wealth", UserAge: 29, Region: "North", RiskLevel: 2, Commentary: "Young Wealth / North / age 29 / risk 2"},
+		{CisID: "0000000017", Segment: "Affluent", UserAge: 38, Region: "Northeast", RiskLevel: 4, Commentary: "Affluent / Northeast / age 38 / risk 4"},
+		{CisID: "0000000018", Segment: "VIP", UserAge: 47, Region: "South", RiskLevel: 3, Commentary: "VIP / South / age 47 / risk 3"},
 
 		// Boundary age conditions
-		{CisID: "cis-user-19", Segment: "Mass", UserAge: 30, Region: "Bangkok", RiskLevel: 3, Commentary: "Mass / Bangkok / age 30 / risk 3 — common age threshold"},
-		{CisID: "cis-user-20", Segment: "SME", UserAge: 56, Region: "Northeast", RiskLevel: 4, Commentary: "SME / Northeast / age 56 / risk 4 — senior SME triggering age >= 56 rules"},
+		{CisID: "0000000019", Segment: "Mass", UserAge: 30, Region: "Bangkok", RiskLevel: 3, Commentary: "Mass / Bangkok / age 30 / risk 3 — common age threshold"},
+		{CisID: "0000000020", Segment: "SME", UserAge: 56, Region: "Northeast", RiskLevel: 4, Commentary: "SME / Northeast / age 56 / risk 4 — senior SME triggering age >= 56 rules"},
 	}
 }
 

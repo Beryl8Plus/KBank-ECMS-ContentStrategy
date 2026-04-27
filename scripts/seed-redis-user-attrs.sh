@@ -7,10 +7,10 @@
 # Value format: JSON object keyed by attribute UUIDs
 #
 # Attribute UUIDs (from this generation):
-#   segment    0d8bcd56-cdcd-4333-8d69-27dbe971640b  Text   Mass | Affluent | VIP | Young Wealth | SME
-#   user_age   add991df-4a88-45cf-a9c1-18a8be96fc56  Number
-#   region     0f715778-2891-45af-8cf2-43096aba9a7b  Text   Bangkok | Central | North | Northeast | South
-#   risk_level 6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf  Number 1..5
+#   segment    e50751ea-bf83-438f-8a8c-d755796e7925  Text   Mass | Affluent | VIP | Young Wealth | SME
+#   user_age   fba03e8e-8dfb-4b32-b8b8-f5213ac98d46  Number
+#   region     6c98514c-3374-4be8-88fc-561bc5831cbc  Text   Bangkok | Central | North | Northeast | South
+#   risk_level 1acbc057-ccf7-47db-afb9-2a67e08f8ebe  Number 1..5
 
 REDIS_CLI="${REDIS_CLI:-redis-cli}"
 
@@ -26,63 +26,63 @@ seed() {
 echo "Seeding Redis user attributes..."
 
 # Mass / Bangkok / age 28 / risk 2 — baseline mass user
-seed "cis-user-01" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Mass\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":2,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":28}"
+seed "0000000001" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":2,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Mass\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":28}"
 
 # Affluent / Central / age 35 / risk 3 — mid-risk affluent
-seed "cis-user-02" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Affluent\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Central\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":3,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":35}"
+seed "0000000002" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":3,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Central\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Affluent\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":35}"
 
 # VIP / North / age 45 / risk 4 — high-risk VIP
-seed "cis-user-03" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"VIP\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"North\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":4,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":45}"
+seed "0000000003" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":4,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"North\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"VIP\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":45}"
 
 # Young Wealth / Northeast / age 24 / risk 1 — low-risk young
-seed "cis-user-04" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Young Wealth\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Northeast\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":1,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":24}"
+seed "0000000004" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":1,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Northeast\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Young Wealth\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":24}"
 
 # SME / South / age 52 / risk 5 — max-risk SME
-seed "cis-user-05" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"SME\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"South\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":5,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":52}"
+seed "0000000005" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":5,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"South\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"SME\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":52}"
 
 # Mass / Northeast / age 60 / risk 2 — senior user triggering age >= rules
-seed "cis-user-06" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Mass\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Northeast\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":2,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":60}"
+seed "0000000006" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":2,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Northeast\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Mass\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":60}"
 
 # Affluent / South / age 20 / risk 1 — youngest legal user
-seed "cis-user-07" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Affluent\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"South\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":1,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":20}"
+seed "0000000007" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":1,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"South\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Affluent\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":20}"
 
 # VIP / Bangkok / age 65 / risk 5 — oldest+max risk
-seed "cis-user-08" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"VIP\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":5,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":65}"
+seed "0000000008" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":5,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"VIP\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":65}"
 
 # Young Wealth / Central / age 22 / risk 5 — young but high risk
-seed "cis-user-09" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Young Wealth\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Central\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":5,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":22}"
+seed "0000000009" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":5,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Central\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Young Wealth\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":22}"
 
 # SME / North / age 48 / risk 1 — risk-averse SME
-seed "cis-user-10" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"SME\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"North\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":1,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":48}"
+seed "0000000010" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":1,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"North\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"SME\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":48}"
 
 # Mass / Bangkok / age 33 / risk 3
-seed "cis-user-11" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Mass\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":3,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":33}"
+seed "0000000011" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":3,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Mass\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":33}"
 
 # Affluent / Bangkok / age 40 / risk 4
-seed "cis-user-12" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Affluent\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":4,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":40}"
+seed "0000000012" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":4,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Affluent\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":40}"
 
 # VIP / Bangkok / age 55 / risk 2 — low-risk VIP
-seed "cis-user-13" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"VIP\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":2,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":55}"
+seed "0000000013" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":2,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"VIP\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":55}"
 
 # SME / Central / age 42 / risk 3
-seed "cis-user-14" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"SME\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Central\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":3,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":42}"
+seed "0000000014" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":3,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Central\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"SME\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":42}"
 
 # Mass / Central / age 50 / risk 5
-seed "cis-user-15" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Mass\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Central\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":5,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":50}"
+seed "0000000015" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":5,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Central\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Mass\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":50}"
 
 # Young Wealth / North / age 29 / risk 2
-seed "cis-user-16" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Young Wealth\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"North\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":2,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":29}"
+seed "0000000016" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":2,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"North\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Young Wealth\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":29}"
 
 # Affluent / Northeast / age 38 / risk 4
-seed "cis-user-17" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Affluent\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Northeast\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":4,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":38}"
+seed "0000000017" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":4,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Northeast\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Affluent\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":38}"
 
 # VIP / South / age 47 / risk 3
-seed "cis-user-18" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"VIP\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"South\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":3,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":47}"
+seed "0000000018" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":3,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"South\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"VIP\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":47}"
 
 # Mass / Bangkok / age 30 / risk 3 — common age threshold
-seed "cis-user-19" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"Mass\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Bangkok\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":3,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":30}"
+seed "0000000019" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":3,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Bangkok\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"Mass\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":30}"
 
 # SME / Northeast / age 56 / risk 4 — senior SME triggering age >= 56 rules
-seed "cis-user-20" "{\"0d8bcd56-cdcd-4333-8d69-27dbe971640b\":\"SME\",\"0f715778-2891-45af-8cf2-43096aba9a7b\":\"Northeast\",\"6a4bc7c1-c99c-4338-adfb-c542f7ab5cbf\":4,\"add991df-4a88-45cf-a9c1-18a8be96fc56\":56}"
+seed "0000000020" "{\"1acbc057-ccf7-47db-afb9-2a67e08f8ebe\":4,\"6c98514c-3374-4be8-88fc-561bc5831cbc\":\"Northeast\",\"e50751ea-bf83-438f-8a8c-d755796e7925\":\"SME\",\"fba03e8e-8dfb-4b32-b8b8-f5213ac98d46\":56}"
 
 echo "Done. Seeded 20 CIS user attribute records."

@@ -2,6 +2,7 @@ package dto
 
 import (
 	"encoding/json"
+	"kbank-ecms/internal/domain/entity/enums"
 	"math"
 )
 
@@ -9,8 +10,26 @@ import (
 type CustomerIdType string
 
 const (
-	CustomerIdTypeCISID CustomerIdType = "CIS_ID"
+	CustomerIdTypeCISID             CustomerIdType = "CIS_ID"
+	CustomerIdTypeIPID              CustomerIdType = "IP_ID"
+	CustomerIdTypeKPlusMobileNumber CustomerIdType = "KPLUS_MOBILE_NUMBER"
+	CustomerIdTypeLineUUID          CustomerIdType = "LINE_UUID"
 )
+
+type ContentRequestQueryParams struct {
+	RequestType enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory"`
+	Mode        string            `form:"mode"`
+	Channel     string            `form:"channel" binding:"required"`
+	Placements  []string          `form:"placement" binding:"required,min=1,dive,required"`
+	// If CustomerIDType is CIS_ID or IP_ID then CustomerID is required and
+	// must be a 10-digit numeric string; otherwise it's optional with no
+	// format validation. The tag below uses `required_if` so the field is
+	// required when CustomerIDType equals CIS_ID or IP_ID, and `omitempty`
+	// skips numeric/len checks when the field is empty in other cases.
+	CustomerID     string         `form:"customerId"`
+	CustomerIDType CustomerIdType `form:"customerIdType" binding:"oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID"`
+	PageSize       int            `form:"pageSize,default=10" binding:"omitempty,max=2000"`
+}
 
 // FlushRequest is the request body for POST /flush.
 type FlushRequest struct {
