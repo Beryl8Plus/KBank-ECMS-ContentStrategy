@@ -25,7 +25,7 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 	return &Handler{svc: svc}
 }
 
-// getContent handles GET /content?requestType=personalizedContent&placement=a&placement=b
+// getContent handles GET /api/content-strategy/v1/personalized-content?requestType=personalizedContent&placement=a&placement=b
 //
 // @Summary Get content by placements
 // @Description Returns evaluated content results for one or more placement names.
@@ -40,38 +40,17 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 // @Failure 400 {object} dto.APIResponse
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
-// @Router /content [get]
+// @Router /api/content-strategy/v1/personalized-content [get]
 func (h *Handler) getContent(c *gin.Context) {
 	// Validate requestType query parameter
 	var req dto.ContentRequestQueryParams
 	if err := c.ShouldBindQuery(&req); err != nil {
-		var messageTranslator = func(fe validator.FieldError) string {
-			switch fe.Tag() {
-			case "required":
-				return "This field is required"
-			case "oneof":
-				return fmt.Sprintf("This field must be one of: %s", fe.Param())
-			case "required_if":
-				return "This field is required when the specified condition is met"
-			case "min":
-				return fmt.Sprintf("At least %s item,length(s) are required", fe.Param())
-			case "max":
-				return fmt.Sprintf("At most %s item,length(s) are allowed", fe.Param())
-			case "numeric":
-				return "This field must be a numeric string"
-			case "len":
-				return fmt.Sprintf("This field must be exactly %s characters long", fe.Param())
-			case "customer_id_format":
-				return "Must be a 10-digit numeric string"
-			}
-			return fe.Error() // default error
-		}
 		if ve, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			out := make([]dto.ValidationError, len(ve))
 			for i, fe := range ve {
 				out[i] = dto.ValidationError{
 					Field:   fe.Field(),
-					Message: messageTranslator(fe),
+					Message: MessageTranslator(fe),
 				}
 			}
 			c.JSON(http.StatusBadRequest, dto.APIResponse{
@@ -109,7 +88,7 @@ func (h *Handler) getContent(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.APIResponse{Data: responseData})
 }
 
-// getCacheStatus handles GET /purge_requests
+// getCacheStatus handles GET /api/content-strategy/v1/purge_requests
 //
 // @Summary Get cache status
 // @Description Returns in-memory cache keys, heap pressure flag, and heap usage ratio.
@@ -119,7 +98,7 @@ func (h *Handler) getContent(c *gin.Context) {
 // @Success 200 {object} dto.APIResponse{data=dto.CacheStatusResponse}
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
-// @Router /purge_requests [get]
+// @Router /api/content-strategy/v1/purge_requests [get]
 func (h *Handler) getStatus(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -153,7 +132,7 @@ func (h *Handler) getStatus(c *gin.Context) {
 	}})
 }
 
-// getCacheValue handles GET /purge_requests/value?key={key}
+// getCacheValue handles GET /api/content-strategy/v1/purge_requests/value?key={key}
 //
 // @Summary Get cache value
 // @Description Returns the cached value for a given key. Used for monitoring and debugging.
@@ -165,7 +144,7 @@ func (h *Handler) getStatus(c *gin.Context) {
 // @Failure 400 {object} dto.APIResponse
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
-// @Router /purge_requests/value [get]
+// @Router /api/content-strategy/v1/purge_requests/value [get]
 func (h *Handler) getCacheValue(c *gin.Context) {
 	var req struct {
 		Key string `form:"key" binding:"required"`
@@ -187,7 +166,7 @@ func (h *Handler) getCacheValue(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.APIResponse{Data: value})
 }
 
-// flushCache handles POST /purge_requests
+// flushCache handles POST /api/content-strategy/v1/purge_requests
 //
 // @Summary Flush content cache
 // @Description Flushes the cache for specified placements. An empty or missing body flushes all placements.
@@ -198,7 +177,7 @@ func (h *Handler) getCacheValue(c *gin.Context) {
 // @Success 200 {object} dto.APIResponse{data=dto.FlushResponse}
 // @Failure 500 {object} dto.APIResponse
 // @Security XUserIdAuth
-// @Router /purge_requests [post]
+// @Router /api/content-strategy/v1/purge_requests [post]
 func (h *Handler) flushCache(c *gin.Context) {
 	var req dto.FlushRequest
 	// Ignore bind errors — missing/empty body means flush all (req.Placements stays nil).

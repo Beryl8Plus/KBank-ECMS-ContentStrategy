@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -31,21 +32,68 @@ func init() {
 		return name
 	})
 
-	v.RegisterStructValidation(validateContentRequest, dto.ContentRequestQueryParams{})
+	// customer_id_format is a field-level custom tag that applies conditional
+	// format rules based on the sibling CustomerIDType field:
+	//   - CIS_ID / IP_ID        → customerId must be exactly 10 decimal digits.
+	//   - KPLUS_MOBILE_NUMBER / LINE_UUID → any non-empty value is accepted
+	//     (the `required` binding tag already enforces non-empty).
+	//
+	// Usage in a struct:
+	//   CustomerID string `form:"customerId" binding:"required,customer_id_format"`
+	if err := v.RegisterValidation("customer_id_format", validateCustomerIDFormat); err != nil {
+		panic("validator: failed to register customer_id_format: " + err.Error())
+	}
 }
 
-// validateContentRequest enforces cross-field rules for ContentRequestQueryParams.
-// Field-level binding tags handle required/oneof; this function adds format rules:
-//   - CIS_ID / IP_ID: customerId must be exactly 10 decimal digits.
-//   - KPLUS_MOBILE_NUMBER / LINE_UUID: any non-empty value is accepted (required is
-//     already enforced by the binding tag).
-func validateContentRequest(sl validator.StructLevel) {
-	req := sl.Current().Interface().(dto.ContentRequestQueryParams)
-
-	switch req.CustomerIDType {
-	case dto.CustomerIdTypeCISID, dto.CustomerIdTypeIPID:
-		if req.CustomerID != "" && !tenDigitNumeric.MatchString(req.CustomerID) {
-			sl.ReportError(req.CustomerID, "customerId", "CustomerID", "customer_id_format", "")
-		}
+// validateCustomerIDFormat is the field-level validator for the
+// "customer_id_format" binding tag.
+//
+// It inspects the sibling CustomerIDType field on the parent struct to decide
+// which format rule to apply:
+//   - Empty string always passes — the `required` tag handles that separately.
+//   - CIS_ID / IP_ID           → value must match [0-9]{10}.
+//   - KPLUS_MOBILE_NUMBER / LINE_UUID → any non-empty value is accepted.
+func validateCustomerIDFormat(fl validator.FieldLevel) bool {
+	val := fl.Field().String()
+	if val == "" {
+		return true // defer to `required`
 	}
+
+	// Read the sibling CustomerIDType from the parent struct.
+	parent := fl.Parent()
+	idTypeField := parent.FieldByName("CustomerIDType")
+	if !idTypeField.IsValid() {
+		// Struct does not carry CustomerIDType; skip format enforcement.
+		return true
+	}
+
+	switch dto.CustomerIdType(idTypeField.String()) {
+	case dto.CustomerIdTypeCISID, dto.CustomerIdTypeIPID:
+		return tenDigitNumeric.MatchString(val)
+	default:
+		// KPLUS_MOBILE_NUMBER, LINE_UUID — any non-empty value is valid.
+		return true
+	}
+}
+
+func MessageTranslator(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "oneof":
+		return fmt.Sprintf("This field must be one of: %s", fe.Param())
+	case "required_if":
+		return "This field is required when the specified condition is met"
+	case "min":
+		return fmt.Sprintf("At least %s item,length(s) are required", fe.Param())
+	case "max":
+		return fmt.Sprintf("At most %s item,length(s) are allowed", fe.Param())
+	case "numeric":
+		return "This field must be a numeric string"
+	case "len":
+		return fmt.Sprintf("This field must be exactly %s characters long", fe.Param())
+	case "customer_id_format":
+		return "Must be a 10-digit numeric string"
+	}
+	return fe.Error() // default error
 }

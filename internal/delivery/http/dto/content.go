@@ -17,13 +17,15 @@ const (
 )
 
 type ContentRequestQueryParams struct {
-	RequestType    enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory" json:"requestType"`
-	Mode           string            `form:"mode" json:"mode"`
-	Channel        string            `form:"channel" binding:"required" json:"channel"`
-	Placements     []string          `form:"placement" binding:"required,min=1,dive,required" json:"placement"`
-	CustomerID     string            `form:"customerId" binding:"required" json:"customerId"`
-	CustomerIDType CustomerIdType    `form:"customerIdType" binding:"required,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID" json:"customerIdType"`
-	PageSize       int               `form:"pageSize,default=10" binding:"omitempty,max=2000" json:"pageSize"`
+	RequestType enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory" json:"requestType"`
+	Mode        string            `form:"mode" json:"mode"`
+	Channel     string            `form:"channel" binding:"required" json:"channel"`
+	Placements  []string          `form:"placement" binding:"required,min=1,dive,required" json:"placement"`
+	// CustomerID is required. When CustomerIDType is CIS_ID or IP_ID the value
+	// must additionally be exactly 10 decimal digits (customer_id_format tag).
+	CustomerID     string         `form:"customerId" binding:"required,customer_id_format" json:"customerId"`
+	CustomerIDType CustomerIdType `form:"customerIdType" binding:"required,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID" json:"customerIdType"`
+	PageSize       int            `form:"pageSize,default=10" binding:"omitempty,max=2000" json:"pageSize"`
 }
 
 type CustomerRequest struct {
