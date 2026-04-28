@@ -352,25 +352,23 @@ func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []st
 //  4. Collect passing entries; sort desc by score; write personalized cache; return.
 func (s *CMSDeliveryService) GetPersonalizedContent(
 	ctx context.Context,
-	cisID string,
-	userID string,
+	customerInfo *dto.CustomerRequest,
 	placementNames []string,
-	userAttrs map[string]json.RawMessage,
 ) ([]dto.ContentResult, error) {
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: fmt.Sprintf("GetPersonalizedContent for cisID %q userID %q placements %v", cisID, userID, placementNames),
+		Message: fmt.Sprintf("GetPersonalizedContent for placements %v", placementNames),
 	})
-	if cisID == "" || userID == "" {
-		return nil, fmt.Errorf("GetPersonalizedContent: cisID and userID must not be empty")
+	if customerInfo == nil || customerInfo.IsEmpty() {
+		return nil, fmt.Errorf("GetPersonalizedContent: customerId and customerType must not be empty")
 	}
-	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, cisID, userAttrs)
+	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, customerInfo.TypeName(), customerInfo.Value())
 	if resolveErr != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "CMS-DELIVERY",
 			Level:   "WARN",
-			Message: fmt.Sprintf("Failed to resolve user attributes for cisID %q: %v", cisID, resolveErr),
+			Message: fmt.Sprintf("Failed to resolve user attributes for customerId %q: %v", customerInfo.Value(), resolveErr),
 		})
 		return nil, resolveErr
 	}
@@ -499,7 +497,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 	for i, name := range placementNames {
 		g.Go(func() error {
-			passing := s.evaluatePlacement(gctx, cisID, userID, name, filtered[name], resolvedUserAttrs)
+			passing := s.evaluatePlacement(gctx, name, filtered[name], resolvedUserAttrs)
 			if len(passing) > 0 {
 				results[i] = passing
 			}
@@ -522,7 +520,6 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 // focused and testable independently.
 func (s *CMSDeliveryService) evaluatePlacement(
 	ctx context.Context,
-	cisID, userID string,
 	placementName string,
 	schedules []*entity.Schedule,
 	resolvedUserAttrs map[string]json.RawMessage,

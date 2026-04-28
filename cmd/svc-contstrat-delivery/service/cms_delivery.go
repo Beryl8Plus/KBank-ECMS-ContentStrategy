@@ -12,16 +12,15 @@ import (
 type DeliveryService interface {
 	// GetPersonalizedContent evaluates placement logic entries against the
 	// caller's user attributes and returns ranked ContentResult items.
-	// cisID identifies the Customer Information System channel; it is used to
+	// customerInfo contains the Customer Information System channel and user identifiers; it is used to
 	// scope the personalized placement cache key.
 	// userAttrs maps attribute UUID strings to compact JSON values (the live
 	// attribute values for this user, as received in the request payload).
 	// Results are cached at cms:placement:{cisID}:{name} for resultTTL.
 	GetPersonalizedContent(
 		ctx context.Context,
-		cisID, userID string,
+		customerInfo *dto.CustomerRequest,
 		placementNames []string,
-		userAttrs map[string]json.RawMessage,
 	) ([]dto.ContentResult, error)
 
 	// FlushCache removes the cached results for the given placement names.

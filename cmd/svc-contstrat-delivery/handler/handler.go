@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	"kbank-ecms/internal/infrastructure/logger"
-	"kbank-ecms/pkg/ctxconsts"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -63,6 +61,8 @@ func (h *Handler) getContent(c *gin.Context) {
 				return "This field must be a numeric string"
 			case "len":
 				return fmt.Sprintf("This field must be exactly %s characters long", fe.Param())
+			case "customer_id_format":
+				return "Must be a 10-digit numeric string"
 			}
 			return fe.Error() // default error
 		}
@@ -83,25 +83,18 @@ func (h *Handler) getContent(c *gin.Context) {
 		return
 	}
 
-	var results []dto.ContentResult
-	var err error
-	userID, _ := ctxconsts.GetUserID(c.Request.Context())
-	userIDStr := req.CustomerID
-	if userID != nil {
-		userIDStr = userID.String()
+	customerReq := &dto.CustomerRequest{Type: req.CustomerIDType}
+	switch req.CustomerIDType {
+	case dto.CustomerIdTypeCISID:
+		customerReq.CIS_ID = req.CustomerID
+	case dto.CustomerIdTypeIPID:
+		customerReq.IP_ID = req.CustomerID
+	case dto.CustomerIdTypeKPlusMobileNumber:
+		customerReq.KPlusMobileNumber = req.CustomerID
+	case dto.CustomerIdTypeLineUUID:
+		customerReq.LineUUID = req.CustomerID
 	}
-	// TODO: call api CLEN req.CustomerID {cisId}, req.Channel {WAMP}
-	// get user attributes for this user from Redis (if available) to pass to the service for logic evaluation.
-	// This allows the service to evaluate placement logic that depends on user attributes without having to call Redis itself,
-	// keeping the service layer simpler and more focused on its core responsibility of content delivery.
-	userAttrs := make(map[string]json.RawMessage) // Service resolves cis_id:{customerId} from Redis when available.
-	results, err = h.svc.GetPersonalizedContent(
-		c.Request.Context(),
-		req.CustomerID,
-		userIDStr,
-		req.Placements,
-		userAttrs,
-	)
+	results, err := h.svc.GetPersonalizedContent(c.Request.Context(), customerReq, req.Placements)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{
 			Code:  enums.ErrorCodeInternalError.String(),

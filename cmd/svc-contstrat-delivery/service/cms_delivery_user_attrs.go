@@ -69,29 +69,29 @@ func mergeUserAttrs(base, override map[string]json.RawMessage) map[string]json.R
 
 func (s *CMSDeliveryService) resolveUserAttrs(
 	ctx context.Context,
-	cisID string,
-	provided map[string]json.RawMessage,
+	customerType string,
+	customerId string,
 ) (map[string]json.RawMessage, error) {
-	normalizedProvided := normalizeUserAttrs(provided)
-	if s.cacheRepo == nil || cisID == "" {
+	normalizedProvided := map[string]json.RawMessage{}
+	if s.cacheRepo == nil || customerId == "" {
 		return normalizedProvided, nil
 	}
 
-	raw, err := s.cacheRepo.Get(ctx, cmsUserAttrsKey(cisID))
+	raw, err := s.cacheRepo.Get(ctx, cmsUserAttrsKey(customerId))
 	if err != nil {
 		return normalizedProvided, nil
 	}
 
 	var cached map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &cached); err != nil {
-		return nil, fmt.Errorf("decode user attrs from %q: %w", cmsUserAttrsKey(cisID), err)
+		return nil, fmt.Errorf("decode user attrs from %q: %w", cmsUserAttrsKey(customerId), err)
 	}
 
 	resolved := mergeUserAttrs(normalizeUserAttrs(cached), normalizedProvided)
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
 		Level:   "INFO",
-		Message: fmt.Sprintf("Loaded %d user attributes from %q", len(resolved), cmsUserAttrsKey(cisID)),
+		Message: fmt.Sprintf("Loaded %d user attributes from %q", len(resolved), cmsUserAttrsKey(customerId)),
 	})
 
 	return resolved, nil

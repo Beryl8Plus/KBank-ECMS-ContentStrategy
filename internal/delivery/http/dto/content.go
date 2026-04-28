@@ -26,6 +26,37 @@ type ContentRequestQueryParams struct {
 	PageSize       int               `form:"pageSize,default=10" binding:"omitempty,max=2000" json:"pageSize"`
 }
 
+type CustomerRequest struct {
+	Type              CustomerIdType `json:"customerIdType"`
+	CIS_ID            string         `json:"cisId,omitempty"`
+	IP_ID             string         `json:"ipId,omitempty"`
+	KPlusMobileNumber string         `json:"kPlusMobileNumber,omitempty"`
+	LineUUID          string         `json:"lineUuid,omitempty"`
+}
+
+func (c CustomerRequest) IsEmpty() bool {
+	return c.CIS_ID == "" && c.IP_ID == "" && c.KPlusMobileNumber == "" && c.LineUUID == ""
+}
+
+func (c CustomerRequest) TypeName() string {
+	return string(c.Type)
+}
+
+func (c CustomerRequest) Value() string {
+	switch c.Type {
+	case CustomerIdTypeCISID:
+		return c.CIS_ID
+	case CustomerIdTypeIPID:
+		return c.IP_ID
+	case CustomerIdTypeKPlusMobileNumber:
+		return c.KPlusMobileNumber
+	case CustomerIdTypeLineUUID:
+		return c.LineUUID
+	default:
+		return ""
+	}
+}
+
 // FlushRequest is the request body for POST /flush.
 type FlushRequest struct {
 	Placements []string `json:"placements"`

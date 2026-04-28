@@ -301,7 +301,7 @@ func TestGetPersonalizedContent_EvaluatorFallback(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestGetPersonalizedContent_EvaluatorFails(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -353,7 +353,7 @@ func TestGetPersonalizedContent_NoSchedulesInMemory(t *testing.T) {
 	}, mem)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"unknown-placement"}, nil,
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"unknown-placement"},
 	)
 
 	require.NoError(t, err)
@@ -405,7 +405,7 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis42", "user88", []string{"wealth-banner"}, nil,
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis42"}, []string{"wealth-banner"},
 	)
 
 	require.NoError(t, err)
@@ -462,7 +462,7 @@ func TestGetPersonalizedContent_CacheMissTriggersEvaluate(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -492,7 +492,7 @@ func TestGetPersonalizedContent_CacheMissPersistsGracefully(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), "cis1", "user1", []string{"hero"}, map[string]json.RawMessage{},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -699,7 +699,7 @@ func TestGetPersonalizedContent_StalenessFailFast(t *testing.T) {
 		},
 	}, nil, nil, mem, time.Hour, time.Minute)
 
-	_, err := svc.GetPersonalizedContent(context.Background(), "cis1", "user1", []string{placementName}, nil)
+	_, err := svc.GetPersonalizedContent(context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{placementName})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "data integrity error")
