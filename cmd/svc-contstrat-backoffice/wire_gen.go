@@ -7,13 +7,14 @@
 package main
 
 import (
-	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
+
+	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
