@@ -33,9 +33,12 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 // @Accept json
 // @Produce json
 // @Param requestType query string true "The type of content request" Enums(personalizedContent,staticContent,articleCategory)
+// @Param mode query string true "The mode of content request" Enums(knownContent,logicalBased,contentType,articleCategory)
+// @Param channel query string false "Channel" default(WAMP)
 // @Param placement query []string true "One or more placement names" collectionFormat(multi) default(wsaHomeBanner, wsaPortBanner, wsaTransaction)
 // @Param customerId query string false "Customer identifier value (required when customerIdType=CIS_ID)"
 // @Param customerIdType query string false "Customer identifier scheme" Enums(CIS_ID, IP_ID, KPLUS_MOBILE_NUMBER, LINE_UUID) default(CIS_ID)
+// @Param pageSize query int false "Number of results per page" minimum(1) default(10)
 // @Success 200 {object} dto.APIResponse{data=[]dto.ContentResult}
 // @Failure 400 {object} dto.APIResponse
 // @Failure 500 {object} dto.APIResponse

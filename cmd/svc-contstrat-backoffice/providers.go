@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
@@ -59,6 +60,7 @@ func ProvideExternalAttributeAPIClient() service.ExternalAttributeAPIClient {
 func ProvideRouter(
 	db *gorm.DB,
 	rateLimit entity.RateLimit,
+	redisCache *repository.RedisRepository,
 	ruleManagementHandler *handler.RuleManagementHandler,
 	scheduleHandler *handler.ScheduleHandler,
 	decisionRuleHandler *handler.DecisionRuleHandler,
@@ -68,7 +70,11 @@ func ProvideRouter(
 	channelHandler *handler.ChannelHandler,
 	placementHandler *handler.PlacementHandler,
 ) *gin.Engine {
-	r := deliveryhttp.InitNewRouter(db, rateLimit)
+	var redisClient *redis.Client
+	if redisCache != nil {
+		redisClient = redisCache.Client()
+	}
+	r := deliveryhttp.InitNewRouter(db, rateLimit, redisClient)
 	handler.RegisterRoutes(r, ruleManagementHandler, scheduleHandler, decisionRuleHandler, wizardHandler, occurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	return r
 }

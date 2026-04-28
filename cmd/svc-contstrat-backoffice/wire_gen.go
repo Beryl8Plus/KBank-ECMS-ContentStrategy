@@ -11,9 +11,8 @@ import (
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/pubsub"
-	repository2 "kbank-ecms/internal/repository"
+	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
 )
 
@@ -21,35 +20,35 @@ import (
 
 // InitializeApp wires all dependencies and returns the Application bundle
 // (Gin engine + background occurrence worker).
-func InitializeApp(db *gorm.DB, redisCache repository.RedisCacheRepository, rateLimit entity.RateLimit) (*Application, error) {
+func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimit entity.RateLimit) (*Application, error) {
 	ruleManagementService := service.NewRuleManagementService()
 	ruleManagementHandler := handler.NewRuleManagementHandler(ruleManagementService)
-	schedulePostgresRepository := repository2.NewSchedulePostgresRepository(db)
+	schedulePostgresRepository := repository.NewSchedulePostgresRepository(db)
 	scheduleService := service.NewScheduleService(schedulePostgresRepository)
 	scheduleHandler := handler.NewScheduleHandler(scheduleService)
-	decisionRulePostgresRepository := repository2.NewDecisionRulePostgresRepository(db)
+	decisionRulePostgresRepository := repository.NewDecisionRulePostgresRepository(db)
 	decisionRuleService := service.NewDecisionRuleService(decisionRulePostgresRepository)
 	decisionRuleHandler := handler.NewDecisionRuleHandler(decisionRuleService)
-	decisionRuleWizardPostgresRepository := repository2.NewDecisionRuleWizardPostgresRepository(db)
-	attributePostgresRepository := repository2.NewAttributePostgresRepository(db)
-	placementPostgresRepository := repository2.NewPlacementPostgresRepository(db)
+	decisionRuleWizardPostgresRepository := repository.NewDecisionRuleWizardPostgresRepository(db)
+	attributePostgresRepository := repository.NewAttributePostgresRepository(db)
+	placementPostgresRepository := repository.NewPlacementPostgresRepository(db)
 	publisher := pubsub.NewPublisher(redisCache)
 	attributeSyncPostgresRepository := repository2.NewAttributeSyncPostgresRepository(db)
 	attributeValidatorService := service.NewAttributeValidatorService(attributeSyncPostgresRepository)
 	decisionRuleWizardService := service.NewDecisionRuleWizardService(decisionRuleWizardPostgresRepository, attributePostgresRepository, placementPostgresRepository, publisher, attributeValidatorService)
 	activationService := service2.NewActivationService(publisher)
 	decisionRuleWizardHandler := handler.NewDecisionRuleWizardHandler(decisionRuleWizardService, activationService)
-	scheduleOccurrencePostgresRepository := repository2.NewScheduleOccurrencePostgresRepository(db)
+	scheduleOccurrencePostgresRepository := repository.NewScheduleOccurrencePostgresRepository(db)
 	scheduleOccurrenceService := service.NewScheduleOccurrenceService(scheduleOccurrencePostgresRepository)
 	scheduleOccurrenceHandler := handler.NewScheduleOccurrenceHandler(scheduleOccurrenceService)
 	attributeService := service.NewAttributeService(attributePostgresRepository)
 	attributeHandler := handler.NewAttributeHandler(attributeService)
-	channelPostgresRepository := repository2.NewChannelPostgresRepository(db)
+	channelPostgresRepository := repository.NewChannelPostgresRepository(db)
 	channelService := service.NewChannelService(channelPostgresRepository)
 	channelHandler := handler.NewChannelHandler(channelService)
 	placementService := service.NewPlacementService(placementPostgresRepository)
 	placementHandler := handler.NewPlacementHandler(placementService)
-	engine := ProvideRouter(db, rateLimit, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
+	engine := ProvideRouter(db, rateLimit, redisCache, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	materializationConfig := ProvideMatConfig()
 	scheduleMaterializationService := service.NewScheduleMaterializationService(materializationConfig, schedulePostgresRepository, scheduleOccurrencePostgresRepository)
 	occurrenceWorkerConfig := ProvideWorkerConfig()

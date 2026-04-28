@@ -11,7 +11,7 @@ ATLAS_EMPTY_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run run-svc-contstrat-delivery run-svc-contstrat-runtime dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
+.PHONY: init build run run-svc-contstrat-delivery dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
 
 ## Install protoc Go plugins
 proto-install:
@@ -67,10 +67,6 @@ run:
 ## Run svc-contstrat-delivery locally
 run-svc-contstrat-delivery:
 	go run ./cmd/svc-contstrat-delivery/
-
-## Run svc-contstrat-runtime locally
-run-svc-contstrat-runtime:
-	go run ./cmd/svc-contstrat-runtime/
 
 ## Generate Swagger documentation for all services
 swagger: swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery

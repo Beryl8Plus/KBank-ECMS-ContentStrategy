@@ -9,20 +9,19 @@ package main
 import (
 	"gorm.io/gorm"
 	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/domain/repository"
-	repository2 "kbank-ecms/internal/repository"
+	"kbank-ecms/internal/repository"
 )
 
 // Injectors from wire.go:
 
 // InitializeApp wires all dependencies to construct the delivery service and Gin engine.
-func InitializeApp(db *gorm.DB, redisRepo repository.RedisCacheRepository, rateLimit entity.RateLimit) (*App, func()) {
-	scheduleOccurrencePostgresRepository := repository2.NewScheduleOccurrencePostgresRepository(db)
-	decisionRulePostgresRepository := repository2.NewDecisionRulePostgresRepository(db)
+func InitializeApp(db *gorm.DB, redisRepo *repository.RedisRepository, rateLimit entity.RateLimit) (*App, func()) {
+	scheduleOccurrencePostgresRepository := repository.NewScheduleOccurrencePostgresRepository(db)
+	decisionRulePostgresRepository := repository.NewDecisionRulePostgresRepository(db)
 	localEvaluator := ProvideRuntimeEvaluator()
 	memoryCache, cleanup := ProvideCacheMemory()
 	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, scheduleOccurrencePostgresRepository, decisionRulePostgresRepository, localEvaluator, memoryCache)
-	engine := ProvideRouter(db, rateLimit, cmsDeliveryService)
+	engine := ProvideRouter(db, rateLimit, redisRepo, cmsDeliveryService)
 	app := ProvideApp(engine, cmsDeliveryService)
 	return app, func() {
 		cleanup()

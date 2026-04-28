@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	cmshandler "kbank-ecms/cmd/svc-contstrat-delivery/handler"
@@ -21,9 +22,14 @@ import (
 func ProvideRouter(
 	db *gorm.DB,
 	rateLimit entity.RateLimit,
+	redisCache *repository.RedisRepository,
 	svc deliveryservice.DeliveryService,
 ) *gin.Engine {
-	r := deliveryhttp.InitNewRouter(db, rateLimit)
+	var redisClient *redis.Client
+	if redisCache != nil {
+		redisClient = redisCache.Client()
+	}
+	r := deliveryhttp.InitNewRouter(db, rateLimit, redisClient)
 	cmshandler.RegisterRoutes(r, svc)
 	return r
 }

@@ -23,6 +23,11 @@ type RedisRepository struct {
 // Compile-time interface check.
 var _ domainrepo.RedisCacheRepository = (*RedisRepository)(nil)
 
+// Client returns the underlying Redis client for health checks and diagnostics.
+func (r *RedisRepository) Client() *redis.Client {
+	return r.client
+}
+
 // NewRedisRepository creates a Redis client and returns a RedisRepository.
 func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepository, error) {
 	SETENV := os.Getenv("SETENV")
