@@ -15,6 +15,7 @@
 - `type: "group"` rows ถูกบันทึกใน `rule_conditions` โดยมี `attribute_id = null`, `logical_operator = null`
 - `campaignCode` จำเป็นเฉพาะเมื่อ `type` เป็น `AUDIENCE` หรือ `SALES_TARGET` (IsCampaign)
 - **No Duplicate Attributes:** แต่ละ `attributeId` ใช้ได้เพียงครั้งเดียวในทุก leaf conditions — ห้ามซ้ำ (enforced เพื่อรองรับ Cascade Delete logic ใน Edit Mode)
+- **Active Attributes Only:** `attributeId` ต้องอ้างอิง Attribute ที่มี `is_active = true` — ถ้า Attribute ถูก deactivate โดย Batch Sync จะไม่สามารถใช้ใน Rule ใหม่ได้
 
 ---
 
@@ -145,6 +146,7 @@
 | `evaluateType` ไม่ถูกต้อง | 400 | `INVALID_FIELD` | `evaluateType must be one of SCORING, SEGMENT, ELIGIBLE` |
 | `campaignCode` หายไปเมื่อ IsCampaign | 400 | `INVALID_FIELD` | `campaignCode is required for AUDIENCE and SALES_TARGET types` |
 | `attributeId` ไม่มีใน DB | 404 | `NOT_FOUND` | `attribute {id} not found` |
+| `attributeId` ถูก deactivate | 422 | `VALIDATION_ERROR` | `attribute {id} ({fieldName}) is inactive and cannot be used in new rules` |
 | nesting depth > 3 | 422 | `VALIDATION_ERROR` | `conditions exceed maximum nesting depth of 3` |
 | conditions ต่อ group > 10 | 422 | `VALIDATION_ERROR` | `group exceeds maximum of 10 conditions` |
 | `type=condition` แต่ `attributeId` เป็น null | 422 | `VALIDATION_ERROR` | `attributeId is required for condition type` |

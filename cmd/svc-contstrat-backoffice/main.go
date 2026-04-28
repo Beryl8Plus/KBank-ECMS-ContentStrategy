@@ -107,6 +107,9 @@ func main() {
 	// It runs until ctx is cancelled (on SIGINT / SIGTERM below).
 	go app.OccurrenceWorker.Start(ctx)
 
+	// Start the attribute sync + integrity checker background worker.
+	go app.AttributeSyncWorker.Start(ctx)
+
 	port := "8081"
 	srv := &http.Server{
 		Addr:    ":" + port,

@@ -13,6 +13,7 @@
   - `conditionId` ที่อยู่ใน DB แต่ไม่อยู่ใน request → **DELETE** + **Cascade Delete** Step 2
 - **Cascade Delete Rule:** เมื่อ condition ถูกลบ ระบบจะลบ `Rule` (และ `RuleAttribute`) ทั้งหมดใน Step 2 ที่มี `rule_attributes.attribute_id` ตรงกับ `attribute_id` ของ condition ที่ถูกลบ
 - **Option A — No Duplicate Attributes:** แต่ละ `attributeId` ใช้ได้เพียงครั้งเดียวในทุก leaf conditions ของ Decision Rule เดียวกัน ห้ามซ้ำ
+- **Active Attributes Only:** `attributeId` ต้องอ้างอิง Attribute ที่มี `is_active = true` — Attribute ที่ถูก deactivate โดย Batch Sync ไม่สามารถถูกเพิ่มหรือแก้ไขใน Rule ได้
 - Max nesting depth: **3 ระดับ**
 - Max conditions ต่อ group: **10 items**
 - `type: "group"` ต้องมี `conditions` array ที่ไม่ว่าง
@@ -155,6 +156,7 @@
 | `connectorOperator` ของ item สุดท้ายไม่เป็น null | 422 | `last condition in array must have connectorOperator null` |
 | `attributeId` ซ้ำกันใน conditions | 422 | `attributeId {id} appears more than once in conditions — each attribute may only be used once` |
 | `attributeId` ไม่มีใน DB | 404 | `attribute {id} not found` |
+| `attributeId` ถูก deactivate | 422 | `attribute {id} ({fieldName}) is inactive and cannot be used in new rules` |
 
 ---
 

@@ -16,17 +16,18 @@ import (
 	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
 
-// Application holds the two top-level components returned by Wire.
-// Wire injectors may only return a single non-error value, so both the
-// HTTP engine and the background worker are bundled here.
+// Application holds the top-level components returned by Wire.
+// Wire injectors may only return a single non-error value, so the
+// HTTP engine and all background workers are bundled here.
 type Application struct {
-	Router           *gin.Engine
-	OccurrenceWorker *service.OccurrenceWorker
+	Router              *gin.Engine
+	OccurrenceWorker    *service.OccurrenceWorker
+	AttributeSyncWorker *service.AttributeSyncWorker
 }
 
 // NewApplication assembles the Application from its wired components.
-func NewApplication(r *gin.Engine, w *service.OccurrenceWorker) *Application {
-	return &Application{Router: r, OccurrenceWorker: w}
+func NewApplication(r *gin.Engine, w *service.OccurrenceWorker, sw *service.AttributeSyncWorker) *Application {
+	return &Application{Router: r, OccurrenceWorker: w, AttributeSyncWorker: sw}
 }
 
 // ProvideMatConfig returns the default MaterializationConfig (7d window, 30d retention).
@@ -37,6 +38,21 @@ func ProvideMatConfig() service.MaterializationConfig {
 // ProvideWorkerConfig returns the default OccurrenceWorkerConfig (1h materialize, cleanup at 00:00).
 func ProvideWorkerConfig() service.OccurrenceWorkerConfig {
 	return service.OccurrenceWorkerConfig{}
+}
+
+// ProvideAttributeSyncWorkerConfig returns the default AttributeSyncWorkerConfig.
+// Attribute sync runs daily at 03:00 local time; integrity check runs every 5 minutes.
+func ProvideAttributeSyncWorkerConfig() service.AttributeSyncWorkerConfig {
+	return service.AttributeSyncWorkerConfig{
+		SyncHour:   3,
+		SyncMinute: 0,
+	}
+}
+
+// ProvideExternalAttributeAPIClient returns the stub client until a real
+// CLEN HTTP client is implemented.
+func ProvideExternalAttributeAPIClient() service.ExternalAttributeAPIClient {
+	return service.NewStubExternalAttributeAPIClient()
 }
 
 // ProvideRouter initializes the Gin engine with middleware and registers all routes.
@@ -100,6 +116,20 @@ var ProviderSet = wire.NewSet(
 	service.NewScheduleMaterializationService,
 	ProvideWorkerConfig,
 	service.NewOccurrenceWorker,
+
+	// Attribute sync + integrity checker
+	repository.NewAttributeSyncPostgresRepository,
+	wire.Bind(new(domainrepo.AttributeSyncRepository), new(*repository.AttributeSyncPostgresRepository)),
+
+	repository.NewIntegrityPostgresRepository,
+	wire.Bind(new(domainrepo.IntegrityRepository), new(*repository.IntegrityPostgresRepository)),
+
+	ProvideExternalAttributeAPIClient,
+	service.NewAttributeValidatorService,
+	service.NewAttributeSyncService,
+	service.NewIntegrityCheckerService,
+	ProvideAttributeSyncWorkerConfig,
+	service.NewAttributeSyncWorker,
 
 	// Activation service for decision rule wizard
 	localservice.NewActivationService,

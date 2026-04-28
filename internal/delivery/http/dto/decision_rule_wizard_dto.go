@@ -220,10 +220,11 @@ type DecisionRulePlacementResponse struct {
 	ChannelName   string    `json:"channelName"`
 }
 
-// AttributeDetailForList is a minimal attribute summary embedded in the list response.
-type AttributeDetailForList struct {
-	AttributeID uuid.UUID `json:"attributeId"`
-	IsActive    bool      `json:"isActive"`
+// UserRefResponse is a minimal user summary for audit fields.
+type UserRefResponse struct {
+	UserID *uuid.UUID `json:"userId"`
+	NameTH string     `json:"nameTh"`
+	NameEN string     `json:"nameEn"`
 }
 
 // DecisionRuleListItemResponse is one row in GET /decision-rules.
@@ -237,7 +238,9 @@ type DecisionRuleListItemResponse struct {
 	Status              enums.DecisionRuleStatus        `json:"status"`
 	SubStatus           enums.DecisionRuleSubStatus     `json:"subStatus"`
 	Placements          []DecisionRulePlacementResponse `json:"placements"`
-	Attributes          []AttributeDetailForList        `json:"attributes"`
+	CreatedBy           *UserRefResponse                `json:"createdBy"`
+	UpdatedBy           *UserRefResponse                `json:"updatedBy"`
+	InactiveBy          *UserRefResponse                `json:"inactiveBy"`
 	CreatedAt           time.Time                       `json:"createdAt"`
 	UpdatedAt           time.Time                       `json:"updatedAt"`
 }

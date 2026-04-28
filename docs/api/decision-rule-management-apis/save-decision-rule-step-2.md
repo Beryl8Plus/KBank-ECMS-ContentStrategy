@@ -14,6 +14,7 @@
 - `orderNo` ต้องไม่ซ้ำกันภายใน request เดียวกัน
 - Backend validate ว่า `conditionId` ทุกตัวที่ส่งมา belong to decision rule นี้จริง
 - Partial values อนุญาต — `value: null` หมายถึงยังไม่กรอก ไม่ใช่ error
+- **Value Validation:** สำหรับ Attribute ที่มี `value` เป็น JSON options array — ค่าที่กรอก (`value` ที่ไม่ใช่ null) จะต้องอยู่ใน allowed set นั้น ถ้าไม่อยู่จะถูก reject ทันที (ป้องกันการบันทึก value ที่ถูกถอดออกจาก schema)
 - Request นี้ไม่เปลี่ยน `decision_rules.status`
 - ทุก operation ทำภายใน **single database transaction**
 
@@ -97,6 +98,7 @@
 | `ruleId` non-null แต่ไม่พบใน DB | 404 | `rule {id} not found` |
 | `orderNo` ซ้ำใน request | 422 | `duplicate orderNo {n} in ruleSets` |
 | `ruleSets` ว่าง | 400 | `ruleSets must contain at least one item` |
+| `value` ไม่อยู่ใน allowed options ของ Attribute | 422 | `attribute value no longer in allowed options: rule_attribute {id}: value "{val}" not in allowed set [...]` |
 
 ---
 

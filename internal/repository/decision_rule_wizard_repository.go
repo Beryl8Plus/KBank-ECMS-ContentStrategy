@@ -199,11 +199,14 @@ func (r *DecisionRuleWizardPostgresRepository) SaveStep3(ctx context.Context, de
 	})
 }
 
-// ActivateDecisionRule sets the DecisionRule status to ACTIVE.
+// ActivateDecisionRule sets STATUS = ACTIVE and resets SUB_STATUS = "N/A".
 func (r *DecisionRuleWizardPostgresRepository) ActivateDecisionRule(ctx context.Context, decisionRuleID uuid.UUID) error {
 	err := r.db.WithContext(ctx).Model(&entity.DecisionRule{}).
 		Where(`"ID" = ?`, decisionRuleID).
-		Update(`"STATUS"`, enums.DecisionRuleStatusActive).Error
+		Updates(map[string]any{
+			"STATUS":     enums.DecisionRuleStatusActive,
+			"SUB_STATUS": enums.DecisionRuleSubStatusNA,
+		}).Error
 	if err != nil {
 		return fmt.Errorf("activating decision rule: %w", err)
 	}
@@ -238,7 +241,7 @@ func (r *DecisionRuleWizardPostgresRepository) ListDecisionRules(ctx context.Con
 	if f.Limit > 0 {
 		q = q.Limit(f.Limit).Offset((f.Page - 1) * f.Limit)
 	}
-	err := q.Find(&drs).Error
+	err := q.Preload("CreatedByUser").Preload("UpdatedByUser").Preload("InactiveByUser").Find(&drs).Error
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing decision rules: %w", err)
 	}

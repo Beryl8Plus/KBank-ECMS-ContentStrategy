@@ -38,6 +38,7 @@ type DecisionRuleWizardService struct {
 	repo          domainrepo.DecisionRuleWizardRepository
 	attrRepo      domainrepo.AttributeRepository
 	placementRepo domainrepo.PlacementRepository
+	validator     *AttributeValidatorService
 }
 
 // NewDecisionRuleWizardService creates a new DecisionRuleWizardService.
@@ -48,8 +49,9 @@ func NewDecisionRuleWizardService(
 	attrRepo domainrepo.AttributeRepository,
 	placementRepo domainrepo.PlacementRepository,
 	publisher *pubsub.Publisher,
+	validator *AttributeValidatorService,
 ) *DecisionRuleWizardService {
-	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo}
+	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo, validator: validator}
 }
 
 // ── Step 1 ───────────────────────────────────────────────────────────────────
@@ -409,6 +411,21 @@ func (s *DecisionRuleWizardService) SaveStep2(ctx context.Context, id uuid.UUID,
 		}
 	}
 
+	// Validate that every chosen attribute value is still in its allowed options set.
+	valInputs := make([]RuleAttributeInput, 0, len(allAttrs))
+	for _, a := range allAttrs {
+		valInputs = append(valInputs, RuleAttributeInput{
+			RuleAttributeID: a.ID,
+			AttributeID:     a.AttributeID,
+			ValueJSON:       a.Value,
+		})
+	}
+	if valueErrs, err := s.validator.ValidateRuleAttributeValues(ctx, valInputs); err != nil {
+		return nil, fmt.Errorf("validating rule attribute values: %w", err)
+	} else if len(valueErrs) > 0 {
+		return nil, fmt.Errorf("%w: attribute value no longer in allowed options: %s", ErrWizardValidation, valueErrs[0].Error())
+	}
+
 	if err := s.repo.SaveStep2(ctx, rules, allAttrs, toDeleteRuleIDs); err != nil {
 		return nil, fmt.Errorf("saving step 2: %w", err)
 	}
@@ -550,6 +567,51 @@ func (s *DecisionRuleWizardService) ActivateStep4(ctx context.Context, id uuid.U
 		return nil, fmt.Errorf("%w: decision rule has no schedules, complete step 3 first", ErrWizardValidation)
 	}
 
+	// Check 1: all referenced attributes must still be active.
+	flatConds, err := s.repo.FindTemplateConditions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	var attrIDs []uuid.UUID
+	for _, c := range flatConds {
+		if c.AttributeID != uuid.Nil {
+			attrIDs = append(attrIDs, c.AttributeID)
+		}
+	}
+	if inactiveErrs, err := s.validator.ValidateAttributesActive(ctx, attrIDs); err != nil {
+		return nil, fmt.Errorf("validating attributes: %w", err)
+	} else if len(inactiveErrs) > 0 {
+		return nil, fmt.Errorf("%w: attribute %s (%s) is inactive — update the rule before activating", ErrWizardValidation, inactiveErrs[0].AttributeID, inactiveErrs[0].FieldName)
+	}
+
+	// Check 2: all rule attribute values must still be in their allowed options.
+	rules, err := s.repo.FindRulesByDecisionRuleID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	var ruleIDs []uuid.UUID
+	for _, r := range rules {
+		ruleIDs = append(ruleIDs, r.ID)
+	}
+	ruleAttrs, err := s.repo.FindRuleAttributesByRuleIDs(ctx, ruleIDs)
+	if err != nil {
+		return nil, err
+	}
+	valInputs := make([]RuleAttributeInput, 0, len(ruleAttrs))
+	for _, ra := range ruleAttrs {
+		valInputs = append(valInputs, RuleAttributeInput{
+			RuleAttributeID: ra.ID,
+			AttributeID:     ra.AttributeID,
+			ValueJSON:       ra.Value,
+		})
+	}
+	if valueErrs, err := s.validator.ValidateRuleAttributeValues(ctx, valInputs); err != nil {
+		return nil, fmt.Errorf("validating rule values: %w", err)
+	} else if len(valueErrs) > 0 {
+		return nil, fmt.Errorf("%w: rule value %q is no longer in the allowed options for attribute %s", ErrWizardValidation, valueErrs[0].ChosenValue, valueErrs[0].AttributeID)
+	}
+
+	// ActivateDecisionRule also resets SUB_STATUS → "N/A".
 	if err := s.repo.ActivateDecisionRule(ctx, dr.ID); err != nil {
 		return nil, err
 	}
@@ -627,41 +689,11 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 		placementsByDR[sc.DecisionRuleID] = append(placementsByDR[sc.DecisionRuleID], entry)
 	}
 
-	// Fetch all attributes for the listed DRs in one query — no N+1.
-	condAttrs, err := s.repo.FindConditionAttributesByDecisionRuleIDs(ctx, ids)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Group attribute details by decision rule ID.
-	// dedup key = drID+attrID guards against any future duplicate conditions.
-	type dedupKey struct{ drID, attrID uuid.UUID }
-	seen := make(map[dedupKey]bool, len(condAttrs))
-	attrsByDR := make(map[uuid.UUID][]dto.AttributeDetailForList)
-	for _, c := range condAttrs {
-		if c.Attribute == nil {
-			continue
-		}
-		k := dedupKey{c.DecisionRuleID, c.AttributeID}
-		if seen[k] {
-			continue
-		}
-		seen[k] = true
-		attrsByDR[c.DecisionRuleID] = append(attrsByDR[c.DecisionRuleID], dto.AttributeDetailForList{
-			AttributeID: c.AttributeID,
-			IsActive:    c.Attribute.IsActive,
-		})
-	}
-
 	items := make([]*dto.DecisionRuleListItemResponse, len(drs))
 	for i, dr := range drs {
 		placements := placementsByDR[dr.ID]
 		if placements == nil {
 			placements = []dto.DecisionRulePlacementResponse{}
-		}
-		attributes := attrsByDR[dr.ID]
-		if attributes == nil {
-			attributes = []dto.AttributeDetailForList{}
 		}
 		items[i] = &dto.DecisionRuleListItemResponse{
 			ID:                  dr.ID,
@@ -673,12 +705,26 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 			Status:              dr.Status,
 			SubStatus:           dr.SubStatus,
 			Placements:          placements,
-			Attributes:          attributes,
+			CreatedBy:           toUserRef(dr.CreatedByUser, dr.BaseModel.CreatedBy),
+			UpdatedBy:           toUserRef(dr.UpdatedByUser, dr.BaseModel.UpdatedBy),
+			InactiveBy:          toUserRef(dr.InactiveByUser, dr.InactiveBy),
 			CreatedAt:           dr.CreatedAt,
 			UpdatedAt:           dr.UpdatedAt,
 		}
 	}
 	return items, total, nil
+}
+
+func toUserRef(u *entity.User, id *uuid.UUID) *dto.UserRefResponse {
+	if id == nil {
+		return nil
+	}
+	ref := &dto.UserRefResponse{UserID: id}
+	if u != nil {
+		ref.NameTH = u.NameTH
+		ref.NameEN = u.NameEN
+	}
+	return ref
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -899,7 +945,8 @@ func validateConditionTree(items []dto.ConditionItemRequest, depth int) error {
 	return nil
 }
 
-// validateAttributeIDs collects all attributeIds from the tree and checks they exist.
+// validateAttributeIDs collects all attributeIds from the tree, checks they exist,
+// and rejects any attribute that has been deactivated.
 func (s *DecisionRuleWizardService) validateAttributeIDs(ctx context.Context, items []dto.ConditionItemRequest) error {
 	seen := make(map[uuid.UUID]bool)
 	var collect func([]dto.ConditionItemRequest)
@@ -920,6 +967,9 @@ func (s *DecisionRuleWizardService) validateAttributeIDs(ctx context.Context, it
 		}
 		if attr == nil {
 			return fmt.Errorf("%w: attribute %s not found", ErrWizardNotFound, id)
+		}
+		if !attr.IsActive {
+			return fmt.Errorf("%w: attribute %s (%s) is inactive and cannot be used in new rules", ErrWizardValidation, id, attr.FieldName)
 		}
 	}
 	return nil
