@@ -32,19 +32,19 @@ func NewScheduleOccurrenceHandler(svc *service.ScheduleOccurrenceService) *Sched
 
 // ListOccurrencesBySchedule handles GET /schedules/:id/occurrences.
 //
-// @Summary List occurrences for a schedule
-// @Description Returns a paginated list of pre-computed occurrences for a given schedule, ordered by occurrence start time ascending.
-// @Tags ScheduleOccurrences
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Schedule ID (UUID)"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.ScheduleOccurrenceResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules/{id}/occurrences [get]
+//	@Summary		List occurrences for a schedule
+//	@Description	Returns a paginated list of pre-computed occurrences for a given schedule, ordered by occurrence start time ascending.
+//	@Tags			ScheduleOccurrences
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Schedule ID (UUID)"
+//	@Param			page		query		int		false	"Page number (default: 1)"
+//	@Param			limit		query		int		false	"Page size (default: 20, max: 100)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.ScheduleOccurrenceResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules/{id}/occurrences [get]
 func (h *ScheduleOccurrenceHandler) ListOccurrencesBySchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -83,17 +83,17 @@ func (h *ScheduleOccurrenceHandler) ListOccurrencesBySchedule(c *gin.Context) {
 
 // ListActiveOccurrences handles GET /schedule-occurrences/active.
 //
-// @Summary List active occurrences at a given time
-// @Description Returns all occurrences that are ACTIVE and whose window contains the requested time (defaults to now).
-// @Tags ScheduleOccurrences
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param at query string false "RFC3339 timestamp to query active occurrences at (default: current server time)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.ScheduleOccurrenceResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedule-occurrences/active [get]
+//	@Summary		List active occurrences at a given time
+//	@Description	Returns all occurrences that are ACTIVE and whose window contains the requested time (defaults to now).
+//	@Tags			ScheduleOccurrences
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			at			query		string	false	"RFC3339 timestamp to query active occurrences at (default: current server time)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.ScheduleOccurrenceResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedule-occurrences/active [get]
 func (h *ScheduleOccurrenceHandler) ListActiveOccurrences(c *gin.Context) {
 	at := time.Now()
 	if raw := c.Query("at"); raw != "" {

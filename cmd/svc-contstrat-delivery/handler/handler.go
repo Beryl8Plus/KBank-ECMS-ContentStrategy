@@ -27,23 +27,23 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 
 // getContent handles GET /api/content-strategy/v1/personalized-content?requestType=personalizedContent&placement=a&placement=b
 //
-// @Summary Get content by placements
-// @Description Returns evaluated content results for one or more placement names.
-// @Tags svc-contstrat-delivery
-// @Accept json
-// @Produce json
-// @Param requestType query string true "The type of content request" Enums(personalizedContent,staticContent,articleCategory)
-// @Param mode query string true "The mode of content request" Enums(knownContent,logicalBased,contentType,articleCategory)
-// @Param channel query string false "Channel" default(WAMP)
-// @Param placement query []string true "One or more placement names" collectionFormat(multi) default(wsaHomeBanner, wsaPortBanner, wsaTransaction)
-// @Param customerId query string false "Customer identifier value (required when customerIdType=CIS_ID)"
-// @Param customerIdType query string false "Customer identifier scheme" Enums(CIS_ID, IP_ID, KPLUS_MOBILE_NUMBER, LINE_UUID) default(CIS_ID)
-// @Param pageSize query int false "Number of results per page" minimum(1) default(10)
-// @Success 200 {object} dto.APIResponse{data=[]dto.ContentResult}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /api/content-strategy/v1/personalized-content [get]
+//	@Summary		Get content by placements
+//	@Description	Returns evaluated content results for one or more placement names.
+//	@Tags			svc-contstrat-delivery
+//	@Accept			json
+//	@Produce		json
+//	@Param			requestType		query		string		true	"The type of content request"	Enums(personalizedContent,staticContent,articleCategory)
+//	@Param			mode			query		string		true	"The mode of content request"	Enums(knownContent,logicalBased,contentType,articleCategory)
+//	@Param			channel			query		string		false	"Channel"						default(WAMP)
+//	@Param			placement		query		[]string	true	"One or more placement names"	collectionFormat(multi)	default(wsaHomeBanner, wsaPortBanner, wsaTransaction)
+//	@Param			customerId		query		string		false	"Customer identifier value (required when customerIdType=CIS_ID)"
+//	@Param			customerIdType	query		string		false	"Customer identifier scheme"	Enums(CIS_ID, IP_ID, KPLUS_MOBILE_NUMBER, LINE_UUID)	default(CIS_ID)
+//	@Param			pageSize		query		int			false	"Number of results per page"	minimum(1)												default(10)
+//	@Success		200				{object}	dto.APIResponse{data=[]dto.ContentResult}
+//	@Failure		400				{object}	dto.APIResponse
+//	@Failure		500				{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/api/content-strategy/v1/personalized-content [get]
 func (h *Handler) getContent(c *gin.Context) {
 	// Validate requestType query parameter
 	var req dto.ContentRequestQueryParams
@@ -93,15 +93,15 @@ func (h *Handler) getContent(c *gin.Context) {
 
 // getCacheStatus handles GET /api/content-strategy/v1/purge_requests
 //
-// @Summary Get cache status
-// @Description Returns in-memory cache keys, heap pressure flag, and heap usage ratio.
-// @Tags svc-contstrat-delivery
-// @Accept json
-// @Produce json
-// @Success 200 {object} dto.APIResponse{data=dto.CacheStatusResponse}
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /api/content-strategy/v1/purge_requests [get]
+//	@Summary		Get cache status
+//	@Description	Returns in-memory cache keys, heap pressure flag, and heap usage ratio.
+//	@Tags			svc-contstrat-delivery
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	dto.APIResponse{data=dto.CacheStatusResponse}
+//	@Failure		500	{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/api/content-strategy/v1/purge_requests [get]
 func (h *Handler) getStatus(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -137,17 +137,17 @@ func (h *Handler) getStatus(c *gin.Context) {
 
 // getCacheValue handles GET /api/content-strategy/v1/purge_requests/value?key={key}
 //
-// @Summary Get cache value
-// @Description Returns the cached value for a given key. Used for monitoring and debugging.
-// @Tags svc-contstrat-delivery
-// @Accept json
-// @Produce json
-// @Param key query string true "The cache key to retrieve"
-// @Success 200 {object} dto.APIResponse{data=json.RawMessage}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /api/content-strategy/v1/purge_requests/value [get]
+//	@Summary		Get cache value
+//	@Description	Returns the cached value for a given key. Used for monitoring and debugging.
+//	@Tags			svc-contstrat-delivery
+//	@Accept			json
+//	@Produce		json
+//	@Param			key	query		string	true	"The cache key to retrieve"
+//	@Success		200	{object}	dto.APIResponse{data=json.RawMessage}
+//	@Failure		400	{object}	dto.APIResponse
+//	@Failure		500	{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/api/content-strategy/v1/purge_requests/value [get]
 func (h *Handler) getCacheValue(c *gin.Context) {
 	var req struct {
 		Key string `form:"key" binding:"required"`
@@ -171,16 +171,16 @@ func (h *Handler) getCacheValue(c *gin.Context) {
 
 // flushCache handles POST /api/content-strategy/v1/purge_requests
 //
-// @Summary Flush content cache
-// @Description Flushes the cache for specified placements. An empty or missing body flushes all placements.
-// @Tags svc-contstrat-delivery
-// @Accept json
-// @Produce json
-// @Param body body dto.FlushRequest false "Placements to flush; omit to flush all"
-// @Success 200 {object} dto.APIResponse{data=dto.FlushResponse}
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /api/content-strategy/v1/purge_requests [post]
+//	@Summary		Flush content cache
+//	@Description	Flushes the cache for specified placements. An empty or missing body flushes all placements.
+//	@Tags			svc-contstrat-delivery
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		dto.FlushRequest	false	"Placements to flush; omit to flush all"
+//	@Success		200		{object}	dto.APIResponse{data=dto.FlushResponse}
+//	@Failure		500		{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/api/content-strategy/v1/purge_requests [post]
 func (h *Handler) flushCache(c *gin.Context) {
 	var req dto.FlushRequest
 	// Ignore bind errors — missing/empty body means flush all (req.Placements stays nil).

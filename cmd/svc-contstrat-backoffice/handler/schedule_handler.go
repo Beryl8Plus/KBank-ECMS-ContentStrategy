@@ -37,19 +37,19 @@ func NewScheduleHandler(svc *service.ScheduleService) *ScheduleHandler {
 
 // CreateSchedule handles POST /schedules.
 //
-// @Summary Create a schedule
-// @Description Create a new schedule linking a decision rule to a placement with recurrence configuration.
-// @Tags Schedules
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param body body dto.CreateScheduleRequest true "Create schedule request body"
-// @Success 201 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules [post]
+//	@Summary		Create a schedule
+//	@Description	Create a new schedule linking a decision rule to a placement with recurrence configuration.
+//	@Tags			Schedules
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			body		body		dto.CreateScheduleRequest	true	"Create schedule request body"
+//	@Success		201			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules [post]
 func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 	var req dto.CreateScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -96,18 +96,18 @@ func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 
 // ListSchedules handles GET /schedules.
 //
-// @Summary List all schedules
-// @Description Returns schedules with cursor-style offset pagination. Defaults: page=1, limit=20 (max 100).
-// @Tags Schedules
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules [get]
+//	@Summary		List all schedules
+//	@Description	Returns schedules with cursor-style offset pagination. Defaults: page=1, limit=20 (max 100).
+//	@Tags			Schedules
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			page		query		int		false	"Page number (default: 1)"
+//	@Param			limit		query		int		false	"Page size (default: 20, max: 100)"
+//	@Success		200			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules [get]
 func (h *ScheduleHandler) ListSchedules(c *gin.Context) {
 	page, limit, ok := parsePaginationParams(c)
 	if !ok {
@@ -174,18 +174,18 @@ func parsePaginationParams(c *gin.Context) (page, limit int, ok bool) {
 
 // GetSchedule handles GET /schedules/:id.
 //
-// @Summary Get a schedule by ID
-// @Description Returns a single schedule by its UUID.
-// @Tags Schedules
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Schedule ID (UUID)"
-// @Success 200 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules/{id} [get]
+//	@Summary		Get a schedule by ID
+//	@Description	Returns a single schedule by its UUID.
+//	@Tags			Schedules
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Schedule ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules/{id} [get]
 func (h *ScheduleHandler) GetSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -208,21 +208,21 @@ func (h *ScheduleHandler) GetSchedule(c *gin.Context) {
 
 // UpdateSchedule handles PUT /schedules/:id.
 //
-// @Summary Update a schedule
-// @Description Updates an existing schedule. DecisionRuleID and PlacementID are immutable.
-// @Tags Schedules
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Schedule ID (UUID)"
-// @Param body body dto.UpdateScheduleRequest true "Update schedule request body"
-// @Success 200 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules/{id} [put]
+//	@Summary		Update a schedule
+//	@Description	Updates an existing schedule. DecisionRuleID and PlacementID are immutable.
+//	@Tags			Schedules
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			id			path		string						true	"Schedule ID (UUID)"
+//	@Param			body		body		dto.UpdateScheduleRequest	true	"Update schedule request body"
+//	@Success		200			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules/{id} [put]
 func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -283,17 +283,17 @@ func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 
 // DeleteSchedule handles DELETE /schedules/:id.
 //
-// @Summary Delete a schedule
-// @Description Soft-deletes a schedule by its UUID.
-// @Tags Schedules
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Schedule ID (UUID)"
-// @Success 204 "No Content"
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /schedules/{id} [delete]
+//	@Summary		Delete a schedule
+//	@Description	Soft-deletes a schedule by its UUID.
+//	@Tags			Schedules
+//	@Produce		json
+//	@Param			X-User-Id	header	string	true	"User ID (UUID)"
+//	@Param			id			path	string	true	"Schedule ID (UUID)"
+//	@Success		204			"No Content"
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/schedules/{id} [delete]
 func (h *ScheduleHandler) DeleteSchedule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

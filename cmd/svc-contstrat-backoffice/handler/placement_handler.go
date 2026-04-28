@@ -34,18 +34,18 @@ func NewPlacementHandler(svc *service.PlacementService) *PlacementHandler {
 
 // CreatePlacement handles POST /placements.
 //
-// @Summary Create a placement
-// @Description Create a new content placement slot within a channel.
-// @Tags Placements
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param body body dto.CreatePlacementRequest true "Create placement request body"
-// @Success 201 {object} dto.APIResponse{data=dto.PlacementResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /placements [post]
+//	@Summary		Create a placement
+//	@Description	Create a new content placement slot within a channel.
+//	@Tags			Placements
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			body		body		dto.CreatePlacementRequest	true	"Create placement request body"
+//	@Success		201			{object}	dto.APIResponse{data=dto.PlacementResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/placements [post]
 func (h *PlacementHandler) CreatePlacement(c *gin.Context) {
 	var req dto.CreatePlacementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -75,18 +75,18 @@ func (h *PlacementHandler) CreatePlacement(c *gin.Context) {
 
 // ListPlacements handles GET /placements.
 //
-// @Summary List all placements
-// @Description Returns placements with offset pagination. Defaults: page=1, limit=20 (max 100). Channel is embedded in each item.
-// @Tags Placements
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.PlacementResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /placements [get]
+//	@Summary		List all placements
+//	@Description	Returns placements with offset pagination. Defaults: page=1, limit=20 (max 100). Channel is embedded in each item.
+//	@Tags			Placements
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			page		query		int		false	"Page number (default: 1)"
+//	@Param			limit		query		int		false	"Page size (default: 20, max: 100)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.PlacementResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/placements [get]
 func (h *PlacementHandler) ListPlacements(c *gin.Context) {
 	page, limit, ok := parsePaginationParams(c)
 	if !ok {
@@ -119,18 +119,18 @@ func (h *PlacementHandler) ListPlacements(c *gin.Context) {
 
 // GetPlacement handles GET /placements/:id.
 //
-// @Summary Get a placement by ID
-// @Description Returns a single placement by its UUID with Channel embedded.
-// @Tags Placements
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Placement ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.PlacementResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /placements/{id} [get]
+//	@Summary		Get a placement by ID
+//	@Description	Returns a single placement by its UUID with Channel embedded.
+//	@Tags			Placements
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Placement ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse{data=dto.PlacementResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/placements/{id} [get]
 func (h *PlacementHandler) GetPlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -153,20 +153,20 @@ func (h *PlacementHandler) GetPlacement(c *gin.Context) {
 
 // UpdatePlacement handles PUT /placements/:id.
 //
-// @Summary Update a placement
-// @Description Updates an existing placement. ChannelID can be reassigned.
-// @Tags Placements
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Placement ID (UUID)"
-// @Param body body dto.UpdatePlacementRequest true "Update placement request body"
-// @Success 200 {object} dto.APIResponse{data=dto.PlacementResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /placements/{id} [put]
+//	@Summary		Update a placement
+//	@Description	Updates an existing placement. ChannelID can be reassigned.
+//	@Tags			Placements
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			id			path		string						true	"Placement ID (UUID)"
+//	@Param			body		body		dto.UpdatePlacementRequest	true	"Update placement request body"
+//	@Success		200			{object}	dto.APIResponse{data=dto.PlacementResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/placements/{id} [put]
 func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -211,17 +211,17 @@ func (h *PlacementHandler) UpdatePlacement(c *gin.Context) {
 
 // DeletePlacement handles DELETE /placements/:id.
 //
-// @Summary Delete a placement
-// @Description Soft-deletes a placement by its UUID.
-// @Tags Placements
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Placement ID (UUID)"
-// @Success 204 "No Content"
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /placements/{id} [delete]
+//	@Summary		Delete a placement
+//	@Description	Soft-deletes a placement by its UUID.
+//	@Tags			Placements
+//	@Produce		json
+//	@Param			X-User-Id	header	string	true	"User ID (UUID)"
+//	@Param			id			path	string	true	"Placement ID (UUID)"
+//	@Success		204			"No Content"
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/placements/{id} [delete]
 func (h *PlacementHandler) DeletePlacement(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

@@ -1,11 +1,11 @@
-// @title KBank ECMS CMS Delivery API
-// @version 1.0
-// @description Backend API for KBank ECMS CMS Delivery Runtime Service.
-// @host localhost:8082
-// @BasePath /
-// @securityDefinitions.apikey XUserIdAuth
-// @in header
-// @name X-User-Id
+// @title						KBank ECMS CMS Delivery API
+// @version					1.0
+// @description				Backend API for KBank ECMS CMS Delivery Runtime Service.
+// @host						localhost:8082
+// @BasePath					/
+// @securityDefinitions.apikey	XUserIdAuth
+// @in							header
+// @name						X-User-Id
 package main
 
 import (

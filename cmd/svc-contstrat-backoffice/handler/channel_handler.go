@@ -34,18 +34,18 @@ func NewChannelHandler(svc *service.ChannelService) *ChannelHandler {
 
 // CreateChannel handles POST /channels.
 //
-// @Summary Create a channel
-// @Description Create a new delivery channel.
-// @Tags Channels
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param body body dto.CreateChannelRequest true "Create channel request body"
-// @Success 201 {object} dto.APIResponse{data=dto.ChannelResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /channels [post]
+//	@Summary		Create a channel
+//	@Description	Create a new delivery channel.
+//	@Tags			Channels
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			body		body		dto.CreateChannelRequest	true	"Create channel request body"
+//	@Success		201			{object}	dto.APIResponse{data=dto.ChannelResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/channels [post]
 func (h *ChannelHandler) CreateChannel(c *gin.Context) {
 	var req dto.CreateChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -67,18 +67,18 @@ func (h *ChannelHandler) CreateChannel(c *gin.Context) {
 
 // ListChannels handles GET /channels.
 //
-// @Summary List all channels
-// @Description Returns channels with offset pagination. Defaults: page=1, limit=20 (max 100).
-// @Tags Channels
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.ChannelResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /channels [get]
+//	@Summary		List all channels
+//	@Description	Returns channels with offset pagination. Defaults: page=1, limit=20 (max 100).
+//	@Tags			Channels
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			page		query		int		false	"Page number (default: 1)"
+//	@Param			limit		query		int		false	"Page size (default: 20, max: 100)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.ChannelResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/channels [get]
 func (h *ChannelHandler) ListChannels(c *gin.Context) {
 	page, limit, ok := parsePaginationParams(c)
 	if !ok {
@@ -111,18 +111,18 @@ func (h *ChannelHandler) ListChannels(c *gin.Context) {
 
 // GetChannel handles GET /channels/:id.
 //
-// @Summary Get a channel by ID
-// @Description Returns a single channel by its UUID.
-// @Tags Channels
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Channel ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.ChannelResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /channels/{id} [get]
+//	@Summary		Get a channel by ID
+//	@Description	Returns a single channel by its UUID.
+//	@Tags			Channels
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Channel ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse{data=dto.ChannelResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/channels/{id} [get]
 func (h *ChannelHandler) GetChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -145,20 +145,20 @@ func (h *ChannelHandler) GetChannel(c *gin.Context) {
 
 // UpdateChannel handles PUT /channels/:id.
 //
-// @Summary Update a channel
-// @Description Updates an existing channel by its UUID.
-// @Tags Channels
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Channel ID (UUID)"
-// @Param body body dto.UpdateChannelRequest true "Update channel request body"
-// @Success 200 {object} dto.APIResponse{data=dto.ChannelResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /channels/{id} [put]
+//	@Summary		Update a channel
+//	@Description	Updates an existing channel by its UUID.
+//	@Tags			Channels
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			id			path		string						true	"Channel ID (UUID)"
+//	@Param			body		body		dto.UpdateChannelRequest	true	"Update channel request body"
+//	@Success		200			{object}	dto.APIResponse{data=dto.ChannelResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/channels/{id} [put]
 func (h *ChannelHandler) UpdateChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -194,17 +194,17 @@ func (h *ChannelHandler) UpdateChannel(c *gin.Context) {
 
 // DeleteChannel handles DELETE /channels/:id.
 //
-// @Summary Delete a channel
-// @Description Soft-deletes a channel by its UUID.
-// @Tags Channels
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Channel ID (UUID)"
-// @Success 204 "No Content"
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /channels/{id} [delete]
+//	@Summary		Delete a channel
+//	@Description	Soft-deletes a channel by its UUID.
+//	@Tags			Channels
+//	@Produce		json
+//	@Param			X-User-Id	header	string	true	"User ID (UUID)"
+//	@Param			id			path	string	true	"Channel ID (UUID)"
+//	@Success		204			"No Content"
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/channels/{id} [delete]
 func (h *ChannelHandler) DeleteChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

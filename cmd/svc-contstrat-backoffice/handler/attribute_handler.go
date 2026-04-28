@@ -34,18 +34,18 @@ func NewAttributeHandler(svc *service.AttributeService) *AttributeHandler {
 
 // CreateAttribute handles POST /attributes.
 //
-// @Summary Create an attribute
-// @Description Create a new attribute for use in rule conditions.
-// @Tags Attributes
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param body body dto.CreateAttributeRequest true "Create attribute request body"
-// @Success 201 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /attributes [post]
+//	@Summary		Create an attribute
+//	@Description	Create a new attribute for use in rule conditions.
+//	@Tags			Attributes
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			body		body		dto.CreateAttributeRequest	true	"Create attribute request body"
+//	@Success		201			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/attributes [post]
 func (h *AttributeHandler) CreateAttribute(c *gin.Context) {
 	var req dto.CreateAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,18 +79,18 @@ func (h *AttributeHandler) CreateAttribute(c *gin.Context) {
 
 // ListAttributes handles GET /attributes.
 //
-// @Summary List all attributes
-// @Description Returns attributes with cursor-style offset pagination. Defaults: page=1, limit=20 (max 100).
-// @Tags Attributes
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.AttributeResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /attributes [get]
+//	@Summary		List all attributes
+//	@Description	Returns attributes with cursor-style offset pagination. Defaults: page=1, limit=20 (max 100).
+//	@Tags			Attributes
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			page		query		int		false	"Page number (default: 1)"
+//	@Param			limit		query		int		false	"Page size (default: 20, max: 100)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.AttributeResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/attributes [get]
 func (h *AttributeHandler) ListAttributes(c *gin.Context) {
 	page, limit, ok := parsePaginationParams(c)
 	if !ok {
@@ -123,18 +123,18 @@ func (h *AttributeHandler) ListAttributes(c *gin.Context) {
 
 // GetAttribute handles GET /attributes/:id.
 //
-// @Summary Get an attribute by ID
-// @Description Returns a single attribute by its UUID.
-// @Tags Attributes
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Attribute ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.AttributeResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /attributes/{id} [get]
+//	@Summary		Get an attribute by ID
+//	@Description	Returns a single attribute by its UUID.
+//	@Tags			Attributes
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Attribute ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse{data=[]dto.AttributeResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/attributes/{id} [get]
 func (h *AttributeHandler) GetAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -157,20 +157,20 @@ func (h *AttributeHandler) GetAttribute(c *gin.Context) {
 
 // UpdateAttribute handles PUT /attributes/:id.
 //
-// @Summary Update an attribute
-// @Description Updates an existing attribute. ClenSchemaRegistryID is immutable after creation.
-// @Tags Attributes
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Attribute ID (UUID)"
-// @Param body body dto.UpdateAttributeRequest true "Update attribute request body"
-// @Success 200 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /attributes/{id} [put]
+//	@Summary		Update an attribute
+//	@Description	Updates an existing attribute. ClenSchemaRegistryID is immutable after creation.
+//	@Tags			Attributes
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string						true	"User ID (UUID)"
+//	@Param			id			path		string						true	"Attribute ID (UUID)"
+//	@Param			body		body		dto.UpdateAttributeRequest	true	"Update attribute request body"
+//	@Success		200			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/attributes/{id} [put]
 func (h *AttributeHandler) UpdateAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -218,17 +218,17 @@ func (h *AttributeHandler) UpdateAttribute(c *gin.Context) {
 
 // DeleteAttribute handles DELETE /attributes/:id.
 //
-// @Summary Delete an attribute
-// @Description Soft-deletes an attribute by its UUID.
-// @Tags Attributes
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Attribute ID (UUID)"
-// @Success 204 "No Content"
-// @Failure 400 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /attributes/{id} [delete]
+//	@Summary		Delete an attribute
+//	@Description	Soft-deletes an attribute by its UUID.
+//	@Tags			Attributes
+//	@Produce		json
+//	@Param			X-User-Id	header	string	true	"User ID (UUID)"
+//	@Param			id			path	string	true	"Attribute ID (UUID)"
+//	@Success		204			"No Content"
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/attributes/{id} [delete]
 func (h *AttributeHandler) DeleteAttribute(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

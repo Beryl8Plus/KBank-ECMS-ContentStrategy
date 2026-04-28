@@ -29,18 +29,18 @@ func NewDecisionRuleHandler(svc *service.DecisionRuleService) *DecisionRuleHandl
 
 // GetDecisionRuleBySchedule handles GET /decision-rules/schedule/{scheduleId}.
 //
-// @Summary Get a decision rule by schedule ID
-// @Description Returns the decision rule associated with the given schedule ID, including all rule conditions and attributes.
-// @Tags DecisionRules
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id query string true "Schedule ID (UUID)"
-// @Success 200 {object} dto.APIResponse
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/schedule/{scheduleId} [get]
+//	@Summary		Get a decision rule by schedule ID
+//	@Description	Returns the decision rule associated with the given schedule ID, including all rule conditions and attributes.
+//	@Tags			DecisionRules
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			query		string	true	"Schedule ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules/schedule/{scheduleId} [get]
 func (h *DecisionRuleHandler) GetDecisionRuleBySchedule(c *gin.Context) {
 	scheduleIdStr := c.Param("scheduleId")
 	if scheduleIdStr == "" {

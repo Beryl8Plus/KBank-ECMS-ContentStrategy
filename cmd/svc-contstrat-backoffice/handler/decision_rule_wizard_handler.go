@@ -46,20 +46,20 @@ func NewDecisionRuleWizardHandler(svc *service.DecisionRuleWizardService, activa
 
 // CreateDecisionRule handles POST /decision-rules.
 //
-// @Summary Create a draft decision rule (Wizard Step 1)
-// @Description Creates a DecisionRule in DRAFT status with its condition tree.
-// @Tags DecisionRuleWizard
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param body body dto.WizardStep1Request true "Step 1 request body"
-// @Success 201 {object} dto.APIResponse{data=dto.WizardStep1Response}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules [post]
+//	@Summary		Create a draft decision rule (Wizard Step 1)
+//	@Description	Creates a DecisionRule in DRAFT status with its condition tree.
+//	@Tags			DecisionRuleWizard
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string					true	"User ID (UUID)"
+//	@Param			body		body		dto.WizardStep1Request	true	"Step 1 request body"
+//	@Success		201			{object}	dto.APIResponse{data=dto.WizardStep1Response}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules [post]
 func (h *DecisionRuleWizardHandler) CreateDecisionRule(c *gin.Context) {
 	var req dto.WizardStep1Request
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -77,17 +77,17 @@ func (h *DecisionRuleWizardHandler) CreateDecisionRule(c *gin.Context) {
 
 // GetConditions handles GET /decision-rules/:id/conditions.
 //
-// @Summary Get condition tree for edit (Wizard Step 1 read)
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardConditionsResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/conditions [get]
+//	@Summary	Get condition tree for edit (Wizard Step 1 read)
+//	@Tags		DecisionRuleWizard
+//	@Produce	json
+//	@Param		X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param		id			path		string	true	"Decision Rule ID (UUID)"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardConditionsResponse}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/conditions [get]
 func (h *DecisionRuleWizardHandler) GetConditions(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -103,23 +103,23 @@ func (h *DecisionRuleWizardHandler) GetConditions(c *gin.Context) {
 
 // UpdateDecisionRule handles PUT /decision-rules/:id.
 //
-// @Summary Update a decision rule header and conditions (Wizard Step 1 edit)
-// @Description Updates the DecisionRule header and condition tree.
-// @Description Conditions absent from the request are deleted; rules in Step 2 that referenced
-// @Description deleted conditions are cascade-deleted and reported in cascadeEffect.
-// @Tags DecisionRuleWizard
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Param body body dto.WizardStep1Request true "Step 1 edit request body"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardEditStep1Response}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id} [put]
+//	@Summary		Update a decision rule header and conditions (Wizard Step 1 edit)
+//	@Description	Updates the DecisionRule header and condition tree.
+//	@Description	Conditions absent from the request are deleted; rules in Step 2 that referenced
+//	@Description	deleted conditions are cascade-deleted and reported in cascadeEffect.
+//	@Tags			DecisionRuleWizard
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-User-Id	header		string					true	"User ID (UUID)"
+//	@Param			id			path		string					true	"Decision Rule ID (UUID)"
+//	@Param			body		body		dto.WizardStep1Request	true	"Step 1 edit request body"
+//	@Success		200			{object}	dto.APIResponse{data=dto.WizardEditStep1Response}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules/{id} [put]
 func (h *DecisionRuleWizardHandler) UpdateDecisionRule(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -140,17 +140,17 @@ func (h *DecisionRuleWizardHandler) UpdateDecisionRule(c *gin.Context) {
 
 // GetRuleSets handles GET /decision-rules/:id/rule-sets.
 //
-// @Summary Get rule set columns and rows (Wizard Step 2 read)
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardRuleSetsResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/rule-sets [get]
+//	@Summary	Get rule set columns and rows (Wizard Step 2 read)
+//	@Tags		DecisionRuleWizard
+//	@Produce	json
+//	@Param		X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param		id			path		string	true	"Decision Rule ID (UUID)"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardRuleSetsResponse}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/rule-sets [get]
 func (h *DecisionRuleWizardHandler) GetRuleSets(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -166,20 +166,20 @@ func (h *DecisionRuleWizardHandler) GetRuleSets(c *gin.Context) {
 
 // SaveRuleSets handles PUT /decision-rules/:id/rule-sets.
 //
-// @Summary Save rule sets (Wizard Step 2 write)
-// @Tags DecisionRuleWizard
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Param body body dto.WizardStep2Request true "Step 2 request body"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardStep2Response}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/rule-sets [put]
+//	@Summary	Save rule sets (Wizard Step 2 write)
+//	@Tags		DecisionRuleWizard
+//	@Accept		json
+//	@Produce	json
+//	@Param		X-User-Id	header		string					true	"User ID (UUID)"
+//	@Param		id			path		string					true	"Decision Rule ID (UUID)"
+//	@Param		body		body		dto.WizardStep2Request	true	"Step 2 request body"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardStep2Response}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	422			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/rule-sets [put]
 func (h *DecisionRuleWizardHandler) SaveRuleSets(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -200,17 +200,17 @@ func (h *DecisionRuleWizardHandler) SaveRuleSets(c *gin.Context) {
 
 // GetSchedules handles GET /decision-rules/:id/schedules.
 //
-// @Summary Get schedules for a decision rule (Wizard Step 3 read)
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardSchedulesResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/schedules [get]
+//	@Summary	Get schedules for a decision rule (Wizard Step 3 read)
+//	@Tags		DecisionRuleWizard
+//	@Produce	json
+//	@Param		X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param		id			path		string	true	"Decision Rule ID (UUID)"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardSchedulesResponse}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/schedules [get]
 func (h *DecisionRuleWizardHandler) GetSchedules(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -226,18 +226,18 @@ func (h *DecisionRuleWizardHandler) GetSchedules(c *gin.Context) {
 
 // ActivateDecisionRule handles PUT /decision-rules/:id/activate.
 //
-// @Summary Activate a decision rule (Wizard Step 4)
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardStep4Response}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/activate [put]
+//	@Summary	Activate a decision rule (Wizard Step 4)
+//	@Tags		DecisionRuleWizard
+//	@Produce	json
+//	@Param		X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param		id			path		string	true	"Decision Rule ID (UUID)"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardStep4Response}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	422			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/activate [put]
 func (h *DecisionRuleWizardHandler) ActivateDecisionRule(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -260,21 +260,21 @@ func (h *DecisionRuleWizardHandler) ActivateDecisionRule(c *gin.Context) {
 
 // SaveSchedules handles PUT /decision-rules/:id/schedules.
 //
-// @Summary Save schedules for a decision rule (Wizard Step 3)
-// @Tags DecisionRuleWizard
-// @Accept json
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Param body body dto.WizardStep3Request true "Step 3 request body"
-// @Success 200 {object} dto.APIResponse{data=dto.WizardStep3Response}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 409 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/schedules [put]
+//	@Summary	Save schedules for a decision rule (Wizard Step 3)
+//	@Tags		DecisionRuleWizard
+//	@Accept		json
+//	@Produce	json
+//	@Param		X-User-Id	header		string					true	"User ID (UUID)"
+//	@Param		id			path		string					true	"Decision Rule ID (UUID)"
+//	@Param		body		body		dto.WizardStep3Request	true	"Step 3 request body"
+//	@Success	200			{object}	dto.APIResponse{data=dto.WizardStep3Response}
+//	@Failure	400			{object}	dto.APIResponse
+//	@Failure	404			{object}	dto.APIResponse
+//	@Failure	409			{object}	dto.APIResponse
+//	@Failure	422			{object}	dto.APIResponse
+//	@Failure	500			{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules/{id}/schedules [put]
 func (h *DecisionRuleWizardHandler) SaveSchedules(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -295,20 +295,20 @@ func (h *DecisionRuleWizardHandler) SaveSchedules(c *gin.Context) {
 
 // ListDecisionRules handles GET /decision-rules.
 //
-// @Summary List decision rules
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param type query string false "Filter by type (MASS, AUDIENCE, SALES_TARGET, NON_SALES)"
-// @Param evaluateType query string false "Filter by evaluateType (SCORING, SEGMENT, ELIGIBLE)"
-// @Param status query string false "Filter by status (DRAFT, ACTIVE, INACTIVE)"
-// @Param keyword query string false "Keyword search on name and decisionRuleId"
-// @Param page query int false "Page number (default: 1)"
-// @Param limit query int false "Page size (default: 20, max: 100)"
-// @Success 200 {object} dto.APIResponse{data=[]dto.DecisionRuleListItemResponse}
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules [get]
+//	@Summary	List decision rules
+//	@Tags		DecisionRuleWizard
+//	@Produce	json
+//	@Param		X-User-Id		header		string	true	"User ID (UUID)"
+//	@Param		type			query		string	false	"Filter by type (MASS, AUDIENCE, SALES_TARGET, NON_SALES)"
+//	@Param		evaluateType	query		string	false	"Filter by evaluateType (SCORING, SEGMENT, ELIGIBLE)"
+//	@Param		status			query		string	false	"Filter by status (DRAFT, ACTIVE, INACTIVE)"
+//	@Param		keyword			query		string	false	"Keyword search on name and decisionRuleId"
+//	@Param		page			query		int		false	"Page number (default: 1)"
+//	@Param		limit			query		int		false	"Page size (default: 20, max: 100)"
+//	@Success	200				{object}	dto.APIResponse{data=[]dto.DecisionRuleListItemResponse}
+//	@Failure	500				{object}	dto.APIResponse
+//	@Security	XUserIdAuth
+//	@Router		/decision-rules [get]
 func (h *DecisionRuleWizardHandler) ListDecisionRules(c *gin.Context) {
 	const maxLimit = 100
 	page := 1
@@ -373,21 +373,21 @@ func (h *DecisionRuleWizardHandler) ListDecisionRules(c *gin.Context) {
 
 // CloneDecisionRule handles POST /decision-rules/:id/clone.
 //
-// @Summary Clone a decision rule
-// @Description Deep-copies an existing rule into a new DRAFT. Placement info from Step 3
-// @Description is preserved as placeholder schedules (time fields are zeroed) so the
-// @Description frontend can pre-fill the placement picker when the user reaches Step 3.
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Source Decision Rule ID (UUID)"
-// @Success 201 {object} dto.APIResponse{data=dto.CloneDecisionRuleResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/clone [post]
+//	@Summary		Clone a decision rule
+//	@Description	Deep-copies an existing rule into a new DRAFT. Placement info from Step 3
+//	@Description	is preserved as placeholder schedules (time fields are zeroed) so the
+//	@Description	frontend can pre-fill the placement picker when the user reaches Step 3.
+//	@Tags			DecisionRuleWizard
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Source Decision Rule ID (UUID)"
+//	@Success		201			{object}	dto.APIResponse{data=dto.CloneDecisionRuleResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules/{id}/clone [post]
 func (h *DecisionRuleWizardHandler) CloneDecisionRule(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -403,19 +403,19 @@ func (h *DecisionRuleWizardHandler) CloneDecisionRule(c *gin.Context) {
 
 // DeactivateDecisionRule handles PUT /decision-rules/:id/deactivate.
 //
-// @Summary Deactivate a decision rule
-// @Description Transitions an ACTIVE rule to INACTIVE. Returns 422 for non-ACTIVE rules.
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 200 {object} dto.APIResponse{data=dto.DeactivateDecisionRuleResponse}
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id}/deactivate [put]
+//	@Summary		Deactivate a decision rule
+//	@Description	Transitions an ACTIVE rule to INACTIVE. Returns 422 for non-ACTIVE rules.
+//	@Tags			DecisionRuleWizard
+//	@Produce		json
+//	@Param			X-User-Id	header		string	true	"User ID (UUID)"
+//	@Param			id			path		string	true	"Decision Rule ID (UUID)"
+//	@Success		200			{object}	dto.APIResponse{data=dto.DeactivateDecisionRuleResponse}
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules/{id}/deactivate [put]
 func (h *DecisionRuleWizardHandler) DeactivateDecisionRule(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
@@ -431,20 +431,20 @@ func (h *DecisionRuleWizardHandler) DeactivateDecisionRule(c *gin.Context) {
 
 // DeleteDecisionRule handles DELETE /decision-rules/:id.
 //
-// @Summary Delete a decision rule
-// @Description Soft-deletes a DRAFT or INACTIVE rule and all its child records.
-// @Description Returns 422 if the rule is ACTIVE — deactivate it first.
-// @Tags DecisionRuleWizard
-// @Produce json
-// @Param X-User-Id header string true "User ID (UUID)"
-// @Param id path string true "Decision Rule ID (UUID)"
-// @Success 204 "No Content"
-// @Failure 400 {object} dto.APIResponse
-// @Failure 404 {object} dto.APIResponse
-// @Failure 422 {object} dto.APIResponse
-// @Failure 500 {object} dto.APIResponse
-// @Security XUserIdAuth
-// @Router /decision-rules/{id} [delete]
+//	@Summary		Delete a decision rule
+//	@Description	Soft-deletes a DRAFT or INACTIVE rule and all its child records.
+//	@Description	Returns 422 if the rule is ACTIVE — deactivate it first.
+//	@Tags			DecisionRuleWizard
+//	@Produce		json
+//	@Param			X-User-Id	header	string	true	"User ID (UUID)"
+//	@Param			id			path	string	true	"Decision Rule ID (UUID)"
+//	@Success		204			"No Content"
+//	@Failure		400			{object}	dto.APIResponse
+//	@Failure		404			{object}	dto.APIResponse
+//	@Failure		422			{object}	dto.APIResponse
+//	@Failure		500			{object}	dto.APIResponse
+//	@Security		XUserIdAuth
+//	@Router			/decision-rules/{id} [delete]
 func (h *DecisionRuleWizardHandler) DeleteDecisionRule(c *gin.Context) {
 	id, ok := parseUUID(c, "id")
 	if !ok {
