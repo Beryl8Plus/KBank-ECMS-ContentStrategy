@@ -20,6 +20,7 @@ import (
 // decisionRuleWizardServicer is the interface the handler depends on.
 type decisionRuleWizardServicer interface {
 	SaveStep1(ctx context.Context, req dto.WizardStep1Request) (*dto.WizardStep1Response, error)
+	UpdateStep1(ctx context.Context, id uuid.UUID, req dto.WizardStep1Request) (*dto.WizardEditStep1Response, error)
 	GetConditions(ctx context.Context, id uuid.UUID) (*dto.WizardConditionsResponse, error)
 	GetRuleSets(ctx context.Context, id uuid.UUID) (*dto.WizardRuleSetsResponse, error)
 	SaveStep2(ctx context.Context, id uuid.UUID, req dto.WizardStep2Request) (*dto.WizardStep2Response, error)
@@ -27,6 +28,9 @@ type decisionRuleWizardServicer interface {
 	SaveStep3(ctx context.Context, id uuid.UUID, req dto.WizardStep3Request) (*dto.WizardStep3Response, error)
 	ActivateStep4(ctx context.Context, id uuid.UUID) (*dto.WizardStep4Response, error)
 	ListDecisionRules(ctx context.Context, f domainrepo.DecisionRuleListFilter) ([]*dto.DecisionRuleListItemResponse, int64, error)
+	CloneDecisionRule(ctx context.Context, id uuid.UUID) (*dto.CloneDecisionRuleResponse, error)
+	DeactivateDecisionRule(ctx context.Context, id uuid.UUID) (*dto.DeactivateDecisionRuleResponse, error)
+	DeleteDecisionRule(ctx context.Context, id uuid.UUID) error
 }
 
 // DecisionRuleWizardHandler handles HTTP requests for the wizard API.
@@ -90,6 +94,43 @@ func (h *DecisionRuleWizardHandler) GetConditions(c *gin.Context) {
 		return
 	}
 	resp, err := h.service.GetConditions(c.Request.Context(), id)
+	if err != nil {
+		h.handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.APIResponse{Data: resp})
+}
+
+// UpdateDecisionRule handles PUT /decision-rules/:id.
+//
+// @Summary Update a decision rule header and conditions (Wizard Step 1 edit)
+// @Description Updates the DecisionRule header and condition tree.
+// @Description Conditions absent from the request are deleted; rules in Step 2 that referenced
+// @Description deleted conditions are cascade-deleted and reported in cascadeEffect.
+// @Tags DecisionRuleWizard
+// @Accept json
+// @Produce json
+// @Param X-User-Id header string true "User ID (UUID)"
+// @Param id path string true "Decision Rule ID (UUID)"
+// @Param body body dto.WizardStep1Request true "Step 1 edit request body"
+// @Success 200 {object} dto.APIResponse{data=dto.WizardEditStep1Response}
+// @Failure 400 {object} dto.APIResponse
+// @Failure 404 {object} dto.APIResponse
+// @Failure 422 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /decision-rules/{id} [put]
+func (h *DecisionRuleWizardHandler) UpdateDecisionRule(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.WizardStep1Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.APIResponse{Error: err.Error()})
+		return
+	}
+	resp, err := h.service.UpdateStep1(c.Request.Context(), id, req)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -328,6 +369,92 @@ func (h *DecisionRuleWizardHandler) ListDecisionRules(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, dto.APIResponse{Data: items, Pagination: pagination})
+}
+
+// CloneDecisionRule handles POST /decision-rules/:id/clone.
+//
+// @Summary Clone a decision rule
+// @Description Deep-copies an existing rule into a new DRAFT. Placement info from Step 3
+// @Description is preserved as placeholder schedules (time fields are zeroed) so the
+// @Description frontend can pre-fill the placement picker when the user reaches Step 3.
+// @Tags DecisionRuleWizard
+// @Produce json
+// @Param X-User-Id header string true "User ID (UUID)"
+// @Param id path string true "Source Decision Rule ID (UUID)"
+// @Success 201 {object} dto.APIResponse{data=dto.CloneDecisionRuleResponse}
+// @Failure 400 {object} dto.APIResponse
+// @Failure 404 {object} dto.APIResponse
+// @Failure 422 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /decision-rules/{id}/clone [post]
+func (h *DecisionRuleWizardHandler) CloneDecisionRule(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+	resp, err := h.service.CloneDecisionRule(c.Request.Context(), id)
+	if err != nil {
+		h.handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, dto.APIResponse{Data: resp})
+}
+
+// DeactivateDecisionRule handles PUT /decision-rules/:id/deactivate.
+//
+// @Summary Deactivate a decision rule
+// @Description Transitions an ACTIVE rule to INACTIVE. Returns 422 for non-ACTIVE rules.
+// @Tags DecisionRuleWizard
+// @Produce json
+// @Param X-User-Id header string true "User ID (UUID)"
+// @Param id path string true "Decision Rule ID (UUID)"
+// @Success 200 {object} dto.APIResponse{data=dto.DeactivateDecisionRuleResponse}
+// @Failure 400 {object} dto.APIResponse
+// @Failure 404 {object} dto.APIResponse
+// @Failure 422 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /decision-rules/{id}/deactivate [put]
+func (h *DecisionRuleWizardHandler) DeactivateDecisionRule(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+	resp, err := h.service.DeactivateDecisionRule(c.Request.Context(), id)
+	if err != nil {
+		h.handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.APIResponse{Data: resp})
+}
+
+// DeleteDecisionRule handles DELETE /decision-rules/:id.
+//
+// @Summary Delete a decision rule
+// @Description Soft-deletes a DRAFT or INACTIVE rule and all its child records.
+// @Description Returns 422 if the rule is ACTIVE — deactivate it first.
+// @Tags DecisionRuleWizard
+// @Produce json
+// @Param X-User-Id header string true "User ID (UUID)"
+// @Param id path string true "Decision Rule ID (UUID)"
+// @Success 204 "No Content"
+// @Failure 400 {object} dto.APIResponse
+// @Failure 404 {object} dto.APIResponse
+// @Failure 422 {object} dto.APIResponse
+// @Failure 500 {object} dto.APIResponse
+// @Security XUserIdAuth
+// @Router /decision-rules/{id} [delete]
+func (h *DecisionRuleWizardHandler) DeleteDecisionRule(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteDecisionRule(c.Request.Context(), id); err != nil {
+		h.handleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // handleError maps service sentinel errors to HTTP status codes.

@@ -44,6 +44,16 @@ GET /decision-rules?type=AUDIENCE&status=ACTIVE&keyword=gold&page=1&limit=20
           "channelName": "Mobile App"
         }
       ],
+      "attributes": [
+        {
+          "attributeId": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+          "isActive": true
+        },
+        {
+          "attributeId": "3f2504e0-4f89-11d3-9a0c-0305e82c3303",
+          "isActive": false
+        }
+      ],
       "createdAt": "2026-04-24T10:00:00+07:00",
       "updatedAt": "2026-04-24T10:05:00+07:00"
     },
@@ -57,6 +67,7 @@ GET /decision-rules?type=AUDIENCE&status=ACTIVE&keyword=gold&page=1&limit=20
       "status": "DRAFT",
       "subStatus": "Missing attribute registry",
       "placements": [],
+      "attributes": [],
       "createdAt": "2026-04-23T09:00:00+07:00",
       "updatedAt": "2026-04-23T09:00:00+07:00"
     }
@@ -82,6 +93,9 @@ GET /decision-rules?type=AUDIENCE&status=ACTIVE&keyword=gold&page=1&limit=20
 | `subStatus` | `decision_rules.sub_status` | N/A / Missing attribute registry |
 | `placements` | `schedules` JOIN `placements` JOIN `channels` | aggregated; empty array เมื่อไม่มี schedule |
 | `placements[].channelName` | `channels.channel_name` | |
+| `attributes` | `rule_conditions` JOIN `attributes` | leaf conditions เท่านั้น; empty array เมื่อยังไม่กำหนด conditions |
+| `attributes[].attributeId` | `attributes.id` | UUID ของ attribute |
+| `attributes[].isActive` | `attributes.is_active` | `false` = attribute ถูก deactivate แล้ว |
 
 ---
 
@@ -121,6 +135,20 @@ JOIN placements p ON s.placement_id = p.id AND p.deleted_at IS NULL
 JOIN channels c   ON p.channel_id   = c.id AND c.deleted_at IS NULL
 WHERE s.decision_rule_id IN (:ids)
   AND s.deleted_at IS NULL;
+
+-- Attributes per decision rule (batch, ไม่ใช้ N+1)
+SELECT
+  rc.decision_rule_id,
+  rc.attribute_id,
+  a.is_active  AS attribute_is_active
+FROM rule_conditions rc
+LEFT JOIN attributes a ON a.id = rc.attribute_id AND a.deleted_at IS NULL
+WHERE rc.decision_rule_id IN (:ids)
+  AND rc.attribute_id != '00000000-0000-0000-0000-000000000000'
+  AND rc.deleted_at IS NULL;
 ```
 
-**หมายเหตุ:** Application layer group placement rows ตาม `decision_rule_id`
+**หมายเหตุ:**
+- Application layer group placement rows และ attribute rows ตาม `decision_rule_id`
+- `attribute_id != '00000000-...'` กรองออก group-container conditions (ที่ใช้ zero UUID เป็น sentinel)
+- ทั้ง placements และ attributes ใช้ pattern เดียวกัน: **WHERE IN batch → group ใน Go** — ไม่มี N+1

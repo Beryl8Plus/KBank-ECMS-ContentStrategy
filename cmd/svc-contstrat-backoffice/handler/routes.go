@@ -35,12 +35,16 @@ func RegisterRoutes(
 		// Wizard routes
 		decisionRules.POST("", wizardHandler.CreateDecisionRule)
 		decisionRules.GET("", wizardHandler.ListDecisionRules)
+		decisionRules.PUT("/:id", wizardHandler.UpdateDecisionRule)
 		decisionRules.GET("/:id/conditions", wizardHandler.GetConditions)
 		decisionRules.GET("/:id/rule-sets", wizardHandler.GetRuleSets)
 		decisionRules.PUT("/:id/rule-sets", wizardHandler.SaveRuleSets)
 		decisionRules.GET("/:id/schedules", wizardHandler.GetSchedules)
 		decisionRules.PUT("/:id/schedules", wizardHandler.SaveSchedules)
 		decisionRules.PUT("/:id/activate", wizardHandler.ActivateDecisionRule)
+		decisionRules.POST("/:id/clone", wizardHandler.CloneDecisionRule)
+		decisionRules.PUT("/:id/deactivate", wizardHandler.DeactivateDecisionRule)
+		decisionRules.DELETE("/:id", wizardHandler.DeleteDecisionRule)
 	}
 
 	scheduleOccurrences := r.Group("/schedule-occurrences")

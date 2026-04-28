@@ -16,6 +16,7 @@ import (
 	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/pubsub"
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 // Sentinel errors mapped to HTTP status codes in the handler.
@@ -68,7 +69,9 @@ func (s *DecisionRuleWizardService) SaveStep1(ctx context.Context, req dto.Wizar
 	if err := validateConditionTree(req.Conditions, 1); err != nil {
 		return nil, err
 	}
-
+	if err := validateNoDuplicateAttributes(req.Conditions); err != nil {
+		return nil, err
+	}
 	if err := s.validateAttributeIDs(ctx, req.Conditions); err != nil {
 		return nil, err
 	}
@@ -129,6 +132,81 @@ func (s *DecisionRuleWizardService) GetConditions(ctx context.Context, id uuid.U
 		SubStatus:           dr.SubStatus,
 		Conditions:          buildConditionTree(flat, nil),
 	}, nil
+}
+
+// UpdateStep1 edits an existing draft DecisionRule: updates header fields,
+// upserts the condition tree, and cascade-deletes Step 2 data for removed conditions.
+func (s *DecisionRuleWizardService) UpdateStep1(ctx context.Context, id uuid.UUID, req dto.WizardStep1Request) (*dto.WizardEditStep1Response, error) {
+	if !req.Type.IsValid() {
+		return nil, fmt.Errorf("%w: type must be one of MASS, AUDIENCE, SALES_TARGET, NON_SALES", ErrWizardValidation)
+	}
+	if !req.EvaluateType.IsValid() {
+		return nil, fmt.Errorf("%w: evaluateType must be one of SCORING, SEGMENT, ELIGIBLE", ErrWizardValidation)
+	}
+	if req.Type.IsCampaign() && strings.TrimSpace(req.CampaignCode) == "" {
+		return nil, fmt.Errorf("%w: campaignCode is required for AUDIENCE and SALES_TARGET types", ErrWizardValidation)
+	}
+
+	dr, err := s.repo.FindDecisionRuleByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if dr == nil {
+		return nil, fmt.Errorf("%w: decision rule not found", ErrWizardNotFound)
+	}
+
+	if err := validateConditionTree(req.Conditions, 1); err != nil {
+		return nil, err
+	}
+	// Option A: each attribute must appear at most once across all conditions.
+	if err := validateNoDuplicateAttributes(req.Conditions); err != nil {
+		return nil, err
+	}
+	if err := s.validateAttributeIDs(ctx, req.Conditions); err != nil {
+		return nil, err
+	}
+
+	// Compute which existing conditions are being removed.
+	existingConds, err := s.repo.FindTemplateConditions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	incomingIDs := collectConditionIDs(req.Conditions)
+	var toDeleteConditionIDs []uuid.UUID
+	for _, c := range existingConds {
+		if !incomingIDs[c.ID] {
+			toDeleteConditionIDs = append(toDeleteConditionIDs, c.ID)
+		}
+	}
+
+	drUpdate := &entity.DecisionRule{
+		Name:         req.Name,
+		Type:         req.Type,
+		EvaluateType: req.EvaluateType,
+		ContentPath:  req.ContentPath,
+		CampaignCode: req.CampaignCode,
+		Score:        req.Score,
+	}
+	toUpsert := flattenConditionsForEdit(id, req.Conditions, nil)
+
+	affectedRuleIDs, err := s.repo.UpdateStep1(ctx, id, drUpdate, toUpsert, toDeleteConditionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("updating step 1: %w", err)
+	}
+
+	resp := &dto.WizardEditStep1Response{
+		ID:                  id,
+		DecisionRuleRunning: dr.DecisionRuleRunning,
+		Status:              dr.Status,
+		UpdatedAt:           time.Now(),
+	}
+	if len(affectedRuleIDs) > 0 {
+		resp.CascadeEffect = &dto.CascadeEffectResponse{
+			DeletedRulesCount: len(affectedRuleIDs),
+			AffectedRuleIDs:   affectedRuleIDs,
+		}
+	}
+	return resp, nil
 }
 
 // ── Step 2 ───────────────────────────────────────────────────────────────────
@@ -266,7 +344,24 @@ func (s *DecisionRuleWizardService) SaveStep2(ctx context.Context, id uuid.UUID,
 		}
 	}
 
-	// Validate existing rule IDs.
+	// Validate existing rule IDs and compute which rules to delete.
+	existingRules, err := s.repo.FindRulesByDecisionRuleID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	incomingRuleIDs := make(map[uuid.UUID]bool)
+	for _, rs := range req.RuleSets {
+		if rs.RuleID != nil {
+			incomingRuleIDs[*rs.RuleID] = true
+		}
+	}
+	var toDeleteRuleIDs []uuid.UUID
+	for _, r := range existingRules {
+		if !incomingRuleIDs[r.ID] {
+			toDeleteRuleIDs = append(toDeleteRuleIDs, r.ID)
+		}
+	}
+
 	for _, rs := range req.RuleSets {
 		if rs.RuleID != nil {
 			existing, err := s.repo.FindRuleByID(ctx, *rs.RuleID)
@@ -314,7 +409,7 @@ func (s *DecisionRuleWizardService) SaveStep2(ctx context.Context, id uuid.UUID,
 		}
 	}
 
-	if err := s.repo.SaveStep2(ctx, rules, allAttrs); err != nil {
+	if err := s.repo.SaveStep2(ctx, rules, allAttrs, toDeleteRuleIDs); err != nil {
 		return nil, fmt.Errorf("saving step 2: %w", err)
 	}
 
@@ -380,20 +475,15 @@ func (s *DecisionRuleWizardService) SaveStep3(ctx context.Context, id uuid.UUID,
 		}
 		placementDetails = append(placementDetails, placement)
 
-		count, err := s.repo.CountSchedulesByPlacement(ctx, sc.PlacementID)
+		// Count schedules for this placement from OTHER decision rules.
+		// SaveStep3 repo does full replacement (deletes this DR's schedules first),
+		// so only other DRs count toward the placement cap.
+		count, err := s.repo.CountSchedulesByPlacementExcludingDR(ctx, sc.PlacementID, id)
 		if err != nil {
 			return nil, err
 		}
 		if count >= maxSchedulesPerPlacement {
 			return nil, fmt.Errorf("%w: placement %s has reached the maximum of %d schedules", ErrWizardValidation, sc.PlacementID, maxSchedulesPerPlacement)
-		}
-
-		exists, err := s.repo.ExistsSchedule(ctx, id, sc.PlacementID)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, fmt.Errorf("%w: schedule for this decision rule and placement %s already exists", ErrWizardConflict, sc.PlacementID)
 		}
 
 		tz := sc.Timezone
@@ -537,11 +627,41 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 		placementsByDR[sc.DecisionRuleID] = append(placementsByDR[sc.DecisionRuleID], entry)
 	}
 
+	// Fetch all attributes for the listed DRs in one query — no N+1.
+	condAttrs, err := s.repo.FindConditionAttributesByDecisionRuleIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Group attribute details by decision rule ID.
+	// dedup key = drID+attrID guards against any future duplicate conditions.
+	type dedupKey struct{ drID, attrID uuid.UUID }
+	seen := make(map[dedupKey]bool, len(condAttrs))
+	attrsByDR := make(map[uuid.UUID][]dto.AttributeDetailForList)
+	for _, c := range condAttrs {
+		if c.Attribute == nil {
+			continue
+		}
+		k := dedupKey{c.DecisionRuleID, c.AttributeID}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		attrsByDR[c.DecisionRuleID] = append(attrsByDR[c.DecisionRuleID], dto.AttributeDetailForList{
+			AttributeID: c.AttributeID,
+			IsActive:    c.Attribute.IsActive,
+		})
+	}
+
 	items := make([]*dto.DecisionRuleListItemResponse, len(drs))
 	for i, dr := range drs {
 		placements := placementsByDR[dr.ID]
 		if placements == nil {
 			placements = []dto.DecisionRulePlacementResponse{}
+		}
+		attributes := attrsByDR[dr.ID]
+		if attributes == nil {
+			attributes = []dto.AttributeDetailForList{}
 		}
 		items[i] = &dto.DecisionRuleListItemResponse{
 			ID:                  dr.ID,
@@ -553,11 +673,188 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 			Status:              dr.Status,
 			SubStatus:           dr.SubStatus,
 			Placements:          placements,
+			Attributes:          attributes,
 			CreatedAt:           dr.CreatedAt,
 			UpdatedAt:           dr.UpdatedAt,
 		}
 	}
 	return items, total, nil
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+// CloneDecisionRule performs a deep copy of an existing rule into a new DRAFT.
+// Fail-fast: if the source is INACTIVE with sub-status "Missing attribute registry"
+// the operation is rejected immediately before any DB work.
+func (s *DecisionRuleWizardService) CloneDecisionRule(ctx context.Context, id uuid.UUID) (*dto.CloneDecisionRuleResponse, error) {
+	orig, err := s.repo.FindDecisionRuleByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if orig == nil {
+		return nil, fmt.Errorf("%w: decision rule not found", ErrWizardNotFound)
+	}
+
+	// Fail-fast: broken rules cannot be cloned.
+	if orig.Status == enums.DecisionRuleStatusInactive && orig.SubStatus == enums.DecisionRuleSubStatusMissing {
+		return nil, fmt.Errorf("%w: cannot clone a rule with status INACTIVE and sub-status '%s'", ErrWizardValidation, enums.DecisionRuleSubStatusMissing)
+	}
+
+	flatConds, err := s.repo.FindTemplateConditions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := s.repo.FindRulesByDecisionRuleID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ruleIDs := make([]uuid.UUID, len(rules))
+	for i, r := range rules {
+		ruleIDs[i] = r.ID
+	}
+	attrs, err := s.repo.FindRuleAttributesByRuleIDs(ctx, ruleIDs)
+	if err != nil {
+		return nil, err
+	}
+	schedules, err := s.repo.FindSchedulesByDecisionRuleID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	newDRID := uuid.New()
+	newDR := &entity.DecisionRule{
+		BaseModel:    entity.BaseModel{ID: newDRID},
+		Name:         orig.Name,
+		Type:         orig.Type,
+		EvaluateType: orig.EvaluateType,
+		ContentPath:  orig.ContentPath,
+		CampaignCode: orig.CampaignCode,
+		Score:        orig.Score,
+		Status:       enums.DecisionRuleStatusDraft,
+		SubStatus:    enums.DecisionRuleSubStatusNA,
+		// DecisionRuleRunning intentionally empty — BeforeCreate hook generates it.
+	}
+
+	// Deep copy conditions, preserving parent-child links with remapped IDs.
+	oldToNewCond := make(map[uuid.UUID]uuid.UUID, len(flatConds))
+	newConds := make([]*entity.RuleCondition, len(flatConds))
+	for i, c := range flatConds {
+		newID := uuid.New()
+		oldToNewCond[c.ID] = newID
+		newConds[i] = &entity.RuleCondition{
+			BaseModel:         entity.BaseModel{ID: newID},
+			DecisionRuleID:    newDRID,
+			Sequence:          c.Sequence,
+			AttributeID:       c.AttributeID,
+			LogicalOperator:   c.LogicalOperator,
+			ConnectorOperator: c.ConnectorOperator,
+		}
+	}
+	for i, c := range flatConds {
+		if c.ParentRuleConditionID != nil {
+			if newParentID, ok := oldToNewCond[*c.ParentRuleConditionID]; ok {
+				newConds[i].ParentRuleConditionID = &newParentID
+			}
+		}
+	}
+
+	// Deep copy rules.
+	oldToNewRule := make(map[uuid.UUID]uuid.UUID, len(rules))
+	newRules := make([]*entity.Rule, len(rules))
+	for i, r := range rules {
+		newRuleID := uuid.New()
+		oldToNewRule[r.ID] = newRuleID
+		newRules[i] = &entity.Rule{
+			BaseModel:      entity.BaseModel{ID: newRuleID},
+			DecisionRuleID: newDRID,
+			VariationName:  r.VariationName,
+			Score:          r.Score,
+			OrderNo:        r.OrderNo,
+		}
+	}
+
+	// Deep copy rule attributes, pointing to new rule IDs.
+	newAttrs := make([]*entity.RuleAttribute, len(attrs))
+	for i, a := range attrs {
+		newAttrs[i] = &entity.RuleAttribute{
+			BaseModel:   entity.BaseModel{ID: uuid.New()},
+			RuleID:      oldToNewRule[a.RuleID],
+			AttributeID: a.AttributeID,
+			Value:       a.Value,
+		}
+	}
+
+	// Build placeholder schedules: carry over placement info only.
+	// Time fields (EffectiveFrom, EffectiveUntil, TimeOfDayStart, TimeOfDayEnd) are
+	// intentionally zeroed so the user must choose new dates in Step 3.
+	newSchedules := make([]*entity.Schedule, len(schedules))
+	for i, sc := range schedules {
+		newSchedules[i] = &entity.Schedule{
+			BaseModel:      entity.BaseModel{ID: uuid.New()},
+			DecisionRuleID: newDRID,
+			PlacementID:    sc.PlacementID,
+			CalendarID:     sc.CalendarID,
+			RecurrenceType: sc.RecurrenceType,
+			RecurrenceRule: sc.RecurrenceRule,
+			AllDay:         sc.AllDay,
+			Timezone:       sc.Timezone,
+			IsActive:       false,
+		}
+	}
+
+	if err := s.repo.CloneDecisionRule(ctx, newDR, newConds, newRules, newAttrs, newSchedules); err != nil {
+		return nil, fmt.Errorf("cloning decision rule: %w", err)
+	}
+
+	return &dto.CloneDecisionRuleResponse{
+		ID:                  newDR.ID,
+		DecisionRuleRunning: newDR.DecisionRuleRunning,
+		Status:              newDR.Status,
+		CreatedAt:           newDR.CreatedAt,
+	}, nil
+}
+
+// DeactivateDecisionRule transitions an ACTIVE rule to INACTIVE.
+// Returns ErrWizardValidation if the rule is not currently ACTIVE.
+func (s *DecisionRuleWizardService) DeactivateDecisionRule(ctx context.Context, id uuid.UUID) (*dto.DeactivateDecisionRuleResponse, error) {
+	dr, err := s.repo.FindDecisionRuleByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if dr == nil {
+		return nil, fmt.Errorf("%w: decision rule not found", ErrWizardNotFound)
+	}
+	if dr.Status != enums.DecisionRuleStatusActive {
+		return nil, fmt.Errorf("%w: only ACTIVE decision rules can be deactivated, current status is %s", ErrWizardValidation, dr.Status)
+	}
+
+	inactiveBy, _ := ctxconsts.GetUserID(ctx)
+	if err := s.repo.DeactivateDecisionRule(ctx, id, inactiveBy); err != nil {
+		return nil, err
+	}
+
+	return &dto.DeactivateDecisionRuleResponse{
+		ID:                  dr.ID,
+		DecisionRuleRunning: dr.DecisionRuleRunning,
+		Status:              enums.DecisionRuleStatusInactive,
+		UpdatedAt:           time.Now(),
+	}, nil
+}
+
+// DeleteDecisionRule soft-deletes a DRAFT or INACTIVE rule and all its child records.
+// Returns ErrWizardValidation if the rule is ACTIVE.
+func (s *DecisionRuleWizardService) DeleteDecisionRule(ctx context.Context, id uuid.UUID) error {
+	dr, err := s.repo.FindDecisionRuleByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if dr == nil {
+		return fmt.Errorf("%w: decision rule not found", ErrWizardNotFound)
+	}
+	if dr.Status == enums.DecisionRuleStatusActive {
+		return fmt.Errorf("%w: ACTIVE decision rules cannot be deleted; deactivate first", ErrWizardValidation)
+	}
+	return s.repo.DeleteDecisionRule(ctx, id)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -703,4 +1000,69 @@ func uuidPtrEquals(a, b *uuid.UUID) bool {
 // TotalPages computes the number of pages for pagination.
 func TotalPages(total int64, limit int) int {
 	return int(math.Ceil(float64(total) / float64(limit)))
+}
+
+// validateNoDuplicateAttributes rejects condition trees that reuse the same attributeId
+// across any leaf nodes. This is required by Option A of the cascade-delete strategy:
+// cascade operates via attributeId, so duplicates would cause over-deletion.
+func validateNoDuplicateAttributes(items []dto.ConditionItemRequest) error {
+	seen := make(map[uuid.UUID]bool)
+	var check func([]dto.ConditionItemRequest) error
+	check = func(items []dto.ConditionItemRequest) error {
+		for _, item := range items {
+			if item.AttributeID != uuid.Nil {
+				if seen[item.AttributeID] {
+					return fmt.Errorf("%w: attributeId %s appears more than once in conditions — each attribute may only be used once", ErrWizardValidation, item.AttributeID)
+				}
+				seen[item.AttributeID] = true
+			}
+			if err := check(item.Conditions); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return check(items)
+}
+
+// collectConditionIDs returns a set of all non-nil conditionIDs present in the request tree.
+func collectConditionIDs(items []dto.ConditionItemRequest) map[uuid.UUID]bool {
+	result := make(map[uuid.UUID]bool)
+	var collect func([]dto.ConditionItemRequest)
+	collect = func(items []dto.ConditionItemRequest) {
+		for _, item := range items {
+			if item.ConditionID != nil {
+				result[*item.ConditionID] = true
+			}
+			collect(item.Conditions)
+		}
+	}
+	collect(items)
+	return result
+}
+
+// flattenConditionsForEdit is like flattenConditions but preserves existing IDs from the
+// request (ConditionID != nil) and generates new UUIDs only for new conditions.
+func flattenConditionsForEdit(decisionRuleID uuid.UUID, items []dto.ConditionItemRequest, parentID *uuid.UUID) []*entity.RuleCondition {
+	result := make([]*entity.RuleCondition, 0, len(items))
+	for _, item := range items {
+		condID := uuid.New()
+		if item.ConditionID != nil {
+			condID = *item.ConditionID
+		}
+		cond := &entity.RuleCondition{
+			BaseModel:             entity.BaseModel{ID: condID},
+			DecisionRuleID:        decisionRuleID,
+			ParentRuleConditionID: parentID,
+			Sequence:              item.Sequence,
+			AttributeID:           item.AttributeID,
+			LogicalOperator:       item.LogicalOperator,
+			ConnectorOperator:     item.ConnectorOperator,
+		}
+		result = append(result, cond)
+		if len(item.Conditions) > 0 {
+			result = append(result, flattenConditionsForEdit(decisionRuleID, item.Conditions, &cond.ID)...)
+		}
+	}
+	return result
 }

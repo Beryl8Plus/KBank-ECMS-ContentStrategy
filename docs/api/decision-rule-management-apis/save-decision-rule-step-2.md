@@ -6,13 +6,16 @@
 
 ## Constraints
 
-- `ruleId: null` → INSERT `rules` row ใหม่ + INSERT `rule_attributes`
-- `ruleId: non-null` → UPDATE `rules` row + UPSERT `rule_attributes` (by `rule_id` + `ruleConditionId`)
-- `conditionId` ต้องอ้างอิง `rule_conditions.id` ที่ `decision_rule_id = {id}` และ `rule_id IS NULL` (template)
+- Endpoint นี้ใช้ได้ทั้ง **Create Mode** และ **Edit Mode** (same endpoint, same logic)
+- `ruleId: null` → **INSERT** `rules` row ใหม่ + INSERT `rule_attributes`
+- `ruleId: non-null` → **UPDATE** `rules` row + full-replace `rule_attributes` สำหรับ rule นั้น
+- **Rule ที่ไม่อยู่ใน request จะถูก DELETE** — ทั้ง `rules` row และ `rule_attributes` ของมัน (delta delete)
+- `conditionId` ต้องอ้างอิง `rule_conditions.id` ที่ `decision_rule_id = {id}`
 - `orderNo` ต้องไม่ซ้ำกันภายใน request เดียวกัน
 - Backend validate ว่า `conditionId` ทุกตัวที่ส่งมา belong to decision rule นี้จริง
 - Partial values อนุญาต — `value: null` หมายถึงยังไม่กรอก ไม่ใช่ error
 - Request นี้ไม่เปลี่ยน `decision_rules.status`
+- ทุก operation ทำภายใน **single database transaction**
 
 ---
 
@@ -87,35 +90,45 @@
 
 ## Validation Errors
 
-| Case | HTTP | Code | Message |
-|------|------|------|---------|
-| `id` ไม่มีใน DB | 404 | `NOT_FOUND` | `decision rule not found` |
-| `conditionId` ไม่ belong to decision rule | 422 | `VALIDATION_ERROR` | `condition {id} does not belong to this decision rule` |
-| `ruleId` non-null แต่ไม่พบใน DB | 404 | `NOT_FOUND` | `rule {id} not found` |
-| `orderNo` ซ้ำใน request | 422 | `VALIDATION_ERROR` | `duplicate orderNo {n} in ruleSets` |
-| `ruleSets` ว่าง | 400 | `INVALID_FIELD` | `ruleSets must contain at least one item` |
+| Case | HTTP | Message |
+|------|------|---------|
+| `id` ไม่มีใน DB | 404 | `decision rule not found` |
+| `conditionId` ไม่ belong to decision rule | 422 | `condition {id} does not belong to this decision rule` |
+| `ruleId` non-null แต่ไม่พบใน DB | 404 | `rule {id} not found` |
+| `orderNo` ซ้ำใน request | 422 | `duplicate orderNo {n} in ruleSets` |
+| `ruleSets` ว่าง | 400 | `ruleSets must contain at least one item` |
 
 ---
 
 ## DB Mapping
 
-| JSON Path | Table | Column | Notes |
-|-----------|-------|--------|-------|
+| JSON Path | Table | Column | Operation |
+|-----------|-------|--------|-----------|
 | `{id}` (path) | `decision_rules` | `ID` | validate exists |
+| rules in DB ที่ไม่อยู่ใน request | `rule_attributes` | `DELETED_AT` | soft-DELETE ก่อน |
+| rules in DB ที่ไม่อยู่ใน request | `rules` | `DELETED_AT` | soft-DELETE |
 | `ruleSets[n]` (ruleId=null) | `rules` | `DECISION_RULE_ID`, `VARIATION_NAME`, `SCORE`, `ORDER_NO` | INSERT |
 | `ruleSets[n]` (ruleId=set) | `rules` | `VARIATION_NAME`, `SCORE`, `ORDER_NO` | UPDATE WHERE `ID = ruleId` |
-| `ruleSets[n].conditions[m]` | `rule_attributes` | `RULE_ID`, `ATTRIBUTE_ID`, `RULE_CONDITION_ID`, `VALUE` | UPSERT |
+| `ruleSets[n].conditions[m]` (value≠null) | `rule_attributes` | `RULE_ID`, `ATTRIBUTE_ID`, `VALUE` | DELETE existing + INSERT new |
 
-### Rule Attribute Upsert Logic
+### Transaction Logic
 
 ```
-for each ruleSet:
-  1. CREATE or UPDATE rules row → get rule.id
-  2. lookup attribute_id from rule_conditions WHERE id = conditionId
-  3. UPSERT rule_attributes
-     ON CONFLICT (rule_id, rule_condition_id) DO UPDATE SET value = excluded.value
+BEGIN TRANSACTION
+
+1. ดึง existing rule IDs สำหรับ DR นี้
+2. คำนวณ to_delete_rule_ids = existing − incoming
+3. DELETE rule_attributes WHERE RULE_ID IN (to_delete_rule_ids)
+4. DELETE rules WHERE ID IN (to_delete_rule_ids)
+5. for each ruleSet:
+   a. INSERT or UPDATE rules row
+   b. DELETE rule_attributes WHERE RULE_ID = rule.id  (full replace)
+   c. INSERT rule_attributes for each non-null value
+      (attribute_id ได้จาก rule_conditions WHERE id = conditionId)
+
+COMMIT
 ```
 
-> **Entity Change Required:** `rule_attributes` ต้องเพิ่ม column `RULE_CONDITION_ID UUID FK → rule_conditions.id`
-> เพื่อให้ GET rule-sets สามารถ map value กลับไปยัง column ได้ถูกต้อง
-> และรองรับกรณีที่ attribute เดียวกันถูกใช้มากกว่า 1 condition ใน template
+> **Attribute Lookup:** `conditionId` → `rule_conditions.attribute_id` → `rule_attributes.attribute_id`
+> เนื่องจาก Option A บังคับว่า attribute แต่ละตัวใช้ได้ครั้งเดียวใน DR
+> การ map ผ่าน attribute_id จึงถูกต้องและไม่ ambiguous

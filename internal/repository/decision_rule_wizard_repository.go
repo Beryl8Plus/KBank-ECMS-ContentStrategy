@@ -125,9 +125,19 @@ func (r *DecisionRuleWizardPostgresRepository) FindRuleByID(ctx context.Context,
 	return &rule, nil
 }
 
-// SaveStep2 atomically upserts Rules and replaces their RuleAttributes.
-func (r *DecisionRuleWizardPostgresRepository) SaveStep2(ctx context.Context, rules []*entity.Rule, attrs []*entity.RuleAttribute) error {
+// SaveStep2 atomically deletes removed rules, upserts remaining rules, and replaces their RuleAttributes.
+func (r *DecisionRuleWizardPostgresRepository) SaveStep2(ctx context.Context, rules []*entity.Rule, attrs []*entity.RuleAttribute, toDeleteRuleIDs []uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Delete rules removed from the request (with their attributes).
+		if len(toDeleteRuleIDs) > 0 {
+			if err := tx.Where(`"RULE_ID" IN ?`, toDeleteRuleIDs).Delete(&entity.RuleAttribute{}).Error; err != nil {
+				return fmt.Errorf("deleting rule attributes for removed rules: %w", err)
+			}
+			if err := tx.Where(`"ID" IN ?`, toDeleteRuleIDs).Delete(&entity.Rule{}).Error; err != nil {
+				return fmt.Errorf("deleting removed rules: %w", err)
+			}
+		}
+
 		for _, rule := range rules {
 			if rule.ID == uuid.Nil {
 				if err := tx.Create(rule).Error; err != nil {
@@ -159,33 +169,29 @@ func (r *DecisionRuleWizardPostgresRepository) SaveStep2(ctx context.Context, ru
 	})
 }
 
-// CountSchedulesByPlacement counts non-deleted schedules for a placement.
-func (r *DecisionRuleWizardPostgresRepository) CountSchedulesByPlacement(ctx context.Context, placementID uuid.UUID) (int64, error) {
+// CountSchedulesByPlacementExcludingDR counts non-deleted schedules for a placement
+// that belong to other decision rules (excludes excludeDRID).
+func (r *DecisionRuleWizardPostgresRepository) CountSchedulesByPlacementExcludingDR(ctx context.Context, placementID, excludeDRID uuid.UUID) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&entity.Schedule{}).
-		Where(`"PLACEMENT_ID" = ?`, placementID).
+		Where(`"PLACEMENT_ID" = ? AND "DECISION_RULE_ID" != ?`, placementID, excludeDRID).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("counting schedules by placement: %w", err)
+		return 0, fmt.Errorf("counting schedules by placement excluding dr: %w", err)
 	}
 	return count, nil
 }
 
-// ExistsSchedule reports whether a schedule already exists for (decisionRuleID, placementID).
-func (r *DecisionRuleWizardPostgresRepository) ExistsSchedule(ctx context.Context, decisionRuleID, placementID uuid.UUID) (bool, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&entity.Schedule{}).
-		Where(`"DECISION_RULE_ID" = ? AND "PLACEMENT_ID" = ?`, decisionRuleID, placementID).
-		Count(&count).Error
-	if err != nil {
-		return false, fmt.Errorf("checking schedule exists: %w", err)
-	}
-	return count > 0, nil
-}
-
-// SaveStep3 atomically inserts schedules for a DecisionRule.
+// SaveStep3 atomically replaces all schedules for a DecisionRule:
+// deletes every existing schedule for the DR, then inserts the new set.
 func (r *DecisionRuleWizardPostgresRepository) SaveStep3(ctx context.Context, decisionRuleID uuid.UUID, schedules []*entity.Schedule) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where(`"DECISION_RULE_ID" = ?`, decisionRuleID).Delete(&entity.Schedule{}).Error; err != nil {
+			return fmt.Errorf("deleting existing schedules: %w", err)
+		}
+		if len(schedules) == 0 {
+			return nil
+		}
 		if err := tx.CreateInBatches(schedules, 50).Error; err != nil {
 			return fmt.Errorf("creating schedules: %w", err)
 		}
@@ -252,6 +258,226 @@ func (r *DecisionRuleWizardPostgresRepository) FindSchedulesByDecisionRuleID(ctx
 		return nil, fmt.Errorf("finding schedules by decision rule id: %w", err)
 	}
 	return schedules, nil
+}
+
+// UpdateStep1 atomically updates a DecisionRule header, upserts conditions, and cascades
+// deletes into Step 2 for any removed conditions. Returns IDs of deleted Rules.
+func (r *DecisionRuleWizardPostgresRepository) UpdateStep1(
+	ctx context.Context,
+	id uuid.UUID,
+	dr *entity.DecisionRule,
+	toUpsert []*entity.RuleCondition,
+	toDeleteConditionIDs []uuid.UUID,
+) ([]uuid.UUID, error) {
+	var affectedRuleIDs []uuid.UUID
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// ── Cascade delete Step 2 data for removed conditions ──────────────────
+		if len(toDeleteConditionIDs) > 0 {
+			// Collect attributeIDs of the conditions being deleted (leaf nodes only).
+			var toDeleteConds []*entity.RuleCondition
+			if err := tx.Where(`"ID" IN ?`, toDeleteConditionIDs).Find(&toDeleteConds).Error; err != nil {
+				return fmt.Errorf("fetching conditions to delete: %w", err)
+			}
+			deletedAttrIDs := make([]uuid.UUID, 0, len(toDeleteConds))
+			for _, c := range toDeleteConds {
+				if c.AttributeID != uuid.Nil {
+					deletedAttrIDs = append(deletedAttrIDs, c.AttributeID)
+				}
+			}
+
+			if len(deletedAttrIDs) > 0 {
+				// Find Rules that have at least one RuleAttribute for a deleted attribute.
+				type ruleIDRow struct{ ID uuid.UUID }
+				var rows []ruleIDRow
+				if err := tx.Raw(`
+					SELECT DISTINCT r."ID"
+					FROM rules r
+					INNER JOIN rule_attributes ra ON ra."RULE_ID" = r."ID"
+					WHERE r."DECISION_RULE_ID" = ?
+					  AND ra."ATTRIBUTE_ID" IN ?
+					  AND r."DELETED_AT" IS NULL
+					  AND ra."DELETED_AT" IS NULL
+				`, id, deletedAttrIDs).Scan(&rows).Error; err != nil {
+					return fmt.Errorf("finding affected rules: %w", err)
+				}
+				for _, row := range rows {
+					affectedRuleIDs = append(affectedRuleIDs, row.ID)
+				}
+
+				if len(affectedRuleIDs) > 0 {
+					if err := tx.Where(`"RULE_ID" IN ?`, affectedRuleIDs).Delete(&entity.RuleAttribute{}).Error; err != nil {
+						return fmt.Errorf("deleting rule attributes: %w", err)
+					}
+					if err := tx.Where(`"ID" IN ?`, affectedRuleIDs).Delete(&entity.Rule{}).Error; err != nil {
+						return fmt.Errorf("deleting affected rules: %w", err)
+					}
+				}
+			}
+
+			// Collect all descendant condition IDs (iterative BFS, max depth = 3).
+			allToDelete := make(map[uuid.UUID]struct{}, len(toDeleteConditionIDs))
+			frontier := make([]uuid.UUID, len(toDeleteConditionIDs))
+			for i, cid := range toDeleteConditionIDs {
+				allToDelete[cid] = struct{}{}
+				frontier[i] = cid
+			}
+			for len(frontier) > 0 {
+				var children []*entity.RuleCondition
+				if err := tx.Where(`"PARENT_RULE_CONDITION_ID" IN ?`, frontier).Find(&children).Error; err != nil {
+					return fmt.Errorf("finding child conditions: %w", err)
+				}
+				frontier = frontier[:0]
+				for _, child := range children {
+					if _, seen := allToDelete[child.ID]; !seen {
+						allToDelete[child.ID] = struct{}{}
+						frontier = append(frontier, child.ID)
+					}
+				}
+			}
+			deleteIDs := make([]uuid.UUID, 0, len(allToDelete))
+			for cid := range allToDelete {
+				deleteIDs = append(deleteIDs, cid)
+			}
+			if err := tx.Where(`"ID" IN ?`, deleteIDs).Delete(&entity.RuleCondition{}).Error; err != nil {
+				return fmt.Errorf("deleting conditions: %w", err)
+			}
+		}
+
+		// ── Upsert conditions (parents are always before children in toUpsert) ──
+		for _, cond := range toUpsert {
+			if cond.ID == uuid.Nil {
+				cond.ID = uuid.New()
+				if err := tx.Create(cond).Error; err != nil {
+					return fmt.Errorf("creating condition: %w", err)
+				}
+			} else {
+				if err := tx.Save(cond).Error; err != nil {
+					return fmt.Errorf("updating condition: %w", err)
+				}
+			}
+		}
+
+		// ── Update DecisionRule header fields ───────────────────────────────────
+		updates := map[string]interface{}{
+			`"NAME"`:          dr.Name,
+			`"TYPE"`:          dr.Type,
+			`"EVALUATE_TYPE"`: dr.EvaluateType,
+			`"CONTENT_PATH"`:  dr.ContentPath,
+			`"CAMPAIGN_CODE"`: dr.CampaignCode,
+			`"SCORE"`:         dr.Score,
+		}
+		if err := tx.Model(&entity.DecisionRule{}).Where(`"ID" = ?`, id).Updates(updates).Error; err != nil {
+			return fmt.Errorf("updating decision rule header: %w", err)
+		}
+		return nil
+	})
+	return affectedRuleIDs, err
+}
+
+// CloneDecisionRule atomically inserts a cloned DecisionRule with all child records.
+func (r *DecisionRuleWizardPostgresRepository) CloneDecisionRule(
+	ctx context.Context,
+	dr *entity.DecisionRule,
+	conditions []*entity.RuleCondition,
+	rules []*entity.Rule,
+	attrs []*entity.RuleAttribute,
+	schedules []*entity.Schedule,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(dr).Error; err != nil {
+			return fmt.Errorf("creating cloned decision rule: %w", err)
+		}
+		if len(conditions) > 0 {
+			if err := tx.CreateInBatches(conditions, 100).Error; err != nil {
+				return fmt.Errorf("creating cloned conditions: %w", err)
+			}
+		}
+		if len(rules) > 0 {
+			if err := tx.CreateInBatches(rules, 100).Error; err != nil {
+				return fmt.Errorf("creating cloned rules: %w", err)
+			}
+		}
+		if len(attrs) > 0 {
+			if err := tx.CreateInBatches(attrs, 100).Error; err != nil {
+				return fmt.Errorf("creating cloned rule attributes: %w", err)
+			}
+		}
+		if len(schedules) > 0 {
+			if err := tx.CreateInBatches(schedules, 50).Error; err != nil {
+				return fmt.Errorf("creating cloned schedules: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// DeactivateDecisionRule sets STATUS=INACTIVE and records the user who deactivated.
+func (r *DecisionRuleWizardPostgresRepository) DeactivateDecisionRule(ctx context.Context, id uuid.UUID, inactiveBy *uuid.UUID) error {
+	err := r.db.WithContext(ctx).Model(&entity.DecisionRule{}).
+		Where(`"ID" = ?`, id).
+		Updates(map[string]any{
+			`"STATUS"`:      enums.DecisionRuleStatusInactive,
+			`"INACTIVE_BY"`: inactiveBy,
+		}).Error
+	if err != nil {
+		return fmt.Errorf("deactivating decision rule: %w", err)
+	}
+	return nil
+}
+
+// DeleteDecisionRule soft-deletes a DecisionRule and all its child records in one transaction.
+func (r *DecisionRuleWizardPostgresRepository) DeleteDecisionRule(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where(`"DECISION_RULE_ID" = ?`, id).Delete(&entity.Schedule{}).Error; err != nil {
+			return fmt.Errorf("deleting schedules: %w", err)
+		}
+
+		var ruleIDs []uuid.UUID
+		if err := tx.Model(&entity.Rule{}).
+			Where(`"DECISION_RULE_ID" = ?`, id).
+			Pluck(`"ID"`, &ruleIDs).Error; err != nil {
+			return fmt.Errorf("fetching rule ids: %w", err)
+		}
+
+		if len(ruleIDs) > 0 {
+			if err := tx.Where(`"RULE_ID" IN ?`, ruleIDs).Delete(&entity.RuleAttribute{}).Error; err != nil {
+				return fmt.Errorf("deleting rule attributes: %w", err)
+			}
+			if err := tx.Where(`"ID" IN ?`, ruleIDs).Delete(&entity.Rule{}).Error; err != nil {
+				return fmt.Errorf("deleting rules: %w", err)
+			}
+		}
+
+		if err := tx.Where(`"DECISION_RULE_ID" = ?`, id).Delete(&entity.RuleCondition{}).Error; err != nil {
+			return fmt.Errorf("deleting rule conditions: %w", err)
+		}
+
+		if err := tx.Where(`"ID" = ?`, id).Delete(&entity.DecisionRule{}).Error; err != nil {
+			return fmt.Errorf("deleting decision rule: %w", err)
+		}
+		return nil
+	})
+}
+
+// FindConditionAttributesByDecisionRuleIDs returns leaf RuleConditions with Attribute
+// preloaded for a batch of decision rule IDs. Leaf conditions are those whose
+// ATTRIBUTE_ID is not the zero UUID (group nodes use uuid.Nil as a sentinel).
+// A single LEFT JOIN replaces per-DR loops — no N+1.
+func (r *DecisionRuleWizardPostgresRepository) FindConditionAttributesByDecisionRuleIDs(ctx context.Context, drIDs []uuid.UUID) ([]*entity.RuleCondition, error) {
+	if len(drIDs) == 0 {
+		return nil, nil
+	}
+	var conditions []*entity.RuleCondition
+	err := r.db.WithContext(ctx).
+		Joins("Attribute").
+		Where(`rule_conditions."DECISION_RULE_ID" IN ?`, drIDs).
+		Where(`rule_conditions."ATTRIBUTE_ID" != ?`, uuid.Nil).
+		Find(&conditions).Error
+	if err != nil {
+		return nil, fmt.Errorf("finding condition attributes by decision rule ids: %w", err)
+	}
+	return conditions, nil
 }
 
 // FindSchedulesWithPlacementsByDecisionRuleIDs returns Schedules with Placement and Channel

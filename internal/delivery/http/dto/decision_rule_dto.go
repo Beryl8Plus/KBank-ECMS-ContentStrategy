@@ -63,6 +63,22 @@ type DecisionRuleResponse struct {
 	UpdatedAt      time.Time                `json:"updatedAt"`
 }
 
+// CloneDecisionRuleResponse is returned after a successful clone operation.
+type CloneDecisionRuleResponse struct {
+	ID                  uuid.UUID                `json:"id"`
+	DecisionRuleRunning string                   `json:"decisionRuleRunning"`
+	Status              enums.DecisionRuleStatus `json:"status"`
+	CreatedAt           time.Time                `json:"createdAt"`
+}
+
+// DeactivateDecisionRuleResponse is returned after a successful deactivation.
+type DeactivateDecisionRuleResponse struct {
+	ID                  uuid.UUID                `json:"id"`
+	DecisionRuleRunning string                   `json:"decisionRuleRunning"`
+	Status              enums.DecisionRuleStatus `json:"status"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+}
+
 func toAttributeResponsePtr(a *entity.Attribute) *AttributeResponse {
 	if a == nil {
 		return nil

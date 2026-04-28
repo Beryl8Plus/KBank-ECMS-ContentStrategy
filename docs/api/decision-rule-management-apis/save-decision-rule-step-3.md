@@ -2,23 +2,26 @@
 
 กำหนด `Schedule` และ `Placement` สำหรับ Decision Rule (Wizard Step 3)
 
-หลังจาก save สำเร็จ backend จะเปลี่ยน `decision_rules.status` → `ACTIVE`
+Endpoint นี้ใช้ได้ทั้ง **Create Mode** และ **Edit Mode** — ทำ **full replacement** เสมอ
 
 ---
 
 ## Constraints
 
-- Max **3 schedules ต่อ placement** (นับรวมทุก decision rules ใน system)
-- แต่ละ `(decision_rule_id, placement_id)` pair ต้องไม่ซ้ำ
+- **Full Replacement:** backend จะ **DELETE** schedules ทั้งหมดของ DR นี้ก่อน แล้ว INSERT ใหม่จาก request
+- `scheduleId` ใน request เป็น optional — frontend ใช้ track ได้ แต่ backend ไม่ใช้ (generate ID ใหม่ทุกครั้ง)
+- Max **3 schedules ต่อ placement** (นับเฉพาะ DR **อื่น** ที่ใช้ placement เดียวกัน หลังจากของ DR นี้ถูกลบแล้ว)
 - `startDate` ต้องน้อยกว่า `endDate`
 - `endDate` ต้องไม่อยู่ในอดีต
 - `placementId` ต้องไม่ซ้ำภายใน request เดียวกัน
 - `timezone` default เป็น `Asia/Bangkok` หาก frontend ไม่ส่งมา
-- `timeOfDayStart` / `timeOfDayEnd` format: `HH:mm` (24-hour) เช่น `"08:00"`, `"23:59"`
+- `timeOfDayStart` / `timeOfDayEnd` format: `HHmm` (24-hour) เช่น `"0800"`, `"2359"`
 - `allDay: true` → ไม่ต้องส่ง `timeOfDayStart` / `timeOfDayEnd`
 - `recurrenceType: "RRULE"` → ต้องส่ง `recurrenceRule` (iCalendar RRULE format)
 - `recurrenceType: "CALENDAR"` → ต้องส่ง `calendarId`
 - `recurrenceType: "ONCE"` → ทำงานครั้งเดียวตาม `startDate`–`endDate`
+- Request นี้ **ไม่เปลี่ยน** `decision_rules.status` — ใช้ Step 4 (`PUT /decision-rules/{id}/activate`) เพื่อ Activate
+- ทุก operation ทำภายใน **single database transaction**
 
 ---
 
@@ -37,6 +40,7 @@
 {
   "schedules": [
     {
+      "scheduleId": null,
       "placementId": "p1000000-0000-0000-0000-000000000001",
       "startDate": "2026-05-01T00:00:00+07:00",
       "endDate": "2026-05-31T23:59:59+07:00",
@@ -48,22 +52,24 @@
 }
 ```
 
-**Advanced (RRULE, Time window):**
+**Advanced (RRULE, Time window) — Edit Mode ส่ง scheduleId ที่มีอยู่แล้ว:**
 ```json
 {
   "schedules": [
     {
+      "scheduleId": "s1000000-0000-0000-0000-000000000001",
       "placementId": "p1000000-0000-0000-0000-000000000001",
       "startDate": "2026-05-01T00:00:00+07:00",
       "endDate": "2026-05-31T23:59:59+07:00",
       "recurrenceType": "RRULE",
       "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
       "allDay": false,
-      "timeOfDayStart": "08:00",
-      "timeOfDayEnd": "18:00",
+      "timeOfDayStart": "0800",
+      "timeOfDayEnd": "1800",
       "timezone": "Asia/Bangkok"
     },
     {
+      "scheduleId": null,
       "placementId": "p1000000-0000-0000-0000-000000000002",
       "startDate": "2026-06-01T00:00:00+07:00",
       "endDate": "2026-06-30T23:59:59+07:00",
@@ -81,6 +87,7 @@
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `schedules` | array | ✓ | min 1 item |
+| `schedules[].scheduleId` | UUID \| null | — | frontend tracking only; backend ไม่ใช้ (full replacement ทุกครั้ง) |
 | `schedules[].placementId` | UUID | ✓ | FK → `placements.id` |
 | `schedules[].startDate` | RFC3339 | ✓ | stored as UTC in `effective_from` |
 | `schedules[].endDate` | RFC3339 | ✓ | stored as UTC in `effective_until` |
@@ -102,7 +109,7 @@
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "decisionRuleId": "DR-20260424-001",
-    "status": "ACTIVE",
+    "status": "DRAFT",
     "schedules": [
       {
         "scheduleId": "s1000000-0000-0000-0000-000000000001",
@@ -140,20 +147,18 @@
 
 ## Validation Errors
 
-| Case | HTTP | Code | Message |
-|------|------|------|---------|
-| `id` ไม่มีใน DB | 404 | `NOT_FOUND` | `decision rule not found` |
-| `placementId` ไม่มีใน DB | 404 | `NOT_FOUND` | `placement {id} not found` |
-| `calendarId` ไม่มีใน DB | 404 | `NOT_FOUND` | `calendar {id} not found` |
-| `startDate >= endDate` | 400 | `INVALID_FIELD` | `startDate must be before endDate` |
-| `endDate` อยู่ในอดีต | 400 | `INVALID_FIELD` | `endDate must be a future date` |
-| `timeOfDayStart` >= `timeOfDayEnd` | 400 | `INVALID_FIELD` | `timeOfDayStart must be before timeOfDayEnd` |
-| `allDay=false` แต่ไม่มี `timeOfDayStart`/`timeOfDayEnd` | 400 | `INVALID_FIELD` | `timeOfDayStart and timeOfDayEnd are required when allDay is false` |
-| `recurrenceType=RRULE` แต่ไม่มี `recurrenceRule` | 400 | `INVALID_FIELD` | `recurrenceRule is required when recurrenceType is RRULE` |
-| `recurrenceType=CALENDAR` แต่ไม่มี `calendarId` | 400 | `INVALID_FIELD` | `calendarId is required when recurrenceType is CALENDAR` |
-| placement มี schedule ครบ 3 แล้ว | 422 | `VALIDATION_ERROR` | `placement {id} has reached the maximum of 3 schedules` |
-| `(id, placementId)` pair ซ้ำ | 422 | `VALIDATION_ERROR` | `schedule for this decision rule and placement already exists` |
-| `placementId` ซ้ำใน request | 422 | `VALIDATION_ERROR` | `duplicate placementId {id} in schedules` |
+| Case | HTTP | Message |
+|------|------|---------|
+| `id` ไม่มีใน DB | 404 | `decision rule not found` |
+| `placementId` ไม่มีใน DB | 404 | `placement {id} not found` |
+| `calendarId` ไม่มีใน DB | 404 | `calendar {id} not found` |
+| `startDate >= endDate` | 422 | `startDate must be before endDate for placement {id}` |
+| `endDate` อยู่ในอดีต | 422 | `endDate must be a future date for placement {id}` |
+| `allDay=false` แต่ไม่มี `timeOfDayStart`/`timeOfDayEnd` | 422 | `timeOfDayStart and timeOfDayEnd required when allDay is false for placement {id}` |
+| `recurrenceType=RRULE` แต่ไม่มี `recurrenceRule` | 422 | `recurrenceRule is required when recurrenceType is RRULE` |
+| `recurrenceType=CALENDAR` แต่ไม่มี `calendarId` | 422 | `calendarId is required when recurrenceType is CALENDAR` |
+| placement (ของ DR อื่น) มี schedule ครบ 3 แล้ว | 422 | `placement {id} has reached the maximum of 3 schedules` |
+| `placementId` ซ้ำใน request | 422 | `duplicate placementId {id} in schedules` |
 
 ---
 
@@ -161,7 +166,7 @@
 
 | JSON Field | Table | Column | Notes |
 |------------|-------|--------|-------|
-| `{id}` (path) | `decision_rules` | `ID` | validate exists; UPDATE `STATUS` → `ACTIVE` |
+| `{id}` (path) | `decision_rules` | `ID` | validate exists; **ไม่เปลี่ยน STATUS** |
 | `schedules[].placementId` | `placements` | `ID` | validate exists |
 | `schedules[].calendarId` | `calendars` | `ID` | validate exists when provided |
 | `schedules[].startDate` | `schedules` | `EFFECTIVE_FROM` | convert to UTC before store |
@@ -177,9 +182,21 @@
 
 ### Capacity Check (per placement)
 
+เนื่องจาก SaveStep3 ทำ full replacement (ลบ schedules ของ DR นี้ก่อน) การนับ cap จึงนับเฉพาะ DR อื่น:
+
 ```sql
 SELECT COUNT(*) FROM schedules
 WHERE placement_id = :placementId
+  AND decision_rule_id != :currentDRId
   AND deleted_at IS NULL;
 -- reject if count >= 3
+```
+
+### Full Replacement Logic
+
+```
+BEGIN TRANSACTION
+  DELETE schedules WHERE DECISION_RULE_ID = {id}
+  INSERT INTO schedules ... (schedules from request, new IDs generated)
+COMMIT
 ```

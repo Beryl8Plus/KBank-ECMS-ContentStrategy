@@ -14,6 +14,7 @@
 - `connectorOperator` ของ item **สุดท้าย** ใน array ต้องเป็น `null`
 - `type: "group"` rows ถูกบันทึกใน `rule_conditions` โดยมี `attribute_id = null`, `logical_operator = null`
 - `campaignCode` จำเป็นเฉพาะเมื่อ `type` เป็น `AUDIENCE` หรือ `SALES_TARGET` (IsCampaign)
+- **No Duplicate Attributes:** แต่ละ `attributeId` ใช้ได้เพียงครั้งเดียวในทุก leaf conditions — ห้ามซ้ำ (enforced เพื่อรองรับ Cascade Delete logic ใน Edit Mode)
 
 ---
 
@@ -104,9 +105,10 @@
 | `contentPath` | string | ✓ | max 255 chars | |
 | `campaignCode` | string | ✓ when IsCampaign | max 25 chars | required when type = AUDIENCE or SALES_TARGET |
 | `score` | float | — | 0–100 | default 0 |
+| `conditions[].conditionId` | UUID \| null | — | — | ไม่ใช้ใน POST (ignored); ใช้ใน Edit Mode (`PUT /decision-rules/{id}`) เท่านั้น |
 | `conditions[].type` | string | ✓ | `condition`, `group` | |
 | `conditions[].sequence` | int | ✓ | ≥ 1 | ordering within parent |
-| `conditions[].attributeId` | UUID | ✓ for condition | — | null allowed for group rows |
+| `conditions[].attributeId` | UUID | ✓ for condition | — | null allowed for group rows; ต้องไม่ซ้ำกันใน DR เดียวกัน |
 | `conditions[].logicalOperator` | string | ✓ for condition | `<`, `<=`, `>`, `>=`, `=`, `!=`, `IN`, `BETWEEN` | null for group rows |
 | `conditions[].connectorOperator` | string | — | `AND`, `OR`, `null` | null on last item in array |
 | `conditions[].conditions` | array | ✓ for group | — | recursive; required when type = group |
@@ -148,6 +150,7 @@
 | `type=condition` แต่ `attributeId` เป็น null | 422 | `VALIDATION_ERROR` | `attributeId is required for condition type` |
 | `type=group` แต่ `conditions` ว่าง | 422 | `VALIDATION_ERROR` | `group must contain at least one condition` |
 | `connectorOperator` ของ item สุดท้ายไม่เป็น null | 422 | `VALIDATION_ERROR` | `last condition in array must have connectorOperator null` |
+| `attributeId` ซ้ำกันใน conditions | 422 | `VALIDATION_ERROR` | `attributeId {id} appears more than once in conditions — each attribute may only be used once` |
 | ชื่อซ้ำใน system | 409 | `CONFLICT` | `decision rule with this name already exists` |
 
 ---

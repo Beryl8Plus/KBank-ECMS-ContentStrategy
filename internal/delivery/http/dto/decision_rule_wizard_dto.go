@@ -23,7 +23,10 @@ type WizardStep1Request struct {
 }
 
 // ConditionItemRequest is a recursive condition node (type = condition | group).
+// ConditionID is populated only in edit requests (PUT /decision-rules/:id).
+// nil means "insert new"; a non-nil UUID means "update existing".
 type ConditionItemRequest struct {
+	ConditionID       *uuid.UUID              `json:"conditionId"`
 	Type              enums.ConditionType     `json:"type"              binding:"required"`
 	Sequence          int                     `json:"sequence"          binding:"required,min=1"`
 	AttributeID       uuid.UUID               `json:"attributeId"`
@@ -38,6 +41,21 @@ type WizardStep1Response struct {
 	DecisionRuleRunning string                   `json:"decisionRuleId"`
 	Status              enums.DecisionRuleStatus `json:"status"`
 	CreatedAt           time.Time                `json:"createdAt"`
+}
+
+// CascadeEffectResponse describes Step 2 data deleted as a side-effect of Step 1 edits.
+type CascadeEffectResponse struct {
+	DeletedRulesCount int         `json:"deletedRulesCount"`
+	AffectedRuleIDs   []uuid.UUID `json:"affectedRuleIds"`
+}
+
+// WizardEditStep1Response is returned after a successful PUT /decision-rules/:id.
+type WizardEditStep1Response struct {
+	ID                  uuid.UUID                `json:"id"`
+	DecisionRuleRunning string                   `json:"decisionRuleId"`
+	Status              enums.DecisionRuleStatus `json:"status"`
+	CascadeEffect       *CascadeEffectResponse   `json:"cascadeEffect"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
 }
 
 // ── Step 1 read (edit mode) ───────────────────────────────────────────────────
@@ -138,8 +156,11 @@ type WizardStep3Request struct {
 	Schedules []ScheduleUpsertRequest `json:"schedules" binding:"required,min=1"`
 }
 
-// ScheduleUpsertRequest is one schedule to create.
+// ScheduleUpsertRequest is one schedule to create or update.
+// ScheduleID is optional: non-nil means the frontend is tracking an existing schedule,
+// but the backend performs full replacement regardless.
 type ScheduleUpsertRequest struct {
+	ScheduleID     *uuid.UUID           `json:"scheduleId"`
 	PlacementID    uuid.UUID            `json:"placementId"    binding:"required"`
 	StartDate      time.Time            `json:"startDate"      binding:"required"`
 	EndDate        time.Time            `json:"endDate"        binding:"required"`
@@ -199,6 +220,12 @@ type DecisionRulePlacementResponse struct {
 	ChannelName   string    `json:"channelName"`
 }
 
+// AttributeDetailForList is a minimal attribute summary embedded in the list response.
+type AttributeDetailForList struct {
+	AttributeID uuid.UUID `json:"attributeId"`
+	IsActive    bool      `json:"isActive"`
+}
+
 // DecisionRuleListItemResponse is one row in GET /decision-rules.
 type DecisionRuleListItemResponse struct {
 	ID                  uuid.UUID                       `json:"id"`
@@ -210,6 +237,7 @@ type DecisionRuleListItemResponse struct {
 	Status              enums.DecisionRuleStatus        `json:"status"`
 	SubStatus           enums.DecisionRuleSubStatus     `json:"subStatus"`
 	Placements          []DecisionRulePlacementResponse `json:"placements"`
+	Attributes          []AttributeDetailForList        `json:"attributes"`
 	CreatedAt           time.Time                       `json:"createdAt"`
 	UpdatedAt           time.Time                       `json:"updatedAt"`
 }
