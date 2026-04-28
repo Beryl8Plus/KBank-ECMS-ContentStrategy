@@ -11,34 +11,10 @@ ATLAS_EMPTY_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run run-svc-contstrat-delivery dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery proto proto-install redis-set redis-seed-user-attrs wire-gen
-
-## Install protoc Go plugins
-proto-install:
-	@echo "Installing protoc-gen-lint..."
-	go install github.com/yoheimuta/protolint/cmd/protolint@latest
-	@echo "Installing protoc-gen-go..."
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@echo "Installing protoc-gen-go-grpc..."
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	@echo "Protoc plugins installed."
-
-## Generate Go code from protobuf definitions
-proto:
-	@echo "Generating protobuf code..."
-	@mkdir -p internal/grpc/pb/cms_runtime/v1
-	protoc \
-		--go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		proto/cms_runtime/v1/runtime.proto
-	@mv proto/cms_runtime/v1/runtime.pb.go internal/grpc/pb/cms_runtime/v1/
-	@mv proto/cms_runtime/v1/runtime_grpc.pb.go internal/grpc/pb/cms_runtime/v1/
-	@echo "Protobuf generation complete."
+.PHONY: init build run run-svc-contstrat-delivery dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery redis-set redis-seed-user-attrs wire-gen
 
 ## Initialize workspace
 init:
-	@echo "Installing protoc plugins..."
-	make proto-install
 	@echo "Installing golangci-lint..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing swag..."
