@@ -25,8 +25,7 @@ type DecisionRule struct {
 	SubStatus           enums.DecisionRuleSubStatus `gorm:"size:255"                                                                json:"subStatus"`
 	InactiveBy          *uuid.UUID                  `gorm:"type:uuid"                                                               json:"inactiveBy"`
 	InactiveByUser      *User                       `gorm:"foreignKey:InactiveBy;references:ID"                                     json:"inactiveByUser,omitempty"`
-	CreatedByUser       *User                       `gorm:"foreignKey:CreatedBy;references:ID"                                      json:"createdByUser,omitempty"`
-	UpdatedByUser       *User                       `gorm:"foreignKey:UpdatedBy;references:ID"                                      json:"updatedByUser,omitempty"`
+
 	// Associations used by the rule evaluation engine.
 	RuleConditions []RuleCondition `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"ruleConditions,omitempty"`
 	Rules          []Rule          `gorm:"foreignKey:DecisionRuleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"rules,omitempty"`

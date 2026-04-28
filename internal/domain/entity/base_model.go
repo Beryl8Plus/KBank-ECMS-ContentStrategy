@@ -23,6 +23,10 @@ type BaseModel struct {
 	UpdatedAt time.Time      `gorm:"type:timestamptz;autoUpdateTime;<-"             json:"updatedAt"`
 	UpdatedBy *uuid.UUID     `gorm:"type:uuid;<-"                                   json:"updatedBy"`
 	DeletedAt gorm.DeletedAt `gorm:"index"                                          json:"-"`
+
+	// These fields are not stored in the database but can be populated in code for convenience.
+	CreatedByUser *User `gorm:"-"                                              json:"createdByUser,omitempty"`
+	UpdatedByUser *User `gorm:"-"                                              json:"updatedByUser,omitempty"`
 }
 
 // BeforeCreate is a GORM hook to set CreatedBy and UpdatedBy automatically.
