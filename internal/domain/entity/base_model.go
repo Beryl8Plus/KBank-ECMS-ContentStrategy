@@ -25,8 +25,8 @@ type BaseModel struct {
 	DeletedAt gorm.DeletedAt `gorm:"index"                                          json:"-"`
 
 	// These fields are not stored in the database but can be populated in code for convenience.
-	CreatedByUser *User `gorm:"-"                                              json:"createdByUser,omitempty"`
-	UpdatedByUser *User `gorm:"-"                                              json:"updatedByUser,omitempty"`
+	CreatedByUser *User `gorm:"-"                                              swaggerignore:"true" json:"createdByUser,omitempty"`
+	UpdatedByUser *User `gorm:"-"                                              swaggerignore:"true" json:"updatedByUser,omitempty"`
 }
 
 // BeforeCreate is a GORM hook to set CreatedBy and UpdatedBy automatically.
