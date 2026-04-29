@@ -1,461 +1,255 @@
-# KBank ECMS
+# KBank ECMS — CMS Delivery Runtime Service
 
-## Description
-
-This repository exposes the Rule Management API as a Go backend service structured following [golang-standards/project-layout](https://github.com/golang-standards/project-layout) with Clean Architecture principles.
-
-- `POST /rule-management`: active API endpoint.
-
-### Core Architectural Layers
-
-The project is organized into four clean layers with a strict inward dependency rule — outer layers depend on inner layers, never the reverse.
-
-```mermaid
-flowchart TD
-    Entry[cmd/server/main.go<br>Entry Point & Wiring]
-
-    subgraph Delivery [Delivery Layer]
-        Http[internal/delivery/<br>http layer]
-    end
-
-    subgraph Service [Service Layer]
-        BizLogic[internal/service/<br>business logic]
-    end
-
-    subgraph Repo [Repository Layer]
-        DataAccess[internal/repository/<br>data access impl]
-    end
-
-    subgraph Domain [Domain Layer - Core zero deps]
-        Core[internal/domain/]
-    end
-
-    Entry --> Delivery
-    Entry --> Service
-    Entry --> Repo
-
-    Delivery --> Domain
-    Service --> Domain
-    Repo --> Domain
-```
-
-#### Layer Responsibilities
-
-| Layer              | Path                              | Responsibility                                               |
-| ------------------ | --------------------------------- | ------------------------------------------------------------ |
-| **Domain**         | `internal/domain/`                | Entities, repository interfaces. No external dependencies.   |
-| **Use Case**       | `internal/usecase/`               | Business logic orchestration. Depends on domain only.        |
-| **Repository**     | `internal/repository/`            | Redis & Azure implementations. Implements domain interfaces. |
-| **Delivery**       | `internal/delivery/http/`         | Gin HTTP handlers, middleware, route definitions.            |
-| **Infrastructure** | `internal/infrastructure/logger/` | Structured logging (cross-cutting concern).                  |
-| **Pkg**            | `pkg/util/`                       | Generic public utilities safe for external use.              |
-
-#### Project Structure
-
-```text
-├── cmd/
-│   └── server/
-│       └── main.go                          # Entry point — wires all layers
-├── internal/
-│   ├── domain/                              # Layer 1: Core entities & interfaces
-│   ├── usecase/                             # Layer 2: Business logic
-│   ├── repository/                          # Layer 3: Data access implementations
-│   ├── delivery/                            # Layer 4: HTTP delivery
-│   └── infrastructure/
-│       └── logger/                          # Structured logging
-├── pkg/
-│   └── util/                                # Generic utilities
-├── configs/                                 # YAML configuration files
-├── docs/                                    # API docs & diagrams
-└── dockerfile
-```
-
-## Installation
-
-### Prerequisites
-
-- [Go](https://golang.org/) 1.26+ (or your relevant Go version)
-- [Docker](https://www.docker.com/) (Optional: for containerized deployment)
-- [Redis](https://redis.io/)
-
-### Authentication
-
-The API uses JWT (JSON Web Token) authentication following Gin Framework standards:
-
-**Public Endpoints** (no authentication required):
-- `POST /rule-management`
-- `POST /token` (OAuth2 token endpoint for client credentials)
-
-**Protected Endpoints** (JWT authentication required):
-- All endpoints under `/schedules`, `/decision-rules`, `/schedule-occurrences`, `/attributes`, `/channels`, `/placements`
-
-#### User Authentication Flow
-1. Include JWT token in Authorization header: `Authorization: Bearer <token>`
-2. Middleware validates token before allowing access to protected endpoints
-3. User information is extracted and stored in context for downstream handlers
-
-#### OAuth2 Client Credentials Flow (Server-to-Server)
-For server-to-server communication, the API supports OAuth2 Client Credentials Flow:
-
-**Client Server Implementation Flow:**
-
-1. **Boot up**: Server starts (no token in memory)
-2. **Request API**: When needing data, check memory cache for existing token
-3. **If no token/expired**: Call `/token` endpoint to obtain new token, cache it
-4. **Call Service**: Attach token in Authorization header and call API
-5. **Handle 401**: If API returns 401, clear cache and retry from step 2
-
-**1. Obtain Token:**
-```bash
-curl -X POST "http://localhost:8081/token" \
-  -d "grant_type=client_credentials" \
-  -d "client_id=service-cmc" \
-  -d "client_secret=super-secret-key-cmc"
-```
-
-**Response:**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "Bearer",
-  "expires_in": 86400
-}
-```
-
-**2. Use Token for API Requests:**
-```bash
-curl -X GET "http://localhost:8081/schedules" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Supported Clients:**
-Clients are configured in `configs/oauth2-clients.yaml`. Current clients:
-- `service-cmc`: Scopes: `read:rules`, `write:rules`
-
-**Adding New Clients:**
-To add a new OAuth2 client without modifying code:
-
-1. Edit `configs/oauth2-clients.yaml`:
-```yaml
-clients:
-  - client_id: your-new-service
-    client_secret: your-secret-key-here
-    scopes:
-      - read:orders
-      - write:payments
-    description: Your new service description
-```
-
-2. (Optional) Override secret in `.env` for security:
-```bash
-CLIENT_SECRET_your-new-service=production-secret-from-vault
-```
-
-3. Restart the application to load the new configuration
-
-**Best Practices:**
-- **Token Caching**: Store tokens in memory with TTL to avoid unnecessary `/token` calls
-- **Scope-Based Access**: Use scopes to limit what each client can do
-- **Rate Limiting**: Implement rate limiting per client_id to prevent abuse
-- **Secret Rotation**: Regularly rotate client secrets and support revocation
-- **Error Handling**: Clear cache on 401 and retry token acquisition
-- **External Config**: Use `configs/oauth2-clients.yaml` for client definitions, override secrets via environment variables in production
-
-**JWT Configuration** (`.env`):
-```bash
-JWT_SECRET_KEY=your-secret-key-change-in-production
-JWT_TOKEN_DURATION=24h
-
-# OAuth2 Client Configuration
-OAUTH2_CLIENTS_CONFIG_PATH=configs/oauth2-clients.yaml
-
-# Override client secrets from environment variables (optional, for security)
-# Format: CLIENT_SECRET_<CLIENT_ID>
-CLIENT_SECRET_service-cmc=super-secret-key-cmc
-```
-
-**Authentication Sequence Diagram:**
-
-```mermaid
-sequenceDiagram
-    participant ClientServer
-    participant Cache
-    participant API
-    participant TokenHandler
-    participant JWTMiddleware
-    participant Handler
-
-    Note over ClientServer,Handler: OAuth2 Client Credentials Flow (Server-to-Server)
-
-    Note over ClientServer: 1. Boot up (no token)
-    ClientServer->>Cache: Check for token
-    Cache-->>ClientServer: No token found
-
-    Note over ClientServer: 2. Request API (first time)
-    ClientServer->>Cache: Check for token
-    Cache-->>ClientServer: No token / Expired
-
-    Note over ClientServer: 3. Obtain new token
-    ClientServer->>API: POST /token<br/>grant_type=client_credentials<br/>client_id=service-cmc<br/>client_secret=xxx
-    API->>TokenHandler: Validate credentials
-    TokenHandler->>TokenHandler: Check client registry
-    TokenHandler->>TokenHandler: Generate JWT token
-    TokenHandler-->>API: access_token + expires_in
-    API-->>ClientServer: 200 OK + access_token
-
-    ClientServer->>Cache: Store token with TTL
-
-    Note over ClientServer: 4. Call service with token
-    ClientServer->>Cache: Check for token
-    Cache-->>ClientServer: Token found
-    ClientServer->>API: GET /schedules<br/>Authorization: Bearer <token>
-    API->>JWTMiddleware: Extract token
-    JWTMiddleware->>JWTMiddleware: Verify client token
-    JWTMiddleware->>JWTMiddleware: Extract client_id + scopes
-    JWTMiddleware->>Handler: c.Next()
-    Handler->>API: Process request
-    API-->>ClientServer: 200 OK + Data
-
-    Note over ClientServer: 5. Handle 401 (token expired)
-    ClientServer->>API: GET /schedules<br/>Authorization: Bearer <expired_token>
-    API->>JWTMiddleware: Verify token
-    JWTMiddleware-->>API: Token expired
-    API-->>ClientServer: 401 Unauthorized
-    ClientServer->>Cache: Clear token cache
-    ClientServer->>API: POST /token<br/>(retry token request)
-    API-->>ClientServer: New access_token
-    ClientServer->>Cache: Store new token
-    ClientServer->>API: GET /schedules<br/>Authorization: Bearer <new_token>
-    API-->>ClientServer: 200 OK + Data
-
-    Note over ClientServer,Handler: User Authentication Flow
-
-    participant User
-    User->>API: GET /schedules<br/>Authorization: Bearer <user_token>
-    API->>JWTMiddleware: Extract token
-    JWTMiddleware->>JWTMiddleware: Verify user token
-    JWTMiddleware->>JWTMiddleware: Extract user_id + email
-    JWTMiddleware->>Handler: c.Next()
-    Handler->>API: Process request
-    API-->>User: 200 OK + Data
-
-    Note over ClientServer,Handler: Public Endpoint (No Auth)
-
-    ClientServer->>API: POST /rule-management
-    API->>Handler: Process directly
-    API-->>ClientServer: 200 OK + Data
-```
-
-### User Permissions & Profile Management
-
-The system implements role-based access control (RBAC) with the following structure:
-
-**Tables:**
-- `users`: User accounts with email, name, role, and profile assignments
-- `roles`: User roles (e.g., CS_MARKER, CS_SUPER_ADMIN, IT_ADMIN, VIEWER)
-- `profiles`: User groups that determine permissions
-- `permissions`: Individual permissions with SOURCE and ACTION (e.g., `decision_rule` + `CREATE`)
-- `profile_permissions`: Many-to-many relationship between profiles and permissions
-- `oauth2_clients`: Server-to-server OAuth2 clients linked to a profile (for Client Credentials Flow)
-
-**Permission Matrix (Content Decision Rule):**
-
-| User Group (Profile)         | CREATE | EDIT  | DELETE | VIEW_ALL | EDIT_ALL | DELETE_ALL |
-|------------------------------|--------|-------|--------|----------|----------|------------|
-| Content Strategy Marker      | ✅     | ✅    | ✅     | ✅       | ❌       | ❌         |
-| Content Strategy Super Admin | ✅     | ✅    | ✅     | ✅       | ✅       | ✅         |
-| IT Admin                     | ❌     | ❌    | ❌     | ✅       | ✅       | ✅         |
-| Viewer                       | ❌     | ❌    | ❌     | ✅       | ❌       | ❌         |
-
-**Mock Users:**
-
-| Email                        | Name           | Role/Profile                 |
-|------------------------------|----------------|------------------------------|
-| somchai.marker@kbank.com     | Somchai Marker | Content Strategy Marker      |
-| sunee.marker@kbank.com       | Sunee Marker   | Content Strategy Marker      |
-| admin.super@kbank.com        | Admin Super    | Content Strategy Super Admin |
-| itadmin@kbank.com            | IT Admin       | IT Admin                     |
-| viewer@kbank.com             | Viewer User    | Viewer                       |
-
-**Permission Enforcement:**
-
-There are two complementary authorization mechanisms:
-
-1. **`ProfilePermissionGuard`** (user tokens) — queries the database on every
-   request to check the current user's profile permissions. Best suited for
-   admin UIs where permissions can change frequently.
-
-   ```go
-   decisionRules.POST("",
-       middleware.ProfilePermissionGuard(permissionRepo, "decision_rule",
-           "CREATE", "EDIT", "DELETE"),
-       handler.CreateDecisionRule,
-   )
-   ```
-
-2. **`RequireScope`** (client tokens) — reads scopes embedded in the JWT and
-   matches them against the required `source:action` values (OR semantics).
-   Best suited for server-to-server traffic via the OAuth2 Client Credentials
-   Flow; scopes are resolved from the client's profile permissions at token
-   issuance time.
-
-   ```go
-   decisionRules.POST("",
-       middleware.RequireScope("decision_rule", "CREATE"),
-       wizardHandler.CreateDecisionRule,
-   )
-   ```
-
-The `JWTMiddleware` accepts both token types and populates the request context
-accordingly (user_id for user tokens, client_id + scopes for client tokens).
-`RequireScope` passes through requests that were authenticated as users so that
-user-based checks (`ProfilePermissionGuard`) remain authoritative.
-
-**Loading Mock Data:**
-```bash
-make db-mock-data-sql-up
-```
-
-This will insert 4 roles, 4 profiles, 6 permissions, 5 mock users and 4 OAuth2
-clients with proper relationships.
+A read-only personalization API that evaluates campaign content rules against user attributes and returns ranked content results. Built with Go and designed for high-throughput delivery workloads using a three-layer cache architecture.
 
 ---
 
-### OAuth2 Client Credentials Flow (Server-to-Server)
+## Key Features
 
-Server-to-server callers obtain a JWT from `POST /token` by presenting a
-`client_id` / `client_secret` pair. Each client is linked to a profile in the
-database, and the server generates scopes from that profile's permissions in
-the format `<source>:<action>` (e.g. `decision_rule:CREATE`).
+- **Three-layer caching** — L1 in-memory mirror → L2 Redis → L3 PostgreSQL fallback
+- **Real-time cache invalidation** via Redis Pub/Sub on the `cms:sync:ping` channel
+- **Configurable background ticker** that periodically re-evaluates and warms caches (default 5 m)
+- **Rule-based content personalization** evaluated fully in-process by `LocalEvaluator`
+- **JWT authentication** and per-route rate limiting middleware
+- **Prometheus metrics** at `/metrics`
+- **Swagger UI** at `/swagger/index.html` with auto-generated docs via Swag
+- **Google Wire** dependency injection — fully compile-time, no runtime reflection
+- **Azure Key Vault / Managed Identity** support for production secret management
+- **Docker-ready** multi-stage build targeting `alpine`
 
-**Mock OAuth2 Clients:**
+---
 
-| `client_id`      | `client_secret`            | Profile (derives scopes)     |
-|------------------|----------------------------|------------------------------|
-| `service-cmc`    | `super-secret-key-cmc`     | Content Strategy Super Admin |
-| `service-marker` | `super-secret-key-marker`  | Content Strategy Marker      |
-| `service-it`     | `super-secret-key-it`      | IT Admin                     |
-| `service-viewer` | `super-secret-key-viewer`  | Viewer                       |
+## Tech Stack
 
-**Request a token:**
+| Layer                | Technology                               |
+| -------------------- | ---------------------------------------- |
+| Language             | Go 1.26                                  |
+| Web framework        | Gin                                      |
+| ORM                  | GORM + PostgreSQL driver                 |
+| Distributed cache    | Redis (go-redis v9)                      |
+| Dependency injection | Google Wire                              |
+| Observability        | Prometheus `client_golang`               |
+| API documentation    | Swag                                     |
+| Authentication       | `golang-jwt`                             |
+| Cloud                | Azure SDK (Key Vault, Storage, Identity) |
+| Testing              | testify, go-sqlmock, redismock, gofakeit |
 
-```bash
-curl -s -X POST http://localhost:8081/token \
-  -d "grant_type=client_credentials" \
-  -d "client_id=service-cmc" \
-  -d "client_secret=super-secret-key-cmc"
-```
+---
 
-**Response:**
+## Prerequisites
 
-```json
-{
-  "access_token": "eyJhbGc...",
-  "token_type": "Bearer",
-  "expires_in": 86400,
-  "scope": "decision_rule:CREATE decision_rule:EDIT decision_rule:DELETE decision_rule:VIEW_ALL decision_rule:EDIT_ALL decision_rule:DELETE_ALL"
-}
-```
-
-**Call a protected endpoint:**
-
-```bash
-curl -X GET http://localhost:8081/decision-rules \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Bypass scope checks (TEST ONLY):**
-
-Set the `BYPASS_SCOPE_CHECK` environment variable to `true` (or `1` / `yes`) to
-make `RequireScope` accept every request regardless of granted scopes. This is
-intended for local development and automated tests only.
+- **Go 1.26+**
+- **Docker** and **Docker Compose**
+- Dev tooling installed by `make init`: `golangci-lint`, `swag`, `wire`
+- External Docker network (required by the compose stack):
 
 ```bash
-# .env
-BYPASS_SCOPE_CHECK=true
+docker network create cmc-backend
 ```
 
-> **WARNING:** Never enable `BYPASS_SCOPE_CHECK` in staging or production —
-> it disables all fine-grained API authorization for client tokens.
+---
 
-### Build
-
-This project utilizes a `Makefile` to simplify common build and development tasks. You can build the project for local testing or containerization using the following commands:
+## Installation
 
 ```bash
-# Initialize workspace (install linters, swag, goose, and git hooks)
+# 1. Clone the repository
+git clone <repo-url>
+cd KBank-ECMS-ContentStrategy
+
+# 2. Copy and configure the environment file
+cp .env.example .env
+# Edit .env with your database and Redis credentials
+
+# 3. Install dev tooling and git hooks
 make init
 
-# Local build (outputs binary to bin/server)
-make build
+# 4. Regenerate Wire dependency-injection code
+make wire-gen
 
-# Build Docker Image (tags as kbank-ems:latest)
-make dev-build
+# 5. Start infrastructure (PostgreSQL + Redis)
+make dev-up
+
+# 6. Run the service
+make run
 ```
 
-### Local Run
+The server listens on port **8082** by default.
 
-To set environment values and run the server locally, execute the following commands:
+---
 
-**Windows (PowerShell)**
+## Configuration
 
-```powershell
-$env:SETENV="DEVLOCAL"
-$env:REDIS_HOST="localhost"
-$env:REDIS_PORT="6379"
-go run ./cmd/server/
-```
+All configuration is supplied through environment variables. Copy `.env.example` to `.env` and fill in the required values.
 
-**Unix/macOS**
+| Variable                         | Default                    | Description                                                                |
+| -------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| `PORT`                           | `8082`                     | HTTP listen port                                                           |
+| `SETENV`                         | `DEVLOCAL`                 | `DEVLOCAL` for local dev; unset in production / AKS                        |
+| `DB_HOST`                        | `localhost`                | PostgreSQL host                                                            |
+| `DB_PORT`                        | `5432`                     | PostgreSQL port                                                            |
+| `DB_USER`                        | `postgres`                 | PostgreSQL user                                                            |
+| `DB_PASSWORD`                    | _(required)_               | PostgreSQL password                                                        |
+| `DB_NAME`                        | `kbank_ecms`               | PostgreSQL database name                                                   |
+| `DB_SSLMODE`                     | `disable`                  | PostgreSQL SSL mode                                                        |
+| `REDIS_HOST`                     | `localhost`                | Redis host                                                                 |
+| `REDIS_PORT`                     | `6379`                     | Redis port                                                                 |
+| `REDIS_PASSWORD`                 | _(empty)_                  | Redis password                                                             |
+| `REDIS_PRINCIPAL_ID`             | _(empty)_                  | Azure Managed Identity principal ID for Redis Entra auth (production only) |
+| `CMS_RUNTIME_TTL`                | `15m`                      | Redis / memory cache TTL                                                   |
+| `CMS_RUNTIME_INTERVAL`           | `5m`                       | Background ticker interval                                                 |
+| `SWAGGER_HOST`                   | `localhost:8082`           | Host shown in Swagger UI                                                   |
+| `PREFIX_CONTENT_STRATEGY_API_V1` | `/api/content-strategy/v1` | API route prefix                                                           |
+| `AZACCOUNTNAME`                  | _(empty)_                  | Azure Storage account name (optional)                                      |
+| `SHARENAME`                      | _(empty)_                  | Azure Files share name (optional)                                          |
 
-```bash
-SETENV=DEVLOCAL REDIS_HOST=localhost REDIS_PORT=6379 go run ./cmd/server/
-```
-
-Upon successful execution, the service will start listening on `:8081`.
-
-### Docker Compose
-
-For the local container stack, start the services with Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-Local endpoints:
-
-- Rule Management API: `http://localhost:8081`
-- CMS Delivery API: `http://localhost:8082`
-- Swagger UI: `http://localhost:8083`
-- RedisInsight: `http://localhost:5540`
-
-RedisInsight is preconfigured to connect to the Compose Redis service as `local-redis`.
+---
 
 ## Usage
 
-You can test the active API endpoint by making an HTTP request. Below is an example using `curl`:
+### API Endpoints
+
+| Method | Endpoint                                        | Description                                               |
+| ------ | ----------------------------------------------- | --------------------------------------------------------- |
+| `GET`  | `/api/content-strategy/v1/personalized-content` | Returns ranked personalized content for a user            |
+| `GET`  | `/api/content-strategy/v1/purge_requests`       | Returns current cache status                              |
+| `GET`  | `/api/content-strategy/v1/purge_requests/value` | Inspects a specific cache entry by key                    |
+| `POST` | `/api/content-strategy/v1/purge_requests`       | Flushes the cache                                         |
+| `GET`  | `/healthz`                                      | Health check — verifies PostgreSQL and Redis connectivity |
+| `GET`  | `/metrics`                                      | Prometheus metrics                                        |
+| `GET`  | `/swagger/*any`                                 | Swagger UI                                                |
+
+### Example request
 
 ```bash
-curl -X POST "http://localhost:8081/rule-management" \
-  -H "requestID: req-002" \
-  -H "Content-Type: application/json" \
-  -d '{}'
+curl -H "X-User-Id: <user-id>" \
+     "http://localhost:8082/api/content-strategy/v1/personalized-content"
 ```
 
-### Configuration Files
+---
 
-Environment variables and configurations are read from properties in the `configs/` directory during startup:
+## Development Commands
 
-- `configs/newservice_inbound_config.yaml` — Inbound rate limit & server settings
-- `configs/newservice_outbound_config.yaml` — Outbound service settings
-- `configs/redis_config.yaml` — Redis connection configurations
+| Command          | Description                                                     |
+| ---------------- | --------------------------------------------------------------- |
+| `make init`      | Install tooling (`golangci-lint`, `swag`, `wire`) and git hooks |
+| `make build`     | Build binary and regenerate Swagger docs                        |
+| `make run`       | Run the service locally                                         |
+| `make wire-gen`  | Regenerate Wire DI code after changing providers                |
+| `make swagger`   | Regenerate Swagger API docs                                     |
+| `make fmt`       | Format code (gofmt + custom GORM / JSON tag formatter)          |
+| `make lint`      | Run `golangci-lint`                                             |
+| `make vet`       | Run `go vet`                                                    |
+| `make test`      | Run all tests                                                   |
+| `make dev-up`    | Start infrastructure (PostgreSQL + Redis via Docker Compose)    |
+| `make dev-down`  | Stop infrastructure                                             |
+| `make dev-build` | Build Docker image                                              |
+| `make clean`     | Remove build artifacts                                          |
 
-## Contributing
+---
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+## Testing
 
-Please make sure to update tests as appropriate.
+```bash
+# Run all tests
+go test ./...
+
+# Run with race detector
+go test -race ./...
+
+# Run a specific test suite
+go test ./cmd/server/service/... -run TestCMSDeliveryService
+```
+
+---
+
+## Architecture
+
+### Request Flow
+
+```
+GET /api/content-strategy/v1/personalized-content
+  │
+  ├── Gin router
+  │     internal/delivery/http/router.go
+  │
+  ├── Middleware stack
+  │     auth · rate-limit · timeout · CORS · Prometheus
+  │
+  ├── Handler
+  │     cmd/server/handler/handler.go
+  │
+  ├── CMSDeliveryService.GetPersonalizedContent()
+  │     cmd/server/service/
+  │
+  ├── Cache lookup
+  │     L1 MemoryCache → L2 Redis → L3 PostgreSQL (fallback)
+  │
+  └── LocalEvaluator.Evaluate()
+        cmd/server/internal/evaluator/
+        └── []dto.ContentResult
+```
+
+### Background Operations
+
+| Process              | Description                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `runLoop`            | Fires `evaluate()` on every `CMS_RUNTIME_INTERVAL` tick to warm caches                                                 |
+| `subscribeToUpdates` | Listens on `cms:sync:ping`; applies 50–500 ms jitter to prevent stampede; performs targeted or full cache invalidation |
+
+### Project Structure
+
+```
+├── cmd/server/
+│   ├── main.go               Entry point
+│   ├── wire.go               DI graph (source of truth)
+│   ├── wire_gen.go           Auto-generated — do not edit
+│   ├── providers.go          Wire constructor functions
+│   ├── handler/              Gin handlers and route registration
+│   └── service/              CMSDeliveryService (core evaluation + caching)
+├── internal/
+│   ├── delivery/http/        Middleware, DTOs, router, health check
+│   ├── domain/               GORM entity models and repository interfaces
+│   ├── infrastructure/       In-memory cache, database, logger, Pub/Sub
+│   └── repository/           PostgreSQL and Redis repository implementations
+├── pkg/
+│   ├── auth/                 JWT helpers
+│   └── config/               AppConfig loader
+└── configs/                  YAML configuration files
+```
+
+### Dependency Injection
+
+Wire is used for compile-time DI. Edit `cmd/server/wire.go` or `cmd/server/providers.go`, then regenerate:
+
+```bash
+make wire-gen
+```
+
+> `cmd/server/wire_gen.go` is auto-generated. Do not edit it manually.
+
+---
+
+## Docker
+
+```bash
+# Build the image
+make dev-build
+
+# Start the full stack (service + Postgres + Redis)
+docker compose up -d
+
+# Stop the stack
+make dev-down
+```
+
+The compose stack requires the `cmc-backend` external network. Create it once:
+
+```bash
+docker network create cmc-backend
+```
+
+---
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+This project is licensed under the [MIT License](LICENSE).
