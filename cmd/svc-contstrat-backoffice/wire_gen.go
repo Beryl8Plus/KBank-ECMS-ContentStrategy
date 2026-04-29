@@ -22,8 +22,8 @@ import (
 // (Gin engine + background occurrence worker).
 func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimit entity.RateLimit) (*Application, error) {
 	jwtService := ProvideJWTService()
-	clientRegistry := ProvideClientRegistry()
-	tokenHandler := handler.NewTokenHandler(jwtService, clientRegistry)
+	oAuth2ClientPostgresRepository := repository.NewOAuth2ClientPostgresRepository(db)
+	tokenHandler := handler.NewTokenHandler(jwtService, oAuth2ClientPostgresRepository)
 	ruleManagementService := service.NewRuleManagementService()
 	ruleManagementHandler := handler.NewRuleManagementHandler(ruleManagementService)
 	schedulePostgresRepository := repository.NewSchedulePostgresRepository(db)

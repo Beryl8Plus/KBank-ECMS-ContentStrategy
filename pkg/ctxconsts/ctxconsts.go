@@ -22,7 +22,26 @@ const (
 
 	// CorrelationIDKey is the context key for the inbound request correlation ID (requestID header).
 	CorrelationIDKey contextKey = "correlationID"
+
+	// ClientIDKey is the context key for the OAuth2 client_id when the request was
+	// authenticated via Client Credentials Flow.
+	ClientIDKey contextKey = "clientID"
+
+	// ScopesKey is the context key for the OAuth2 scopes granted to the current request.
+	ScopesKey contextKey = "scopes"
 )
+
+// GetClientID retrieves the OAuth2 client_id from the context.
+func GetClientID(ctx context.Context) (string, bool) {
+	clientID, ok := ctx.Value(ClientIDKey).(string)
+	return clientID, ok
+}
+
+// GetScopes retrieves the OAuth2 scopes granted to the current request from the context.
+func GetScopes(ctx context.Context) ([]string, bool) {
+	scopes, ok := ctx.Value(ScopesKey).([]string)
+	return scopes, ok
+}
 
 // GetUserID retrieves the user ID from the context.
 // It returns the user ID string and a boolean indicating if it was found.

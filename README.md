@@ -246,6 +246,138 @@ sequenceDiagram
     API-->>ClientServer: 200 OK + Data
 ```
 
+### User Permissions & Profile Management
+
+The system implements role-based access control (RBAC) with the following structure:
+
+**Tables:**
+- `users`: User accounts with email, name, role, and profile assignments
+- `roles`: User roles (e.g., CS_MARKER, CS_SUPER_ADMIN, IT_ADMIN, VIEWER)
+- `profiles`: User groups that determine permissions
+- `permissions`: Individual permissions with SOURCE and ACTION (e.g., `decision_rule` + `CREATE`)
+- `profile_permissions`: Many-to-many relationship between profiles and permissions
+- `oauth2_clients`: Server-to-server OAuth2 clients linked to a profile (for Client Credentials Flow)
+
+**Permission Matrix (Content Decision Rule):**
+
+| User Group (Profile)         | CREATE | EDIT  | DELETE | VIEW_ALL | EDIT_ALL | DELETE_ALL |
+|------------------------------|--------|-------|--------|----------|----------|------------|
+| Content Strategy Marker      | ✅     | ✅    | ✅     | ✅       | ❌       | ❌         |
+| Content Strategy Super Admin | ✅     | ✅    | ✅     | ✅       | ✅       | ✅         |
+| IT Admin                     | ❌     | ❌    | ❌     | ✅       | ✅       | ✅         |
+| Viewer                       | ❌     | ❌    | ❌     | ✅       | ❌       | ❌         |
+
+**Mock Users:**
+
+| Email                        | Name           | Role/Profile                 |
+|------------------------------|----------------|------------------------------|
+| somchai.marker@kbank.com     | Somchai Marker | Content Strategy Marker      |
+| sunee.marker@kbank.com       | Sunee Marker   | Content Strategy Marker      |
+| admin.super@kbank.com        | Admin Super    | Content Strategy Super Admin |
+| itadmin@kbank.com            | IT Admin       | IT Admin                     |
+| viewer@kbank.com             | Viewer User    | Viewer                       |
+
+**Permission Enforcement:**
+
+There are two complementary authorization mechanisms:
+
+1. **`ProfilePermissionGuard`** (user tokens) — queries the database on every
+   request to check the current user's profile permissions. Best suited for
+   admin UIs where permissions can change frequently.
+
+   ```go
+   decisionRules.POST("",
+       middleware.ProfilePermissionGuard(permissionRepo, "decision_rule",
+           "CREATE", "EDIT", "DELETE"),
+       handler.CreateDecisionRule,
+   )
+   ```
+
+2. **`RequireScope`** (client tokens) — reads scopes embedded in the JWT and
+   matches them against the required `source:action` values (OR semantics).
+   Best suited for server-to-server traffic via the OAuth2 Client Credentials
+   Flow; scopes are resolved from the client's profile permissions at token
+   issuance time.
+
+   ```go
+   decisionRules.POST("",
+       middleware.RequireScope("decision_rule", "CREATE"),
+       wizardHandler.CreateDecisionRule,
+   )
+   ```
+
+The `JWTMiddleware` accepts both token types and populates the request context
+accordingly (user_id for user tokens, client_id + scopes for client tokens).
+`RequireScope` passes through requests that were authenticated as users so that
+user-based checks (`ProfilePermissionGuard`) remain authoritative.
+
+**Loading Mock Data:**
+```bash
+make db-mock-data-sql-up
+```
+
+This will insert 4 roles, 4 profiles, 6 permissions, 5 mock users and 4 OAuth2
+clients with proper relationships.
+
+---
+
+### OAuth2 Client Credentials Flow (Server-to-Server)
+
+Server-to-server callers obtain a JWT from `POST /token` by presenting a
+`client_id` / `client_secret` pair. Each client is linked to a profile in the
+database, and the server generates scopes from that profile's permissions in
+the format `<source>:<action>` (e.g. `decision_rule:CREATE`).
+
+**Mock OAuth2 Clients:**
+
+| `client_id`      | `client_secret`            | Profile (derives scopes)     |
+|------------------|----------------------------|------------------------------|
+| `service-cmc`    | `super-secret-key-cmc`     | Content Strategy Super Admin |
+| `service-marker` | `super-secret-key-marker`  | Content Strategy Marker      |
+| `service-it`     | `super-secret-key-it`      | IT Admin                     |
+| `service-viewer` | `super-secret-key-viewer`  | Viewer                       |
+
+**Request a token:**
+
+```bash
+curl -s -X POST http://localhost:8081/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=service-cmc" \
+  -d "client_secret=super-secret-key-cmc"
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "Bearer",
+  "expires_in": 86400,
+  "scope": "decision_rule:CREATE decision_rule:EDIT decision_rule:DELETE decision_rule:VIEW_ALL decision_rule:EDIT_ALL decision_rule:DELETE_ALL"
+}
+```
+
+**Call a protected endpoint:**
+
+```bash
+curl -X GET http://localhost:8081/decision-rules \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Bypass scope checks (TEST ONLY):**
+
+Set the `BYPASS_SCOPE_CHECK` environment variable to `true` (or `1` / `yes`) to
+make `RequireScope` accept every request regardless of granted scopes. This is
+intended for local development and automated tests only.
+
+```bash
+# .env
+BYPASS_SCOPE_CHECK=true
+```
+
+> **WARNING:** Never enable `BYPASS_SCOPE_CHECK` in staging or production —
+> it disables all fine-grained API authorization for client tokens.
+
 ### Build
 
 This project utilizes a `Makefile` to simplify common build and development tasks. You can build the project for local testing or containerization using the following commands:

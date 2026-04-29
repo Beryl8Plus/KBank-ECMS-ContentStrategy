@@ -19,6 +19,7 @@ func AllModels() []interface{} {
 		&CalendarDate{},
 		// 3. Junction / dependent tables
 		&ProfilePermission{},
+		&OAuth2Client{},
 		&DecisionRule{},
 		&Rule{},
 		&RuleCondition{},
