@@ -175,7 +175,7 @@ func (m *mockWizardRepo) DeleteDecisionRule(ctx context.Context, id uuid.UUID) e
 }
 
 func newTestService(repo *mockWizardRepo) *DecisionRuleWizardService {
-	return NewDecisionRuleWizardService(repo, nil, nil, nil, nil)
+	return NewDecisionRuleWizardService(repo, nil, nil, nil, nil, nil)
 }
 
 // ── CloneDecisionRule tests ───────────────────────────────────────────────────

@@ -94,6 +94,9 @@ var ProviderSet = wire.NewSet(
 	repository.NewDecisionRuleWizardPostgresRepository,
 	wire.Bind(new(domainrepo.DecisionRuleWizardRepository), new(*repository.DecisionRuleWizardPostgresRepository)),
 
+	repository.NewUserPostgresRepository,
+	wire.Bind(new(domainrepo.UserRepository), new(*repository.UserPostgresRepository)),
+
 	repository.NewAttributePostgresRepository,
 	wire.Bind(new(domainrepo.AttributeRepository), new(*repository.AttributePostgresRepository)),
 
