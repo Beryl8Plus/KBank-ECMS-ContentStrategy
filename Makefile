@@ -11,7 +11,7 @@ ATLAS_EMPTY_URL := "postgres://$${DB_USER:-postgres}:$${DB_PASSWORD:-postgres}@$
 POSTGRES_CONTAINER = $(shell docker compose ps -q postgres)
 REDIS_CONTAINER = $(shell docker compose ps -q redis)
 
-.PHONY: init build run run-svc-contstrat-delivery dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery redis-set redis-seed-user-attrs wire-gen
+.PHONY: init build run dev-build dev-up dev-down migrate db-create-migration db-create-seed db-mock-create-sql db-mock-generate-decision-rule db-mock-generate-decision-rule-custom-out db-mock-data-sql-up db-mock-data-sql-down db-migration-status db-seed-status db-drop db-clear db-create db-reset db-schema-inspect db-schema-sql db-schema-rollback-sql test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-server redis-set redis-seed-user-attrs wire-gen
 
 ## Initialize workspace
 init:
@@ -29,34 +29,26 @@ init:
 
 ## Build the server binary
 build: swagger
-	go build -o bin/svc-contstrat-backoffice ./cmd/svc-contstrat-backoffice/
+	go build -o bin/server ./cmd/server/
 
 ## Generate wire dependencies
 wire-gen:
-	wire gen ./cmd/svc-contstrat-backoffice
-	wire gen ./cmd/svc-contstrat-delivery
+	wire gen ./cmd/server
 
 ## Run the server locally
 run:
-	go run ./cmd/svc-contstrat-backoffice/
+	go run ./cmd/server/
 
-## Run svc-contstrat-delivery locally
-run-svc-contstrat-delivery:
-	go run ./cmd/svc-contstrat-delivery/
 
 ## Generate Swagger documentation for all services
-swagger: swagger-svc-contstrat-backoffice swagger-svc-contstrat-delivery
+swagger: swagger-server
 	@echo "Swagger documentation generated for all services."
 	$(MAKE) swagger-format
 	@echo "Swagger documentation formatted."
 
 ## Generate Swagger documentation for the server service
-swagger-svc-contstrat-backoffice:
-	swag init -g cmd/svc-contstrat-backoffice/main.go --output docs/swagger/svc-contstrat-backoffice --packageName svc_contstrat_backoffice --parseDependency --parseInternal --exclude cmd/svc-contstrat-delivery,cmd/svc-contstrat-runtime
-
-## Generate Swagger documentation for the svc-contstrat-delivery service
-swagger-svc-contstrat-delivery:
-	swag init -g cmd/svc-contstrat-delivery/main.go --output docs/swagger/svc-contstrat-delivery --packageName svc_contstrat_delivery --parseDependency --parseInternal --exclude cmd/svc-contstrat-backoffice,cmd/svc-contstrat-runtime
+swagger-server:
+	swag init -g cmd/server/main.go --output cmd/server/docs --packageName server --parseDependency --parseInternal
 
 ## Swagger formatting for all generated docs
 swagger-format:
@@ -64,7 +56,7 @@ swagger-format:
 
 ## Build Docker Image
 dev-build:
-	docker build -t kbank-ems:latest .
+	docker build -t kbank-ecms-content-strategy:latest .
 
 ## Start local dependencies (Postgres + Redis) via Docker Compose
 dev-up:

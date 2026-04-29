@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	ecmsdocs "kbank-ecms/docs/swagger/svc-contstrat-delivery"
+	ecmsdocs "kbank-ecms/cmd/server/docs"
 	"kbank-ecms/pkg/config"
 
 	"github.com/joho/godotenv"

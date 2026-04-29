@@ -1,3 +1,8 @@
+# ─────────────────────────────────────────────
+# Dockerfile
+# Builds: svc-contstrat-delivery
+# ─────────────────────────────────────────────
+
 # Build Stage
 FROM golang:1.26-alpine AS builder
 
@@ -11,20 +16,14 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 
 COPY . .
 
-# Generate Swagger Documentation
-RUN swag init -g cmd/svc-contstrat-backoffice/main.go \
-    --output docs/swagger/svc-contstrat-backoffice \
-    --packageName svc_contstrat_backoffice \
-    --parseDependency --parseInternal \
-    --exclude cmd/svc-contstrat-delivery,cmd/migrate
-RUN swag init -g cmd/svc-contstrat-delivery/main.go \
-    --output docs/swagger/svc-contstrat-delivery \
+# Generate Swagger Documentation (delivery only)
+RUN swag init -g cmd/server/main.go \
+    --output docs/swagger/server \
     --packageName svc_contstrat_delivery \
-    --parseDependency --parseInternal \
-    --exclude cmd/svc-contstrat-backoffice,cmd/migrate
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o svc-contstrat-backoffice ./cmd/svc-contstrat-backoffice/
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o svc-contstrat-delivery ./cmd/svc-contstrat-delivery/
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o migrate ./cmd/migrate/
+    --parseDependency --parseInternal
+
+# Build binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server/
 
 # Run Stage
 FROM alpine:latest
@@ -32,11 +31,9 @@ WORKDIR /app/
 RUN apk add --no-cache ca-certificates tzdata
 ENV TZ=Asia/Bangkok
 
-COPY --from=builder /app/svc-contstrat-backoffice .
-COPY --from=builder /app/svc-contstrat-delivery .
-COPY --from=builder /app/migrate .
+COPY --from=builder /app/server .
 COPY --from=builder /app/configs ./configs
-COPY --from=builder /app/docs/swagger ./docs/swagger
-EXPOSE 8081 8082 50051
+COPY --from=builder /app/docs/swagger/server ./docs/swagger/server
+EXPOSE 8082
 
-CMD ["sh", "-c", "./migrate && ./svc-contstrat-backoffice"]
+CMD ["./server"]

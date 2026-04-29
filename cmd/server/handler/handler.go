@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
+	deliveryservice "kbank-ecms/cmd/server/service"
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"

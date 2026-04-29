@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"kbank-ecms/cmd/svc-contstrat-delivery/service"
+	"kbank-ecms/cmd/server/service"
 	"kbank-ecms/pkg/util"
 
 	"github.com/gin-gonic/gin"

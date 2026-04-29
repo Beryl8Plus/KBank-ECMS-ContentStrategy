@@ -8,9 +8,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
-	cmshandler "kbank-ecms/cmd/svc-contstrat-delivery/handler"
-	evaluator "kbank-ecms/cmd/svc-contstrat-delivery/internal/evaluator"
-	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
+	cmshandler "kbank-ecms/cmd/server/handler"
+	evaluator "kbank-ecms/cmd/server/internal/evaluator"
+	deliveryservice "kbank-ecms/cmd/server/service"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
