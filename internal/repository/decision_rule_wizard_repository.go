@@ -241,7 +241,7 @@ func (r *DecisionRuleWizardPostgresRepository) ListDecisionRules(ctx context.Con
 	if f.Limit > 0 {
 		q = q.Limit(f.Limit).Offset((f.Page - 1) * f.Limit)
 	}
-	err := q.Preload("CreatedByUser").Preload("UpdatedByUser").Preload("InactiveByUser").Find(&drs).Error
+	err := q.Find(&drs).Error
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing decision rules: %w", err)
 	}

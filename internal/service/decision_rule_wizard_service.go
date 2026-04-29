@@ -38,6 +38,7 @@ type DecisionRuleWizardService struct {
 	repo          domainrepo.DecisionRuleWizardRepository
 	attrRepo      domainrepo.AttributeRepository
 	placementRepo domainrepo.PlacementRepository
+	userRepo      domainrepo.UserRepository
 	validator     *AttributeValidatorService
 }
 
@@ -48,10 +49,11 @@ func NewDecisionRuleWizardService(
 	repo domainrepo.DecisionRuleWizardRepository,
 	attrRepo domainrepo.AttributeRepository,
 	placementRepo domainrepo.PlacementRepository,
+	userRepo domainrepo.UserRepository,
 	publisher *pubsub.Publisher,
 	validator *AttributeValidatorService,
 ) *DecisionRuleWizardService {
-	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo, validator: validator}
+	return &DecisionRuleWizardService{repo: repo, attrRepo: attrRepo, placementRepo: placementRepo, userRepo: userRepo, validator: validator}
 }
 
 // ── Step 1 ───────────────────────────────────────────────────────────────────
@@ -652,25 +654,50 @@ func (s *DecisionRuleWizardService) GetSchedules(ctx context.Context, id uuid.UU
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-// ListDecisionRules returns a paginated list with placement summaries.
+// ListDecisionRules returns a paginated list with placement summaries and resolved user names.
 func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f domainrepo.DecisionRuleListFilter) ([]*dto.DecisionRuleListItemResponse, int64, error) {
 	drs, total, err := s.repo.ListDecisionRules(ctx, f)
 	if err != nil {
 		return nil, 0, err
 	}
-
 	if len(drs) == 0 {
 		return nil, 0, nil
 	}
 
-	ids := make([]uuid.UUID, len(drs))
+	drIDs := make([]uuid.UUID, len(drs))
 	for i, dr := range drs {
-		ids[i] = dr.ID
+		drIDs[i] = dr.ID
 	}
 
-	schedules, err := s.repo.FindSchedulesWithPlacementsByDecisionRuleIDs(ctx, ids)
+	schedules, err := s.repo.FindSchedulesWithPlacementsByDecisionRuleIDs(ctx, drIDs)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	// Collect unique user UUIDs (CreatedBy, UpdatedBy, InactiveBy) for a single batch lookup.
+	userIDSet := make(map[uuid.UUID]struct{})
+	for _, dr := range drs {
+		if dr.CreatedBy != nil {
+			userIDSet[*dr.CreatedBy] = struct{}{}
+		}
+		if dr.UpdatedBy != nil {
+			userIDSet[*dr.UpdatedBy] = struct{}{}
+		}
+		if dr.InactiveBy != nil {
+			userIDSet[*dr.InactiveBy] = struct{}{}
+		}
+	}
+	userIDs := make([]uuid.UUID, 0, len(userIDSet))
+	for uid := range userIDSet {
+		userIDs = append(userIDs, uid)
+	}
+	rawUsers, err := s.userRepo.FindByIDs(ctx, userIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	userMap := make(map[uuid.UUID]*entity.User, len(rawUsers))
+	for _, u := range rawUsers {
+		userMap[u.ID] = u
 	}
 
 	// Group placements by decision rule ID.
@@ -689,6 +716,13 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 		placementsByDR[sc.DecisionRuleID] = append(placementsByDR[sc.DecisionRuleID], entry)
 	}
 
+	lookupUser := func(id *uuid.UUID) *entity.User {
+		if id == nil {
+			return nil
+		}
+		return userMap[*id]
+	}
+
 	items := make([]*dto.DecisionRuleListItemResponse, len(drs))
 	for i, dr := range drs {
 		placements := placementsByDR[dr.ID]
@@ -705,9 +739,9 @@ func (s *DecisionRuleWizardService) ListDecisionRules(ctx context.Context, f dom
 			Status:              dr.Status,
 			SubStatus:           dr.SubStatus,
 			Placements:          placements,
-			CreatedBy:           toUserRef(dr.CreatedByUser, dr.BaseModel.CreatedBy),
-			UpdatedBy:           toUserRef(dr.UpdatedByUser, dr.BaseModel.UpdatedBy),
-			InactiveBy:          toUserRef(dr.InactiveByUser, dr.InactiveBy),
+			CreatedBy:           toUserRef(lookupUser(dr.BaseModel.CreatedBy), dr.BaseModel.CreatedBy),
+			UpdatedBy:           toUserRef(lookupUser(dr.BaseModel.UpdatedBy), dr.BaseModel.UpdatedBy),
+			InactiveBy:          toUserRef(lookupUser(dr.InactiveBy), dr.InactiveBy),
 			CreatedAt:           dr.CreatedAt,
 			UpdatedAt:           dr.UpdatedAt,
 		}

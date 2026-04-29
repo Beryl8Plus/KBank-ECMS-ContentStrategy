@@ -105,8 +105,10 @@ GET /decision-rules?type=AUDIENCE&status=ACTIVE&keyword=gold&page=1&limit=20
 
 ## Query Strategy
 
+ใช้ **3 queries แยกกัน** — ไม่มี JOIN users ใน main query และไม่มี N+1
+
 ```sql
--- Main query (paginated)
+-- 1. Main query (paginated)
 SELECT
   dr.id,
   dr.decision_rule_id,
@@ -116,19 +118,22 @@ SELECT
   dr.campaign_code,
   dr.status,
   dr.sub_status,
+  dr.created_by,
+  dr.updated_by,
+  dr.inactive_by,
   dr.created_at,
   dr.updated_at
 FROM decision_rules dr
 WHERE dr.deleted_at IS NULL
-  AND (:type    = '' OR dr.type          = :type)
-  AND (:evalType= '' OR dr.evaluate_type = :evalType)
-  AND (:status  = '' OR dr.status        = :status)
-  AND (:keyword = '' OR dr.name ILIKE '%' || :keyword || '%'
-                     OR dr.decision_rule_id ILIKE '%' || :keyword || '%')
+  AND (:type     = '' OR dr.type          = :type)
+  AND (:evalType = '' OR dr.evaluate_type = :evalType)
+  AND (:status   = '' OR dr.status        = :status)
+  AND (:keyword  = '' OR dr.name          ILIKE '%' || :keyword || '%'
+                      OR dr.decision_rule_id ILIKE '%' || :keyword || '%')
 ORDER BY dr.created_at DESC
 LIMIT :limit OFFSET :offset;
 
--- Placements per decision rule (batch, ไม่ใช้ N+1)
+-- 2. Placements per decision rule (batch, ไม่ใช้ N+1)
 SELECT
   s.decision_rule_id,
   p.id    AS placement_id,
@@ -136,12 +141,20 @@ SELECT
   c.channel_name
 FROM schedules s
 JOIN placements p ON s.placement_id = p.id AND p.deleted_at IS NULL
-JOIN channels c   ON p.channel_id   = c.id AND c.deleted_at IS NULL
-WHERE s.decision_rule_id IN (:ids)
+JOIN channels  c ON p.channel_id    = c.id AND c.deleted_at IS NULL
+WHERE s.decision_rule_id IN (:drIds)
   AND s.deleted_at IS NULL;
 
+-- 3. User name lookup (batch, ไม่ใช้ N+1)
+--    collect unique UUIDs จาก created_by + updated_by + inactive_by ทุก row แล้ว query ครั้งเดียว
+SELECT id, name_th, name_en
+FROM users
+WHERE id IN (:userIds)
+  AND deleted_at IS NULL;
 ```
 
 **หมายเหตุ:**
+- User names **ไม่ได้ JOIN** ใน main query และ **ไม่ได้ GORM preload** บน entity — ใช้ `UserRepository.FindByIDs` batch แยกต่างหาก
+- Application layer collect UUID ที่ไม่ซ้ำจากทั้ง 3 audit field ก่อน แล้วค่อย query users 1 ครั้ง
 - Application layer group placement rows ตาม `decision_rule_id`
-- Placements ใช้ pattern: **WHERE IN batch → group ใน Go** — ไม่มี N+1
+- ทั้ง placements และ users ใช้ pattern **WHERE IN batch → map ใน Go** — ไม่มี N+1
