@@ -16,13 +16,9 @@ import (
 // DBMiddleware integrates GORM's DB instance into the request context.
 // Similar to the pattern described in: https://gorm.io/docs/context.html#Integration-with-Chi-Middleware
 // but adapted for the Gin framework. It also sets a default timeout for all database operations within the request scope.
-func DBMiddleware(db *gorm.DB) gin.HandlerFunc {
-	// Note: We use a configurable or fixed timeout here. The GORM documentation example uses 1 second.
-	// You might want to adjust this based on the typical expected duration of your database transactions.
-	const dbTimeout = 10 * time.Second
-
+func DBMiddleware(db *gorm.DB, timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		timeoutContext, cancel := context.WithTimeout(c.Request.Context(), dbTimeout)
+		timeoutContext, cancel := context.WithTimeout(c.Request.Context(), timeout)
 		defer func() {
 			if err := timeoutContext.Err(); err != nil {
 				logger.LSystem(timeoutContext, entity.SystemLog{

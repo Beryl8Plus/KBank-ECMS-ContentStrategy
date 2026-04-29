@@ -14,7 +14,7 @@ import (
 // It validates client credentials against the database and generates JWT
 // tokens with scopes derived from the client's profile permissions.
 type TokenHandler struct {
-	jwtService    *auth.JWTService
+	jwtService       *auth.JWTService
 	oauth2ClientRepo domainrepo.OAuth2ClientRepository
 }
 

@@ -7,6 +7,7 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/config"
 	"os"
 	"time"
 
@@ -29,7 +30,7 @@ func (r *RedisRepository) Client() *redis.Client {
 }
 
 // NewRedisRepository creates a Redis client and returns a RedisRepository.
-func NewRedisRepository(ctx context.Context, cfg entity.RedisConfig) (*RedisRepository, error) {
+func NewRedisRepository(ctx context.Context, cfg config.RedisConfig) (*RedisRepository, error) {
 	SETENV := os.Getenv("SETENV")
 
 	var rdb *redis.Client

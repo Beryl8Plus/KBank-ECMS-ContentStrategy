@@ -11,12 +11,12 @@ import (
 
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	deliveryhttp "kbank-ecms/internal/delivery/http"
-	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
 	"kbank-ecms/pkg/auth"
+	"kbank-ecms/pkg/config"
 
 	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
@@ -84,8 +84,8 @@ func ProvideExternalAttributeAPIClient() service.ExternalAttributeAPIClient {
 
 // ProvideRouter initializes the Gin engine with middleware and registers all routes.
 func ProvideRouter(
+	cfg config.AppConfig,
 	db *gorm.DB,
-	rateLimit entity.RateLimit,
 	redisCache *repository.RedisRepository,
 	jwtService *auth.JWTService,
 	tokenHandler *handler.TokenHandler,
@@ -102,7 +102,7 @@ func ProvideRouter(
 	if redisCache != nil {
 		redisClient = redisCache.Client()
 	}
-	r := deliveryhttp.InitNewRouter(db, rateLimit, redisClient)
+	r := deliveryhttp.InitNewRouter(cfg, db, redisClient)
 	handler.RegisterRoutes(r, jwtService, tokenHandler, ruleManagementHandler, scheduleHandler, decisionRuleHandler, wizardHandler, occurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	return r
 }

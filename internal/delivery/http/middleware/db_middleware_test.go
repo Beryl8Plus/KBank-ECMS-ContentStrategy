@@ -29,7 +29,7 @@ func TestDBMiddleware(t *testing.T) {
 	// Create a dummy request to avoid panics on c.Request.WithContext
 	c.Request, _ = http.NewRequest(http.MethodGet, "/", nil)
 
-	handler := DBMiddleware(dummyDB)
+	handler := DBMiddleware(dummyDB, 10*time.Second)
 	handler(c)
 
 	// 1. Verify the DB was set in the Gin context

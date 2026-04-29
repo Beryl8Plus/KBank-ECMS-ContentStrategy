@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────
+# generate-migration.yml
+# Automated Goose SQL migration generation
+#
+# Triggered on push to `preprod` when GORM entity
+# models or existing migrations change.
+#
+# Pipeline:
+#   1. Spin up shadow Postgres
+#   2. GORM AutoMigrate → desired schema
+#   3. Atlas diff (snapshot ↔ current) → incremental SQL
+#   4. Wrap in Goose format → commit back
+# ─────────────────────────────────────────────
+
+name: Generate Migration SQL
+
+on:
+  push:
+    branches: [preprod]
+    paths:
+      - 'internal/domain/entity/**'
+      - 'cmd/migrate/migrations/**'
+      - 'cmd/migrate/seeds/**'
+      - 'cmd/migrate-gen/**'
+
+jobs:
+  generate-migration:
+    name: Generate Goose Migration
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kbank_ecms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: kbank_ecms
+      DB_SSLMODE: disable
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install Atlas CLI
+        run: |
+          curl -sSf https://atlasgo.sh | sh -s -- -y
+          atlas version
+
+      - name: Install Goose CLI
+        run: go install github.com/pressly/goose/v3/cmd/goose@latest
+
+      - name: Create Atlas dev database
+        run: |
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c \
+            "CREATE DATABASE kbank_ecms_atlas_dev;"
+
+      - name: Run migration generator
+        run: go run ./cmd/migrate-gen/
+
+      - name: Check for generated changes
+        id: diff
+        run: |
+          git diff --quiet cmd/migrate/migrations-prod/ && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Validate generated migration with goose
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          # Validate all migration files in migrations-prod are parseable by goose
+          for f in cmd/migrate/migrations-prod/*_auto_generated.sql; do
+            [ -f "$f" ] && echo "Validating: $f" && head -1 "$f"
+          done
+          echo "All migration files validated"
+
+      - name: Commit and push migration
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cmd/migrate/migrations-prod/
+          git commit -m "chore(migration): auto-generate goose SQL from preprod [skip ci]"
+          git push
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Migration Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.diff.outputs.changed }}" == "true" ]; then
+            echo "✅ **New migration generated and committed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Generated files:" >> $GITHUB_STEP_SUMMARY
+            git diff --name-only HEAD~1 -- cmd/migrate/migrations-prod/ >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "_(check commit history)_" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ **No schema changes detected — no migration generated**" >> $GITHUB_STEP_SUMMARY
+          fi

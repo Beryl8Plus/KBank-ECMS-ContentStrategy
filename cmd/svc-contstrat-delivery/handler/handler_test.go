@@ -113,7 +113,7 @@ func TestHandler_GetContent_OK(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var apiResp dto.APIResponse
@@ -135,7 +135,7 @@ func TestHandler_GetContent_ServiceError(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
@@ -182,7 +182,7 @@ func TestHandler_GetContent_InvalidRequestType(t *testing.T) {
 	for _, rt := range []string{"", "unknown", "PERSONALIZED"} {
 		url := "/content?placement=hero&channel=web"
 		if rt != "" {
-			url = "/content?requestType=" + rt + "&placement=hero&channel=web"
+			url = "/content?requestType=" + rt + "&mode=knownContent&placement=hero&channel=web"
 		}
 		w := doRequest(t, r, http.MethodGet, url, "")
 		assert.Equal(t, http.StatusBadRequest, w.Code, "requestType=%q should be rejected", rt)
@@ -203,7 +203,7 @@ func TestHandler_GetContent_ArticleCategory(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, called, "GetPersonalizedContent should be called for articleCategory")
@@ -215,7 +215,7 @@ func TestHandler_GetContent_UnspecifiedCustomerIdTypeRejectsCustomerId(t *testin
 
 	r := setupRouter(&mockDeliveryService{})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&channel=web&placement=hero&customerId=cis-123", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=staticContent&mode=knownContent&channel=web&placement=hero&customerId=cis-123", "")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var apiResp dto.APIResponse
@@ -230,7 +230,7 @@ func TestHandler_GetContent_MissingCustomerId(t *testing.T) {
 	r := setupRouter(&mockDeliveryService{})
 
 	for _, requestType := range []string{"personalizedContent", "staticContent", "articleCategory"} {
-		w := doRequest(t, r, http.MethodGet, "/content?requestType="+requestType+"&placement=hero&channel=web", "")
+		w := doRequest(t, r, http.MethodGet, "/content?requestType="+requestType+"&mode=knownContent&placement=hero&channel=web", "")
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	}
 }
@@ -241,7 +241,7 @@ func TestHandler_GetContent_CISID_MissingCustomerId(t *testing.T) {
 
 	r := setupRouter(&mockDeliveryService{})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID", "")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var apiResp dto.APIResponse
@@ -261,7 +261,7 @@ func TestHandler_GetContent_CISID_UsesCustomerId(t *testing.T) {
 		},
 	})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "1234567890", capturedCISID)
@@ -289,7 +289,7 @@ func TestHandler_GetContent_WithUserIDInContext(t *testing.T) {
 	})
 	r.GET("/content", h.getContent)
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "1234567890", capturedCISID)

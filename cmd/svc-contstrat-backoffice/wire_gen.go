@@ -7,20 +7,21 @@
 package main
 
 import (
-	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
-	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
+	"kbank-ecms/pkg/config"
+
+	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
 
 // InitializeApp wires all dependencies and returns the Application bundle
 // (Gin engine + background occurrence worker).
-func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimit entity.RateLimit) (*Application, error) {
+func InitializeApp(cfg config.AppConfig, db *gorm.DB, redisCache *repository.RedisRepository) (*Application, error) {
 	jwtService := ProvideJWTService()
 	oAuth2ClientPostgresRepository := repository.NewOAuth2ClientPostgresRepository(db)
 	tokenHandler := handler.NewTokenHandler(jwtService, oAuth2ClientPostgresRepository)
@@ -52,7 +53,7 @@ func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimi
 	channelHandler := handler.NewChannelHandler(channelService)
 	placementService := service.NewPlacementService(placementPostgresRepository)
 	placementHandler := handler.NewPlacementHandler(placementService)
-	engine := ProvideRouter(db, rateLimit, redisCache, jwtService, tokenHandler, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
+	engine := ProvideRouter(cfg, db, redisCache, jwtService, tokenHandler, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	materializationConfig := ProvideMatConfig()
 	scheduleMaterializationService := service.NewScheduleMaterializationService(materializationConfig, schedulePostgresRepository, scheduleOccurrencePostgresRepository)
 	occurrenceWorkerConfig := ProvideWorkerConfig()

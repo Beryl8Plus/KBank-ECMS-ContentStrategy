@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────
+# docker-compose-backoffice.yml
+# Deploy on Server A: Backoffice + PostgreSQL + Redis
+# ─────────────────────────────────────────────
+#
+# Usage:
+#   cd deploy/production
+#   cp .env.backoffice.example .env.backoffice
+#   # edit .env.backoffice with production values
+#   docker compose -f docker-compose-backoffice.yml up -d --build
+#
+# This compose file runs:
+#   - PostgreSQL (primary database)
+#   - Redis (shared cache + Pub/Sub)
+#   - svc-contstrat-backoffice (with auto-migration)
+# ─────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-""}
+      --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  svc-contstrat-backoffice:
+    build:
+      context: ../../
+      dockerfile: Dockerfile.backoffice
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env.backoffice
+    environment:
+      # Override to use Docker service names for intra-compose networking
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

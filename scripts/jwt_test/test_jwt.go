@@ -1,4 +1,4 @@
-package main
+package jwt_test
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func main() {
+func TestJWT() {
 	// Create JWT service with the same configuration as the app
 	config := auth.JWTConfig{
 		SecretKey:     "your-secret-key-change-in-production",

@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────
+# docker-compose-delivery.yml
+# Deploy on Server B: Delivery only (connects to remote Postgres + Redis)
+# ─────────────────────────────────────────────
+#
+# Usage:
+#   cd deploy/production
+#   cp .env.delivery.example .env.delivery
+#   # edit .env.delivery — set DB_HOST and REDIS_HOST to Server A's IP/hostname
+#   docker compose -f docker-compose-delivery.yml up -d --build
+#
+# Prerequisites:
+#   - Server A (backoffice) must be running with Postgres + Redis accessible
+#   - Firewall: Server B → Server A ports 5432 (Postgres) + 6379 (Redis)
+#   - Network: both servers must be on the same VPC or connected via VPN
+# ─────────────────────────────────────────────
+
+services:
+  svc-contstrat-delivery:
+    build:
+      context: ../../
+      dockerfile: Dockerfile.delivery
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env.delivery
+    # No depends_on — Postgres and Redis are on a remote server.
+    # The service will retry connections on startup.

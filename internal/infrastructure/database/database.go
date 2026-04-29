@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/config"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -13,7 +14,7 @@ import (
 )
 
 // NewPostgresDB creates and returns a new GORM DB connection for PostgreSQL.
-func NewPostgresDB(cfg entity.PostgresConfig) (*gorm.DB, error) {
+func NewPostgresDB(cfg config.PostgresConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
@@ -42,7 +43,7 @@ func NewPostgresDB(cfg entity.PostgresConfig) (*gorm.DB, error) {
 // Used exclusively for the table/column phase of AutoMigrate so that GORM's
 // ReorderModels ordering issues with bidirectional associations (has-many ↔
 // belongs-to cycles) cannot cause "relation does not exist" errors.
-func NewMigrationDB(cfg entity.PostgresConfig) (*gorm.DB, error) {
+func NewMigrationDB(cfg config.PostgresConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,

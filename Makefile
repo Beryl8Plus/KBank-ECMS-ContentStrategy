@@ -164,28 +164,37 @@ db-schema-inspect:
 	atlas schema inspect -u $(ATLAS_DB_URL)
 
 ## Generate SQL DDL from the current database state
-db-schema-sql:
+db-schema-sql-local:
 	@echo "Generating SQL schema from database..."
-	@if [ ! -d "cmd/migrate/migrations-prod" ]; then mkdir -p cmd/migrate/migrations-prod; fi
+	@if [ ! -d "cmd/migrate-gen/migrations-local" ]; then mkdir -p cmd/migrate-gen/migrations-local; fi
 	@atlas schema diff --from $(ATLAS_EMPTY_URL) --to $(ATLAS_DB_URL) \
     --exclude "migration_tracking.*" \
 		--exclude "goose_migrations" \
 		--exclude "mock_migrations" \
 		--exclude "seed_migrations" \
-    > cmd/migrate/migrations-prod/database_schema.sql
-	@echo "Schema saved to cmd/migrate/migrations-prod/database_schema.sql"
+    > cmd/migrate-gen/migrations-local/database_schema.sql
+	@echo "Schema saved to cmd/migrate-gen/migrations-local/database_schema.sql"
 
 ## Generate SQL rollback (DROP) from the current database state — reverse of db-schema-sql
-db-schema-rollback-sql:
+db-schema-rollback-sql-local:
 	@echo "Generating SQL rollback from database..."
-	@if [ ! -d "cmd/migrate/migrations-prod" ]; then mkdir -p cmd/migrate/migrations-prod; fi
+	@if [ ! -d "cmd/migrate-gen/migrations-local" ]; then mkdir -p cmd/migrate-gen/migrations-local; fi
 	@atlas schema diff --from $(ATLAS_DB_URL) --to $(ATLAS_EMPTY_URL) \
 		--exclude "migration_tracking.*" \
 		--exclude "goose_migrations" \
 		--exclude "mock_migrations" \
 		--exclude "seed_migrations" \
-		> cmd/migrate/migrations-prod/database_rollback.sql
-	@echo "Rollback saved to cmd/migrate/migrations-prod/database_rollback.sql"
+		> cmd/migrate-gen/migrations-local/database_rollback.sql
+	@echo "Rollback saved to cmd/migrate-gen/migrations-local/database_rollback.sql"
+
+## Generate incremental goose migration SQL from GORM model diff (requires running Postgres)
+## This replicates the Liquibase-style "generate changelog" concept using Atlas + Goose.
+## Output: cmd/migrate-gen/migrations-prod/<timestamp>_auto_generated.sql
+db-generate-migration:
+	go run ./cmd/migrate-gen/
+
+## Full pipeline: drop → create → generate production migration SQL
+db-generate-migration-full: db-drop db-create db-generate-migration
 
 ## Set a key/value in the local Redis container: make redis-set key=<key> val=<value>
 redis-set:

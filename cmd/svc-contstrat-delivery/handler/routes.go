@@ -1,7 +1,8 @@
 package handler
 
 import (
-	deliveryservice "kbank-ecms/cmd/svc-contstrat-delivery/service"
+	"kbank-ecms/cmd/svc-contstrat-delivery/service"
+	"kbank-ecms/pkg/util"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,11 +12,14 @@ import (
 // Start/Stop for the background ticker if applicable).
 func RegisterRoutes(
 	r *gin.Engine,
-	svc deliveryservice.DeliveryService,
+	svc service.DeliveryService,
 ) {
+	// Initialize the handler with the service
 	handler := NewHandler(svc)
 
-	content := r.Group("/api/content-strategy/v1/")
+	// Initialize API routes with the configured prefix
+	prefix := util.GetEnvWithDefault("PREFIX_CONTENT_STRATEGY_API_V1", "/api/content-strategy/v1")
+	content := r.Group(prefix)
 	{
 		// Get content by placements
 		content.GET("/personalized-content", handler.getContent)

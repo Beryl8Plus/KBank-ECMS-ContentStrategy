@@ -157,11 +157,10 @@ func RequireScope(source string, actions ...string) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusForbidden, gin.H{
-			"error":            "insufficient_scope",
-			"required_scopes":  required,
-			"granted_scopes":   clientScopes,
+			"error":           "insufficient_scope",
+			"required_scopes": required,
+			"granted_scopes":  clientScopes,
 		})
 		c.Abort()
 	}
 }
-

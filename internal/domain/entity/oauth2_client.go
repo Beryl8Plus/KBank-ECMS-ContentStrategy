@@ -9,11 +9,11 @@ import "github.com/google/uuid"
 // Table: oauth2_clients
 type OAuth2Client struct {
 	BaseModel
-	ClientID     string    `gorm:"size:255;uniqueIndex;not null" json:"clientId"`
-	ClientSecret string    `gorm:"size:255;not null"             json:"-"`
-	ProfileID    uuid.UUID `gorm:"type:uuid;not null"            json:"profileId"`
-	Description  string    `gorm:"size:500"                      json:"description"`
-	IsActive     bool      `gorm:"default:true"                  json:"isActive"`
+	ClientID     string    `gorm:"size:255;uniqueIndex;not null"      json:"clientId"`
+	ClientSecret string    `gorm:"size:255;not null"                  json:"-"`
+	ProfileID    uuid.UUID `gorm:"type:uuid;not null"                 json:"profileId"`
+	Description  string    `gorm:"size:500"                           json:"description"`
+	IsActive     bool      `gorm:"default:true"                       json:"isActive"`
 
 	Profile *Profile `gorm:"foreignKey:ProfileID;references:ID" json:"profile,omitempty"`
 }

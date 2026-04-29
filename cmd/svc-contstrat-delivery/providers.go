@@ -16,12 +16,13 @@ import (
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/repository"
+	"kbank-ecms/pkg/config"
 )
 
 // ProvideRouter initializes Gin and registers delivery routes.
 func ProvideRouter(
+	cfg config.AppConfig,
 	db *gorm.DB,
-	rateLimit entity.RateLimit,
 	redisCache *repository.RedisRepository,
 	svc deliveryservice.DeliveryService,
 ) *gin.Engine {
@@ -29,7 +30,7 @@ func ProvideRouter(
 	if redisCache != nil {
 		redisClient = redisCache.Client()
 	}
-	r := deliveryhttp.InitNewRouter(db, rateLimit, redisClient)
+	r := deliveryhttp.InitNewRouter(cfg, db, redisClient)
 	cmshandler.RegisterRoutes(r, svc)
 	return r
 }

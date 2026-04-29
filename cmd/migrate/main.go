@@ -7,6 +7,7 @@ import (
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/config"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -39,7 +40,7 @@ func main() {
 	})
 
 	// Load PostgreSQL config from environment variables
-	cfg := entity.PostgresConfig{
+	cfg := config.PostgresConfig{
 		Host:     getEnv("DB_HOST", "localhost"),
 		Port:     getEnv("DB_PORT", "5432"),
 		User:     getEnv("DB_USER", "postgres"),
