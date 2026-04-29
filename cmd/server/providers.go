@@ -35,20 +35,18 @@ func ProvideRouter(
 	return r
 }
 
-// ProvideCMSDeliveryService constructs the service with env-based configs.
+// ProvideCMSDeliveryService constructs the service with cache TTL from config.
 func ProvideCMSDeliveryService(
+	cfg config.AppConfig,
 	cacheRepo domainrepo.RedisCacheRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator deliveryservice.RuntimeEvaluator,
 	cacheMemory *deliveryservice.MemoryCache,
 ) *deliveryservice.CMSDeliveryService {
-	resultTTL := parseDurationEnv("CMS_RUNTIME_TTL", 15*time.Minute)
-	tickInterval := parseDurationEnv("CMS_RUNTIME_INTERVAL", 5*time.Minute)
-
 	return deliveryservice.NewCMSDeliveryService(
 		cacheRepo, occurrenceRepo, decisionRuleRepo,
-		evaluator, cacheMemory, resultTTL, tickInterval,
+		evaluator, cacheMemory, cfg.Cache.TTL, cfg.Cache.RefreshInterval,
 	)
 }
 

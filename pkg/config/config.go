@@ -1,78 +1,95 @@
 package config
 
 import (
+	"fmt"
 	"time"
+
+	"github.com/ilyakaznacheev/cleanenv"
 )
 
+// AppConfig is the root configuration struct for all services.
+// Values are loaded from a YAML file first, then overridden by environment variables.
+// Priority order: ENV > YAML value > env-default tag.
 type AppConfig struct {
-	AppName   string          `json:"appName"`
-	Endpoint  string          `yaml:"endpoint"`
-	Timeout   TimeoutConfig   `json:"timeout"`
-	RateLimit RateLimitConfig `json:"rateLimit"`
-	// Add other configuration fields as needed (e.g., CORS settings, logging options, etc.)
+	Env       string          `yaml:"env"        env:"SETENV"`
+	Server    ServerConfig    `yaml:"server"`
+	Postgres  PostgresConfig  `yaml:"postgres"`
+	Redis     RedisConfig     `yaml:"redis"`
+	Cache     CacheConfig     `yaml:"cache"`
+	Swagger   SwaggerConfig   `yaml:"swagger"`
+	Timeout   TimeoutConfig   `yaml:"timeout"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	GRPC      GRPCConfig      `yaml:"grpc"`
+	JWT       JWTConfig       `yaml:"jwt"`
 }
 
-// InboundConfig represents the YAML structure for inbound service configuration.
-type InboundConfig struct {
-	Server []Server `yaml:"server"`
+type ServerConfig struct {
+	Port         string        `yaml:"port"          env:"PORT"           env-default:"8081"`
+	ReadTimeout  time.Duration `yaml:"read_timeout"                       env-default:"30s"`
+	WriteTimeout time.Duration `yaml:"write_timeout"                      env-default:"30s"`
 }
 
-// Server represents a single server entry in the inbound configuration.
-type Server struct {
-	Name      string          `yaml:"name"`
-	Endpoint  string          `yaml:"endpoint"`
-	RateLimit RateLimitConfig `yaml:"ratelimit"`
-}
-
-// RateLimitConfig holds rate-limiting configuration for a server.
-type RateLimitConfig struct {
-	RPS   int `yaml:"requests_per_second"`
-	Burst int `yaml:"burst"`
-	MCR   int `yaml:"max_concurrent_requests"`
-}
-
-// RedisConfig holds connection details for a Redis instance.
-type RedisConfig struct {
-	Host     string `yaml:"host"`
-	Port     string `yaml:"port"`
-	Password string `yaml:"password"`
-}
-
-// PostgresConfig holds connection details for a PostgreSQL instance.
+// PostgresConfig holds PostgreSQL connection details.
+// Credentials are always supplied via ENV; YAML provides non-secret defaults.
 type PostgresConfig struct {
-	Host     string `yaml:"host"`
-	Port     string `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	DBName   string `yaml:"dbname"`
-	SSLMode  string `yaml:"sslmode"`
+	Host     string `yaml:"host"     env:"DB_HOST"     env-default:"localhost"`
+	Port     string `yaml:"port"     env:"DB_PORT"     env-default:"5432"`
+	User     string `yaml:"user"     env:"DB_USER"     env-default:"postgres"`
+	Password string `yaml:"password" env:"DB_PASSWORD"`
+	DBName   string `yaml:"db_name"  env:"DB_NAME"     env-default:"kbank_ecms"`
+	SSLMode  string `yaml:"ssl_mode" env:"DB_SSLMODE"  env-default:"disable"`
+}
+
+// RedisConfig holds Redis connection details.
+// PrincipalID is required only when SETENV != DEVLOCAL (Azure Workload Identity).
+type RedisConfig struct {
+	Host        string `yaml:"host"         env:"REDIS_HOST"          env-default:"localhost"`
+	Port        string `yaml:"port"         env:"REDIS_PORT"          env-default:"6379"`
+	Password    string `yaml:"password"     env:"REDIS_PASSWORD"`
+	PrincipalID string `yaml:"principal_id" env:"REDIS_PRINCIPAL_ID"`
+}
+
+type CacheConfig struct {
+	TTL             time.Duration `yaml:"ttl"              env:"CMS_RUNTIME_TTL"      env-default:"15m"`
+	RefreshInterval time.Duration `yaml:"refresh_interval" env:"CMS_RUNTIME_INTERVAL" env-default:"5m"`
+}
+
+type SwaggerConfig struct {
+	Host string `yaml:"host" env:"SWAGGER_HOST"`
 }
 
 type TimeoutConfig struct {
-	ReqCtxTimeout time.Duration `default:"30s" json:"reqCtxTimeout"`
-	DBCtxTimeout  time.Duration `default:"10s" json:"dbCtxTimeout"`
+	ReqCtxTimeout time.Duration `yaml:"req_ctx_timeout" env-default:"30s"`
+	DBCtxTimeout  time.Duration `yaml:"db_ctx_timeout"  env-default:"10s"`
 }
 
-func NewAppConfig() AppConfig {
-	rateLimitCfg := RateLimitConfig{RPS: 50, Burst: 100, MCR: 10}
-	if cfgRateLimit, err := LoadNewServiceRateLimit("./configs/newservice_inbound_config.yaml"); err == nil {
-		rateLimitCfg = cfgRateLimit
-	}
+// RateLimitConfig holds inbound rate-limiting parameters for the HTTP server.
+// These can be overridden per-environment via the YAML file; no ENV override is needed.
+type RateLimitConfig struct {
+	RPS   int `yaml:"requests_per_second"     env-default:"50"`
+	Burst int `yaml:"burst"                   env-default:"100"`
+	MCR   int `yaml:"max_concurrent_requests" env-default:"10"`
+}
 
-	timeoutCfg := TimeoutConfig{ReqCtxTimeout: 30 * time.Second, DBCtxTimeout: 10 * time.Second}
+type GRPCConfig struct {
+	Addr string `yaml:"addr" env:"CMS_RUNTIME_GRPC_ADDR" env-default:"localhost:50051"`
+	Port string `yaml:"port" env:"CMS_RUNTIME_GRPC_PORT" env-default:"50051"`
+}
 
-	// In a real application, you would load these from environment variables, config files, or a config service.
-	// For this example, we'll hardcode some values.
-	return AppConfig{
-		AppName: "cms-delivery",
-		Timeout: TimeoutConfig{
-			ReqCtxTimeout: timeoutCfg.ReqCtxTimeout,
-			DBCtxTimeout:  timeoutCfg.DBCtxTimeout,
-		},
-		RateLimit: RateLimitConfig{
-			RPS:   rateLimitCfg.RPS,   // Allow 50 requests per second
-			Burst: rateLimitCfg.Burst, // Allow bursts of up to 100 requests
-			MCR:   rateLimitCfg.MCR,   // Allow up to 10 concurrent requests
-		},
+// JWTConfig holds JWT signing configuration.
+// Secret must be supplied via ENV; never commit to YAML.
+type JWTConfig struct {
+	Secret string        `yaml:"secret"   env:"JWT_SECRET_KEY"      env-default:"change-me-in-production"`
+	Expiry time.Duration `yaml:"expiry"   env:"JWT_TOKEN_DURATION"  env-default:"24h"`
+	Issuer string        `yaml:"issuer"   env:"JWT_ISSUER"          env-default:"kbank-ecms"`
+}
+
+// LoadConfig reads the YAML file at path and applies ENV overrides automatically.
+// Pass the service-specific config path, e.g. "configs/backoffice.yaml".
+func LoadConfig(path string) (AppConfig, error) {
+	var cfg AppConfig
+	if err := cleanenv.ReadConfig(path, &cfg); err != nil {
+		return AppConfig{}, fmt.Errorf("loading config from %q: %w", path, err)
 	}
+	return cfg, nil
 }

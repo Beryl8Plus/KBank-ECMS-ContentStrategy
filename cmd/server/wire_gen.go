@@ -7,10 +7,9 @@
 package main
 
 import (
+	"gorm.io/gorm"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/config"
-
-	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
@@ -21,7 +20,7 @@ func InitializeApp(cfg config.AppConfig, db *gorm.DB, redisRepo *repository.Redi
 	decisionRulePostgresRepository := repository.NewDecisionRulePostgresRepository(db)
 	localEvaluator := ProvideRuntimeEvaluator()
 	memoryCache, cleanup := ProvideCacheMemory()
-	cmsDeliveryService := ProvideCMSDeliveryService(redisRepo, scheduleOccurrencePostgresRepository, decisionRulePostgresRepository, localEvaluator, memoryCache)
+	cmsDeliveryService := ProvideCMSDeliveryService(cfg, redisRepo, scheduleOccurrencePostgresRepository, decisionRulePostgresRepository, localEvaluator, memoryCache)
 	engine := ProvideRouter(cfg, db, redisRepo, cmsDeliveryService)
 	app := ProvideApp(engine, cmsDeliveryService)
 	return app, func() {

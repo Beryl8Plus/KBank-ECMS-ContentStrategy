@@ -1,0 +1,17 @@
+server:
+  port: "8082"
+  read_timeout: 30s
+  write_timeout: 30s
+
+timeout:
+  req_ctx_timeout: 30s
+  db_ctx_timeout: 10s
+
+cache:
+  ttl: 15m
+  refresh_interval: 5m
+
+rate_limit:
+  requests_per_second: 50
+  burst: 100
+  max_concurrent_requests: 10

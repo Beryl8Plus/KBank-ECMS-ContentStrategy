@@ -40,39 +40,34 @@ func main() {
 		})
 	}
 
-	// Override swagger host from environment (e.g. staging.example.com)
-	if swaggerHost := os.Getenv("SWAGGER_HOST"); swaggerHost != "" {
-		ecmsdocs.SwaggerInfo.Host = swaggerHost
-	}
-
 	// Setup logger
 	logger.LStartup(ctx, entity.StartupLog{Service: "CMS-DELIVERY", Level: "INFO", Message: "Starting cms-delivery pod"})
 
-	POSTGRES := config.PostgresConfig{
-		Host:     os.Getenv("DB_HOST"),
-		Port:     os.Getenv("DB_PORT"),
-		User:     os.Getenv("DB_USER"),
-		Password: os.Getenv("DB_PASSWORD"),
-		DBName:   os.Getenv("DB_NAME"),
-		SSLMode:  "disable",
+	// Load config — YAML provides non-secret defaults; ENV overrides credentials.
+	cfg, err := config.LoadConfig("configs/delivery.yaml")
+	if err != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "FATAL",
+			Message: "Failed to load config: " + err.Error(),
+		})
+		os.Exit(1)
 	}
-	if ssl := os.Getenv("DB_SSLMODE"); ssl != "" {
-		POSTGRES.SSLMode = ssl
+
+	// Override swagger host from config (populated from SWAGGER_HOST env var).
+	if cfg.Swagger.Host != "" {
+		ecmsdocs.SwaggerInfo.Host = cfg.Swagger.Host
 	}
 
 	// Redis only — delivery service reads from cache, no PostgreSQL needed.
-	redisCache, err := repository.NewRedisRepository(ctx, config.RedisConfig{
-		Host:     os.Getenv("REDIS_HOST"),
-		Port:     os.Getenv("REDIS_PORT"),
-		Password: os.Getenv("REDIS_PASSWORD"),
-	})
+	redisCache, err := repository.NewRedisRepository(ctx, cfg.Redis)
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{Service: "CMS-DELIVERY", Level: "FATAL", Message: "Redis init failed: " + err.Error()})
 		os.Exit(1)
 	}
 
 	// Initialize Postgres DB
-	db, err := database.NewPostgresDB(POSTGRES)
+	db, err := database.NewPostgresDB(cfg.Postgres)
 	if err != nil {
 		logger.LSystem(ctx, entity.SystemLog{
 			Service: "CMS-DELIVERY",
@@ -81,9 +76,6 @@ func main() {
 		})
 		os.Exit(1)
 	}
-
-	// Load app config (timeouts, rate limits, etc.) from environment or config service.
-	cfg := config.NewAppConfig()
 
 	// Build app — wires service → handler → middleware → router
 	app, cleanup := InitializeApp(cfg, db, redisCache)
@@ -95,10 +87,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8082"
-	}
+	port := cfg.Server.Port
 
 	httpSrv := &http.Server{Addr: ":" + port, Handler: app.Router}
 
@@ -127,17 +116,4 @@ func main() {
 		logger.LSystem(ctx, entity.SystemLog{Service: "CMS-DELIVERY", Level: "WARN", Message: "HTTP shutdown error: " + err.Error()})
 	}
 	logger.LSystem(ctx, entity.SystemLog{Service: "CMS-DELIVERY", Level: "INFO", Message: "Stopped"})
-}
-
-// parseDurationEnv reads an env var as a time.Duration string. Falls back to def.
-func parseDurationEnv(key string, def time.Duration) time.Duration {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return def
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return def
-	}
-	return d
 }
