@@ -21,6 +21,7 @@ type Attribute struct {
 	Value                datatypes.JSON          `gorm:"type:jsonb"         json:"value"`
 	Description          string                  `gorm:"type:text"          json:"description"`
 	SourceSystem         string                  `gorm:"size:255"           json:"sourceSystem"`
+	TableSourceName      string                  `gorm:"size:255"           json:"tableSourceName"`
 	IsActive             bool                    `gorm:"default:true"       json:"isActive"`
 }
 

@@ -47,6 +47,23 @@ func (r *AttributePostgresRepository) GetAttributeByID(ctx context.Context, id u
 	return &a, nil
 }
 
+// ListByTableSourceName returns all active attributes whose TableSourceName
+// matches the given CLEN datasource identifier. Used by delivery to build a
+// field-name → attribute-UUID lookup at request time.
+func (r *AttributePostgresRepository) ListByTableSourceName(ctx context.Context, tableSourceName string) ([]*entity.Attribute, error) {
+	if tableSourceName == "" {
+		return nil, nil
+	}
+	var attributes []*entity.Attribute
+	err := r.db.WithContext(ctx).
+		Where(`"TABLE_SOURCE_NAME" = ? AND "IS_ACTIVE" = ?`, tableSourceName, true).
+		Find(&attributes).Error
+	if err != nil {
+		return nil, fmt.Errorf("listing attributes by table source name: %w", err)
+	}
+	return attributes, nil
+}
+
 // ListAttributesPaginated returns a page of non-deleted attributes ordered by created_at
 // descending together with the total count. page and limit are 1-based and must be >= 1.
 func (r *AttributePostgresRepository) ListAttributesPaginated(ctx context.Context, page, limit int) ([]*entity.Attribute, int64, error) {

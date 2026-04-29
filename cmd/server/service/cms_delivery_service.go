@@ -15,6 +15,7 @@ import (
 
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 	domainrepo "kbank-ecms/internal/domain/repository"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
@@ -183,6 +184,16 @@ type CMSDeliveryService struct {
 	cacheMemory    *MemoryCache                            // nil disables in-memory caching
 	resultTTL      time.Duration
 	tickInterval   time.Duration
+	leadRepo       domainrepo.LeadRepository // nil disables SALES_TARGET lead enrichment
+
+	customerProfileRepo   domainrepo.CustomerProfileRepository // nil disables CLEN customer-profile integration
+	customerProfileEnrich CustomerProfileEnrichConfig          // CacheTTL for the enriched user-attrs blob
+
+	schemaRegistryRepo domainrepo.CLENSchemaRegistryRepository // nil disables schema-driven CLEN enrichment
+	schemaFieldsCache  sync.Map                                // map[uuid.UUID]map[string]struct{} — parsed SchemaDefinition fields per registry ID
+
+	attributeRepo            domainrepo.AttributeRepository // nil disables UUID-key transform on resolveUserAttrs return
+	attrFieldToUUIDByDsCache sync.Map                       // map[string]map[string]uuid.UUID — field-name → attribute-UUID per datasource
 
 	mu      sync.Mutex
 	running bool
@@ -204,6 +215,9 @@ type CMSDeliveryService struct {
 //   - cacheMemory may be nil to disable local rule caching.
 //   - resultTTL is the Redis TTL for results written by the fallback path.
 //   - tickInterval is how often the background ticker fires (0 disables ticker).
+//   - leadRepo may be nil to disable SALES_TARGET lead enrichment.
+//   - customerProfileRepo may be nil to disable CLEN Customer Profile integration.
+//   - customerProfileEnrich.CacheTTL controls the Redis TTL for the enriched user-attrs blob.
 func NewCMSDeliveryService(
 	cacheRepo domainrepo.RedisCacheRepository,
 	occurrenceRepo domainrepo.ScheduleOccurrenceRepository,
@@ -212,6 +226,11 @@ func NewCMSDeliveryService(
 	cacheMemory *MemoryCache,
 	resultTTL time.Duration,
 	tickInterval time.Duration,
+	leadRepo domainrepo.LeadRepository,
+	customerProfileRepo domainrepo.CustomerProfileRepository,
+	customerProfileEnrich CustomerProfileEnrichConfig,
+	schemaRegistryRepo domainrepo.CLENSchemaRegistryRepository,
+	attributeRepo domainrepo.AttributeRepository,
 ) *CMSDeliveryService {
 	// Initialize metrics
 	placementVersion := prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -237,15 +256,20 @@ func NewCMSDeliveryService(
 	}
 
 	return &CMSDeliveryService{
-		cacheRepo:         cacheRepo,
-		occurrenceRepo:    occurrenceRepo,
-		decisionRepo:      decisionRuleRepo,
-		evaluator:         evaluator,
-		cacheMemory:       cacheMemory,
-		resultTTL:         resultTTL,
-		tickInterval:      tickInterval,
-		done:              make(chan struct{}),
-		mPlacementVersion: placementVersion,
+		cacheRepo:             cacheRepo,
+		occurrenceRepo:        occurrenceRepo,
+		decisionRepo:          decisionRuleRepo,
+		evaluator:             evaluator,
+		cacheMemory:           cacheMemory,
+		resultTTL:             resultTTL,
+		tickInterval:          tickInterval,
+		leadRepo:              leadRepo,
+		customerProfileRepo:   customerProfileRepo,
+		customerProfileEnrich: customerProfileEnrich,
+		schemaRegistryRepo:    schemaRegistryRepo,
+		attributeRepo:         attributeRepo,
+		done:                  make(chan struct{}),
+		mPlacementVersion:     placementVersion,
 	}
 }
 
@@ -353,6 +377,7 @@ func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []st
 func (s *CMSDeliveryService) GetPersonalizedContent(
 	ctx context.Context,
 	customerInfo *dto.CustomerRequest,
+	channel string,
 	placementNames []string,
 ) ([]dto.ContentResult, error) {
 	logger.LSystem(ctx, entity.SystemLog{
@@ -362,15 +387,6 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 	})
 	if customerInfo == nil || customerInfo.IsEmpty() {
 		return nil, fmt.Errorf("GetPersonalizedContent: customerId and customerType must not be empty")
-	}
-	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, customerInfo.TypeName(), customerInfo.Value())
-	if resolveErr != nil {
-		logger.LSystem(ctx, entity.SystemLog{
-			Service: "CMS-DELIVERY",
-			Level:   "WARN",
-			Message: fmt.Sprintf("Failed to resolve user attributes for customerId %q: %v", customerInfo.Value(), resolveErr),
-		})
-		return nil, resolveErr
 	}
 
 	// 1. Query per placement active schedules.
@@ -485,6 +501,26 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		}
 	}
 
+	// 3.0 Resolve user attrs against the rules that will actually evaluate.
+	// Done after schedule+rule loading so we know exactly which CLEN fields
+	// are needed → enables per-request delta fetch from CLEN.
+	rulesForResolve := uniqueRulesFromFiltered(filtered)
+	resolvedUserAttrs, resolveErr := s.resolveUserAttrs(ctx, customerInfo.TypeName(), customerInfo.Value(), rulesForResolve)
+	if resolveErr != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("Failed to resolve user attributes for customerId %q: %v", customerInfo.Value(), resolveErr),
+		})
+		return nil, resolveErr
+	}
+
+	// 3.0b When any rule resolving for this request is SALES_TARGET, fetch
+	// lead offerings once for the whole request — N placements share the
+	// same customer-level lead inventory. Failures are non-fatal: the
+	// SALES_TARGET rule simply expands into zero entries.
+	leads := s.fetchLeadsForRequest(ctx, customerInfo, channel, placementNames, rulesForResolve)
+
 	// 3.1 Process each placement concurrently via errgroup.
 	// Bounded concurrency limits parallelism during cache-miss storms
 	// while still providing significant speedup.
@@ -497,7 +533,7 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 	for i, name := range placementNames {
 		g.Go(func() error {
-			passing := s.evaluatePlacement(gctx, name, filtered[name], resolvedUserAttrs)
+			passing := s.evaluatePlacement(gctx, name, filtered[name], resolvedUserAttrs, leads)
 			if len(passing) > 0 {
 				results[i] = passing
 			}
@@ -517,17 +553,19 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 
 // evaluatePlacement handles the full evaluation flow for a single placement name, returning the passing ContentResult entries.
 // evaluation for a single placement. Extracted to keep the errgroup callback
-// focused and testable independently.
+// focused and testable independently. leads is the per-request CLEN lead
+// inventory; SALES_TARGET rules expand into one entry per matching lead.
 func (s *CMSDeliveryService) evaluatePlacement(
 	ctx context.Context,
 	placementName string,
 	schedules []*entity.Schedule,
 	resolvedUserAttrs map[string]json.RawMessage,
+	leads []entity.Lead,
 ) []dto.ContentResult {
 	var entries []dto.ContentResult
 	// Evaluate the placement logic immediately if the evaluator and occurrenceRepo are configured; otherwise, return no results (cache miss).
 	if s.evaluator != nil && s.occurrenceRepo != nil {
-		passing, err := s.evaluator.Evaluate(ctx, placementName, schedules, resolvedUserAttrs)
+		passing, err := s.evaluator.Evaluate(ctx, placementName, schedules, resolvedUserAttrs, leads)
 		if err != nil {
 			logger.LSystem(ctx, entity.SystemLog{
 				Service: "CMS-DELIVERY",
@@ -547,6 +585,75 @@ func (s *CMSDeliveryService) evaluatePlacement(
 		Message: fmt.Sprintf("Evaluating %d logic entries for placement %q", len(entries), placementName),
 	})
 	return entries
+}
+
+// uniqueRulesFromFiltered collects deduplicated DecisionRule pointers from the
+// per-placement schedule map produced after rule cache lookup. Used to scope
+// resolveUserAttrs to only the rules that will actually evaluate this request.
+func uniqueRulesFromFiltered(filtered map[string][]*entity.Schedule) []*entity.DecisionRule {
+	if len(filtered) == 0 {
+		return nil
+	}
+	seen := make(map[uuid.UUID]struct{})
+	out := make([]*entity.DecisionRule, 0)
+	for _, scheds := range filtered {
+		for _, sched := range scheds {
+			if sched == nil || sched.DecisionRule == nil {
+				continue
+			}
+			id := sched.DecisionRule.ID
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, sched.DecisionRule)
+		}
+	}
+	return out
+}
+
+// fetchLeadsForRequest fetches CLEN lead offerings for the customer when at
+// least one rule in this request is SALES_TARGET. Returns nil (no enrichment)
+// when leadRepo is unset, the customer ID is not a CIS_ID, or no SALES_TARGET
+// rule is in scope. Upstream errors are logged and swallowed so a CLEN outage
+// can not fail the personalized-content path.
+func (s *CMSDeliveryService) fetchLeadsForRequest(
+	ctx context.Context,
+	customerInfo *dto.CustomerRequest,
+	channel string,
+	placementNames []string,
+	rules []*entity.DecisionRule,
+) []entity.Lead {
+	if s.leadRepo == nil || customerInfo == nil {
+		return nil
+	}
+	if customerInfo.Type != dto.CustomerIdTypeCISID || customerInfo.Value() == "" {
+		return nil
+	}
+	hasSalesTarget := false
+	for _, r := range rules {
+		if r != nil && r.Type == enums.DecisionTypeSalesTarget {
+			hasSalesTarget = true
+			break
+		}
+	}
+	if !hasSalesTarget {
+		return nil
+	}
+	leads, err := s.leadRepo.GetLeads(ctx, domainrepo.LeadQuery{
+		CisID:      customerInfo.Value(),
+		Channel:    channel,
+		Placements: placementNames,
+	})
+	if err != nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("CLEN lead fetch failed for cis %s: %v", customerInfo.Value(), err),
+		})
+		return nil
+	}
+	return leads
 }
 
 // ---------------------------------------------------------------------------

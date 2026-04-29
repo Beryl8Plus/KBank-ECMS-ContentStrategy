@@ -21,6 +21,13 @@ type AttributeRepository interface {
 	// created_at descending together with the total count of matching records.
 	ListAttributesPaginated(ctx context.Context, page, limit int) ([]*entity.Attribute, int64, error)
 
+	// ListByTableSourceName returns all active attributes whose TableSourceName
+	// matches the given CLEN datasource identifier. Used to build the
+	// field-name → attribute-UUID lookup needed when transforming the cached
+	// customer profile blob into the UUID-keyed form the rule evaluator
+	// expects.
+	ListByTableSourceName(ctx context.Context, tableSourceName string) ([]*entity.Attribute, error)
+
 	// UpdateAttribute saves all fields of an existing attribute record.
 	UpdateAttribute(ctx context.Context, attribute *entity.Attribute) error
 

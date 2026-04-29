@@ -76,7 +76,7 @@ func (h *Handler) getContent(c *gin.Context) {
 	case dto.CustomerIdTypeLineUUID:
 		customerReq.LineUUID = req.CustomerID
 	}
-	results, err := h.svc.GetPersonalizedContent(c.Request.Context(), customerReq, req.Placements)
+	results, err := h.svc.GetPersonalizedContent(c.Request.Context(), customerReq, req.Channel, req.Placements)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.APIResponse{
 			Code:  enums.ErrorCodeInternalError.String(),

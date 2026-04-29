@@ -28,16 +28,16 @@ func init() {
 // ---- mock ----------------------------------------------------------------
 
 type mockDeliveryService struct {
-	getPersonalizedFn func(ctx context.Context, customerInfo *dto.CustomerRequest, placements []string) ([]dto.ContentResult, error)
+	getPersonalizedFn func(ctx context.Context, customerInfo *dto.CustomerRequest, channel string, placements []string) ([]dto.ContentResult, error)
 	flushFn           func(ctx context.Context, placements []string, isEvaluate bool) error
 	keysFn            func(ctx context.Context) ([]string, error)
 	getValueFn        func(ctx context.Context, key string) (json.RawMessage, error)
 	statusFn          func(ctx context.Context) (isMemPressure bool, memoryUsagePct float64, err error)
 }
 
-func (m *mockDeliveryService) GetPersonalizedContent(ctx context.Context, customerInfo *dto.CustomerRequest, placements []string) ([]dto.ContentResult, error) {
+func (m *mockDeliveryService) GetPersonalizedContent(ctx context.Context, customerInfo *dto.CustomerRequest, channel string, placements []string) ([]dto.ContentResult, error) {
 	if m.getPersonalizedFn != nil {
-		return m.getPersonalizedFn(ctx, customerInfo, placements)
+		return m.getPersonalizedFn(ctx, customerInfo, channel, placements)
 	}
 	return []dto.ContentResult{}, nil
 }
@@ -106,7 +106,7 @@ func TestHandler_GetContent_OK(t *testing.T) {
 		{ContentPath: "/a", Score: 0.9, RuleSetType: "Mass"},
 	}
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, placements []string) ([]dto.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ string, placements []string) ([]dto.ContentResult, error) {
 			assert.Equal(t, "1234567890", customerInfo.CIS_ID)
 			assert.Equal(t, []string{"hero"}, placements)
 			return expected, nil
@@ -130,7 +130,7 @@ func TestHandler_GetContent_ServiceError(t *testing.T) {
 	t.Parallel()
 
 	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, _ *dto.CustomerRequest, _ []string) ([]dto.ContentResult, error) {
+		getPersonalizedFn: func(_ context.Context, _ *dto.CustomerRequest, _ string, _ []string) ([]dto.ContentResult, error) {
 			return nil, errors.New("redis down")
 		},
 	})
@@ -193,20 +193,22 @@ func TestHandler_GetContent_InvalidRequestType(t *testing.T) {
 func TestHandler_GetContent_ArticleCategory(t *testing.T) {
 	t.Parallel()
 
-	called := false
-	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, placements []string) ([]dto.ContentResult, error) {
-			called = true
-			assert.Equal(t, "1234567890", customerInfo.CIS_ID)
-			assert.Equal(t, []string{"hero"}, placements)
-			return []dto.ContentResult{}, nil
-		},
-	})
+	for _, mode := range []string{"articleCategory", "knownContent"} {
+		called := false
+		r := setupRouter(&mockDeliveryService{
+			getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ string, placements []string) ([]dto.ContentResult, error) {
+				called = true
+				assert.Equal(t, "1234567890", customerInfo.CIS_ID)
+				assert.Equal(t, []string{"hero"}, placements)
+				return []dto.ContentResult{}, nil
+			},
+		})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+		w := doRequest(t, r, http.MethodGet, "/content?requestType=articleCategory&mode="+mode+"&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.True(t, called, "GetPersonalizedContent should be called for articleCategory")
+		assert.Equal(t, http.StatusOK, w.Code, "mode=%s", mode)
+		assert.True(t, called, "GetPersonalizedContent should be called for articleCategory (mode=%s)", mode)
+	}
 }
 
 // TestHandler_GetContent_UnspecifiedCustomerIdTypeRejectsCustomerId verifies bare customerId is rejected.
@@ -253,18 +255,20 @@ func TestHandler_GetContent_CISID_MissingCustomerId(t *testing.T) {
 func TestHandler_GetContent_CISID_UsesCustomerId(t *testing.T) {
 	t.Parallel()
 
-	var capturedCISID string
-	r := setupRouter(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ []string) ([]dto.ContentResult, error) {
-			capturedCISID = customerInfo.CIS_ID
-			return []dto.ContentResult{}, nil
-		},
-	})
+	for _, mode := range []string{"logicalBased", "knownContent"} {
+		var capturedCISID string
+		r := setupRouter(&mockDeliveryService{
+			getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ string, _ []string) ([]dto.ContentResult, error) {
+				capturedCISID = customerInfo.CIS_ID
+				return []dto.ContentResult{}, nil
+			},
+		})
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+		w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode="+mode+"&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "1234567890", capturedCISID)
+		assert.Equal(t, http.StatusOK, w.Code, "mode=%s", mode)
+		assert.Equal(t, "1234567890", capturedCISID, "mode=%s", mode)
+	}
 }
 
 // TestHandler_GetContent_WithUserIDInContext verifies that when ctxconsts.UserIDKey is present, the handler still
@@ -273,26 +277,29 @@ func TestHandler_GetContent_WithUserIDInContext(t *testing.T) {
 	t.Parallel()
 
 	userID := uuid.New()
-	var capturedCISID string
 
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		ctx := context.WithValue(c.Request.Context(), ctxconsts.UserIDKey, userID)
-		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-	})
-	h := NewHandler(&mockDeliveryService{
-		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ []string) ([]dto.ContentResult, error) {
-			capturedCISID = customerInfo.CIS_ID
-			return []dto.ContentResult{}, nil
-		},
-	})
-	r.GET("/content", h.getContent)
+	for _, mode := range []string{"logicalBased", "knownContent"} {
+		var capturedCISID string
 
-	w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode=knownContent&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := context.WithValue(c.Request.Context(), ctxconsts.UserIDKey, userID)
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		h := NewHandler(&mockDeliveryService{
+			getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ string, _ []string) ([]dto.ContentResult, error) {
+				capturedCISID = customerInfo.CIS_ID
+				return []dto.ContentResult{}, nil
+			},
+		})
+		r.GET("/content", h.getContent)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "1234567890", capturedCISID)
+		w := doRequest(t, r, http.MethodGet, "/content?requestType=personalizedContent&mode="+mode+"&channel=web&placement=hero&customerIdType=CIS_ID&customerId=1234567890", "")
+
+		assert.Equal(t, http.StatusOK, w.Code, "mode=%s", mode)
+		assert.Equal(t, "1234567890", capturedCISID, "mode=%s", mode)
+	}
 }
 
 // TestHandler_GetStatus_OK verifies GET /purge_requests returns 200 with pressure flag, usage, and keys.

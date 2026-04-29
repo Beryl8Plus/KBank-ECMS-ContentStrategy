@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+
 	"kbank-ecms/internal/delivery/http/dto"
 )
 
@@ -20,6 +21,7 @@ type DeliveryService interface {
 	GetPersonalizedContent(
 		ctx context.Context,
 		customerInfo *dto.CustomerRequest,
+		channel string,
 		placementNames []string,
 	) ([]dto.ContentResult, error)
 

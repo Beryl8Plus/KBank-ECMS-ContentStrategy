@@ -36,7 +36,7 @@ func newTestMemCache(t *testing.T, ns string) *MemoryCache {
 
 // newSvcCacheOnly builds a CMSDeliveryService with only a cache repo (no evaluator).
 func newSvcCacheOnly(cacheRepo *mockCacheRepo, mem *MemoryCache) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, &mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, &mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 }
 
 // newSvcWithFallback builds a CMSDeliveryService with cache, occurrence repo, and evaluator.
@@ -46,8 +46,15 @@ func newSvcWithFallback(
 	eval RuntimeEvaluator,
 	mem *MemoryCache,
 ) *CMSDeliveryService {
-	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, mem, time.Hour, 0)
+	return NewCMSDeliveryService(cacheRepo, occurrenceRepo, &mockDecisionRuleRepo{}, eval, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 }
+
+// (Pre-merge note: the old gRPC-fallback / cmsPlacementKey-based tests that
+// lived here were dropped during the dev merge — those APIs were replaced by
+// the in-process LocalEvaluator and the typed MemoryCache struct. Equivalent
+// coverage is provided below by TestGetPersonalizedContent_EvaluatorFallback /
+// _CacheMissTriggersEvaluate and TestCMSDeliveryService_FlushCache_Selective /
+// _All.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock types (package-local)
@@ -170,7 +177,7 @@ func (m *mockDecisionRuleRepo) GetDecisionRuleByScheduleIDs(ctx context.Context,
 
 // mockRuntimeEvaluator is a minimal mock for RuntimeEvaluator.
 type mockRuntimeEvaluator struct {
-	evaluateFn func(ctx context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error)
+	evaluateFn func(ctx context.Context, name string, schedules []*entity.Schedule, userAttrs map[string]json.RawMessage, leads []entity.Lead) ([]dto.ContentResult, error)
 }
 
 func (m *mockRuntimeEvaluator) Evaluate(
@@ -178,9 +185,10 @@ func (m *mockRuntimeEvaluator) Evaluate(
 	name string,
 	schedules []*entity.Schedule,
 	userAttrs map[string]json.RawMessage,
+	leads []entity.Lead,
 ) ([]dto.ContentResult, error) {
 	if m.evaluateFn != nil {
-		return m.evaluateFn(ctx, name, schedules, userAttrs)
+		return m.evaluateFn(ctx, name, schedules, userAttrs, leads)
 	}
 	return nil, nil
 }
@@ -212,7 +220,7 @@ func TestCMSDeliveryService_FlushCache_Selective(t *testing.T) {
 			flushDBCalled = true
 			return nil
 		},
-	}, nil, nil, nil, mem, time.Hour, 0)
+	}, nil, nil, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
 	err := svc.FlushCache(context.Background(), []string{"hero", "sidebar"}, false)
 
@@ -243,7 +251,7 @@ func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
 			flushDBCalled = true
 			return nil
 		},
-	}, nil, nil, nil, mem, time.Hour, 0)
+	}, nil, nil, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
 	// nil placements → FlushDB
 	require.NoError(t, svc.FlushCache(context.Background(), nil, false))
@@ -291,7 +299,7 @@ func TestGetPersonalizedContent_EvaluatorFallback(t *testing.T) {
 		},
 		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			evaluateFn: func(_ context.Context, name string, schedules []*entity.Schedule, _ map[string]json.RawMessage, _ []entity.Lead) ([]dto.ContentResult, error) {
 				assert.Equal(t, "hero", name)
 				require.Len(t, schedules, 1)
 				return []dto.ContentResult{entry}, nil
@@ -301,7 +309,7 @@ func TestGetPersonalizedContent_EvaluatorFallback(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -324,7 +332,7 @@ func TestGetPersonalizedContent_EvaluatorFails(t *testing.T) {
 		},
 		&mockOccurrenceRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage, _ []entity.Lead) ([]dto.ContentResult, error) {
 				return nil, errors.New("rpc error: unavailable")
 			},
 		},
@@ -332,7 +340,7 @@ func TestGetPersonalizedContent_EvaluatorFails(t *testing.T) {
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -353,7 +361,7 @@ func TestGetPersonalizedContent_NoSchedulesInMemory(t *testing.T) {
 	}, mem)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"unknown-placement"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{"unknown-placement"},
 	)
 
 	require.NoError(t, err)
@@ -361,8 +369,9 @@ func TestGetPersonalizedContent_NoSchedulesInMemory(t *testing.T) {
 }
 
 // TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID verifies that the
-// delivery service resolves a cis_id:{cisID} JSON payload from Redis and passes
-// the merged attributes to the evaluator.
+// delivery service resolves a customer_profile:{customerType}:{customerID} per-datasource JSON payload from
+// Redis, transforms each (datasource, fieldName) into its Attribute UUID via
+// the attribute repository, and passes the flat UUID-keyed map to the evaluator.
 func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 	t.Parallel()
 
@@ -374,17 +383,20 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 		Score:          9.5,
 	}
 
-	userAttrsData, _ := json.Marshal(map[string]any{
-		condAttrID.String(): "balanced",
-	})
-
+	// Cache stores the per-datasource shape; attribute repo maps the field
+	// name to the UUID the evaluator expects.
 	stored := map[string]string{
-		cmsUserAttrsKey("cis42"): string(userAttrsData),
+		cmsUserAttrsKey("CIS_ID", "cis42"): `{"cst_info_prfl_dly":{"investor_type":"balanced"}}`,
 	}
+	attrRepo := &fakeAttributeRepo{byDatasource: map[string][]*entity.Attribute{
+		"cst_info_prfl_dly": {
+			{BaseModel: entity.BaseModel{ID: condAttrID}, FieldName: "investor_type"},
+		},
+	}}
 
 	mem := newTestMemCache(t, "user_attrs_from_redis")
 
-	svc := newSvcWithFallback(
+	svc := NewCMSDeliveryService(
 		&mockCacheRepo{
 			getFn: func(_ context.Context, key string) (string, error) {
 				if v, ok := stored[key]; ok {
@@ -393,19 +405,23 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 				return "", errors.New("miss")
 			},
 		},
-		&mockOccurrenceRepo{},
+		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, userAttrs map[string]json.RawMessage, _ []entity.Lead) ([]dto.ContentResult, error) {
 				_, ok := userAttrs[condAttrID.String()]
 				assert.True(t, ok, "expected resolved user attr to be passed to evaluator")
 				return []dto.ContentResult{entry}, nil
 			},
 		},
 		mem,
+		time.Hour, 0,
+		nil,
+		nil, CustomerProfileEnrichConfig{},
+		nil, attrRepo,
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis42"}, []string{"wealth-banner"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis42"}, "", []string{"wealth-banner"},
 	)
 
 	require.NoError(t, err)
@@ -454,15 +470,15 @@ func TestGetPersonalizedContent_CacheMissTriggersEvaluate(t *testing.T) {
 		},
 		&mockDecisionRuleRepo{},
 		&mockRuntimeEvaluator{
-			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage) ([]dto.ContentResult, error) {
+			evaluateFn: func(_ context.Context, _ string, _ []*entity.Schedule, _ map[string]json.RawMessage, _ []entity.Lead) ([]dto.ContentResult, error) {
 				return []dto.ContentResult{entry}, nil
 			},
 		},
-		mem, time.Hour, 0,
+		mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -488,11 +504,11 @@ func TestGetPersonalizedContent_CacheMissPersistsGracefully(t *testing.T) {
 		},
 		&mockDecisionRuleRepo{},
 		&mockRuntimeEvaluator{},
-		mem, time.Hour, 0,
+		mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	result, err := svc.GetPersonalizedContent(
-		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{"hero"},
+		context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{"hero"},
 	)
 
 	require.NoError(t, err)
@@ -506,7 +522,7 @@ func TestGetPersonalizedContent_CacheMissPersistsGracefully(t *testing.T) {
 // TestGetCacheKeys_NilCache verifies GetCacheKeys returns an empty slice when no in-memory cache is configured.
 func TestGetCacheKeys_NilCache(t *testing.T) {
 	t.Parallel()
-	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0)
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
 	keys, err := svc.GetCacheKeys(context.Background())
 	require.NoError(t, err)
@@ -600,7 +616,7 @@ func TestGetCacheValue_KeyNotFound(t *testing.T) {
 // TestGetCacheStatus_NilCache verifies GetCacheStatus returns false/0 when no in-memory cache is configured.
 func TestGetCacheStatus_NilCache(t *testing.T) {
 	t.Parallel()
-	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0)
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, nil, nil, nil, nil, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
 	pressure, pct, err := svc.GetCacheStatus(context.Background())
 	require.NoError(t, err)
@@ -697,9 +713,9 @@ func TestGetPersonalizedContent_StalenessFailFast(t *testing.T) {
 		listActiveAtFn: func(_ context.Context, _ time.Time) ([]*entity.ScheduleOccurrence, error) {
 			return nil, nil // Return nothing to simulate failed refresh/sync
 		},
-	}, nil, nil, mem, time.Hour, time.Minute)
+	}, nil, nil, mem, time.Hour, time.Minute, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
-	_, err := svc.GetPersonalizedContent(context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, []string{placementName})
+	_, err := svc.GetPersonalizedContent(context.Background(), &dto.CustomerRequest{Type: dto.CustomerIdTypeCISID, CIS_ID: "cis1"}, "", []string{placementName})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "data integrity error")
@@ -729,7 +745,7 @@ func TestCMSDeliveryService_TargetedEvaluate(t *testing.T) {
 		},
 	}
 
-	svc := NewCMSDeliveryService(&mockCacheRepo{}, repo, &mockDecisionRuleRepo{}, nil, mem, time.Hour, time.Minute)
+	svc := NewCMSDeliveryService(&mockCacheRepo{}, repo, &mockDecisionRuleRepo{}, nil, mem, time.Hour, time.Minute, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
 	svc.evaluate(context.Background(), placementName)
 
@@ -844,7 +860,7 @@ func TestSubscribeToUpdates_SkipsMatchingVersion(t *testing.T) {
 
 	svc := NewCMSDeliveryService(
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
-		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	go svc.subscribeToUpdates(t.Context())
@@ -886,7 +902,7 @@ func TestSubscribeToUpdates_TriggersEvaluateForNewVersion(t *testing.T) {
 
 	svc := NewCMSDeliveryService(
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
-		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	go svc.subscribeToUpdates(t.Context())
@@ -922,7 +938,7 @@ func TestSubscribeToUpdates_RawPayloadTriggersFull(t *testing.T) {
 
 	svc := NewCMSDeliveryService(
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
-		occ, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+		occ, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	go svc.subscribeToUpdates(t.Context())
@@ -947,7 +963,7 @@ func TestSubscribeToUpdates_SubscribeError(t *testing.T) {
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) {
 			return nil, errors.New("redis: connection refused")
 		}},
-		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	go svc.subscribeToUpdates(t.Context())
@@ -990,7 +1006,7 @@ func TestSubscribeToUpdates_ActivatePingDeletesBothCacheKeys(t *testing.T) {
 
 	svc := NewCMSDeliveryService(
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
-		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0,
+		occ, &mockDecisionRuleRepo{}, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	go svc.subscribeToUpdates(t.Context())
@@ -1028,7 +1044,7 @@ func TestSubscribeToUpdates_ContextCancelExits(t *testing.T) {
 
 	svc := NewCMSDeliveryService(
 		&mockCacheRepo{subscribeFn: func(_ context.Context, _ string) (<-chan string, error) { return msgCh, nil }},
-		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0,
+		&mockOccurrenceRepo{}, &mockDecisionRuleRepo{}, nil, nil, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

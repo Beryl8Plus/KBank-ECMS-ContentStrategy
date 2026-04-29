@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +17,7 @@ import (
 	deliveryhttp "kbank-ecms/internal/delivery/http"
 	"kbank-ecms/internal/domain/entity"
 	domainrepo "kbank-ecms/internal/domain/repository"
+	httpclient "kbank-ecms/internal/http/client"
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/config"
@@ -43,11 +47,88 @@ func ProvideCMSDeliveryService(
 	decisionRuleRepo domainrepo.DecisionRuleRepository,
 	evaluator deliveryservice.RuntimeEvaluator,
 	cacheMemory *deliveryservice.MemoryCache,
+	leadRepo domainrepo.LeadRepository,
+	customerProfileRepo domainrepo.CustomerProfileRepository,
+	customerProfileEnrich deliveryservice.CustomerProfileEnrichConfig,
+	schemaRegistryRepo domainrepo.CLENSchemaRegistryRepository,
+	attributeRepo domainrepo.AttributeRepository,
 ) *deliveryservice.CMSDeliveryService {
 	return deliveryservice.NewCMSDeliveryService(
 		cacheRepo, occurrenceRepo, decisionRuleRepo,
 		evaluator, cacheMemory, cfg.Cache.TTL, cfg.Cache.RefreshInterval,
+		leadRepo,
+		customerProfileRepo, customerProfileEnrich,
+		schemaRegistryRepo,
+		attributeRepo,
 	)
+}
+
+// ProvideCLENLeadConfig reads CLEN Lead API settings from env.
+// CLEN_LEAD_EXP_F defaults to "true" (only non-expired leads). Set to "false"
+// for expired leads, or to the literal string "none" to omit the filter.
+func ProvideCLENLeadConfig() httpclient.CLENLeadConfig {
+	retry := 2
+	if raw := os.Getenv("CLEN_LEAD_API_RETRIES"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			retry = v
+		}
+	}
+	expFilter := os.Getenv("CLEN_LEAD_EXP_F")
+	switch strings.ToLower(expFilter) {
+	case "":
+		expFilter = "true" // default: only non-expired leads
+	case "none":
+		expFilter = "" // explicit opt-out: CLEN returns both expired and active
+	}
+	return httpclient.CLENLeadConfig{
+		BaseURL:       os.Getenv("CLEN_LEAD_API_BASE_URL"),
+		Path:          os.Getenv("CLEN_LEAD_API_PATH"), // constructor fills default when empty
+		APIKey:        os.Getenv("CLEN_LEAD_API_KEY"),
+		AppIdentifier: os.Getenv("CLEN_LEAD_APP_ID"),
+		Timeout:       parseDurationEnv("CLEN_LEAD_API_TIMEOUT", 5*time.Second),
+		RetryCount:    retry,
+		ExpireFilter:  expFilter,
+	}
+}
+
+// ProvideCLENLeadClient returns a nil client when the config is empty so
+// local dev boots without CLEN credentials. Callers tolerate nil.
+func ProvideCLENLeadClient(cfg httpclient.CLENLeadConfig) *httpclient.CLENLeadClient {
+	return httpclient.NewCLENLeadClient(cfg)
+}
+
+// ProvideCLENCustomerProfileConfig reads CLEN Customer Profile API settings
+// from env. Leaving CLEN_CUSTOMER_PROFILE_API_BASE_URL or KEY blank disables
+// the integration.
+func ProvideCLENCustomerProfileConfig() httpclient.CLENCustomerProfileConfig {
+	retry := 2
+	if raw := os.Getenv("CLEN_CUSTOMER_PROFILE_API_RETRIES"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			retry = v
+		}
+	}
+	return httpclient.CLENCustomerProfileConfig{
+		BaseURL:       os.Getenv("CLEN_CUSTOMER_PROFILE_API_BASE_URL"),
+		Path:          os.Getenv("CLEN_CUSTOMER_PROFILE_API_PATH"), // constructor fills default when empty
+		APIKey:        os.Getenv("CLEN_CUSTOMER_PROFILE_API_KEY"),
+		AppIdentifier: os.Getenv("CLEN_CUSTOMER_PROFILE_APP_ID"),
+		Timeout:       parseDurationEnv("CLEN_CUSTOMER_PROFILE_API_TIMEOUT", 5*time.Second),
+		RetryCount:    retry,
+	}
+}
+
+// ProvideCLENCustomerProfileClient returns a nil client when the config is
+// empty so local dev boots without CLEN credentials. Callers tolerate nil.
+func ProvideCLENCustomerProfileClient(cfg httpclient.CLENCustomerProfileConfig) *httpclient.CLENCustomerProfileClient {
+	return httpclient.NewCLENCustomerProfileClient(cfg)
+}
+
+// ProvideCustomerProfileEnrichConfig reads the cache TTL used when persisting
+// CLEN customer-profile enrichment back to Redis.
+func ProvideCustomerProfileEnrichConfig() deliveryservice.CustomerProfileEnrichConfig {
+	return deliveryservice.CustomerProfileEnrichConfig{
+		CacheTTL: parseDurationEnv("CLEN_CUSTOMER_PROFILE_CACHE_TTL", 5*time.Minute),
+	}
 }
 
 // ProvideCacheMemory provides the L1 cache.
@@ -75,6 +156,22 @@ func ProvideRuntimeEvaluator() *evaluator.LocalEvaluator {
 	return evaluator.NewLocalEvaluator()
 }
 
+// parseDurationEnv reads a time.Duration from the given env var, falling back
+// to def when the var is unset or the value cannot be parsed. Used by the
+// CLEN provider funcs to read per-integration timeouts and cache TTLs that
+// are not yet modelled in the central AppConfig.
+func parseDurationEnv(key string, def time.Duration) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return def
+	}
+	return d
+}
+
 // App groups the dependencies needed by main.
 type App struct {
 	Router  *gin.Engine
@@ -98,6 +195,27 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
 	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
 	wire.Bind(new(deliveryservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
+
+	// CLEN Lead integration
+	ProvideCLENLeadConfig,
+	ProvideCLENLeadClient,
+	repository.NewCLENLeadRepository,
+	wire.Bind(new(domainrepo.LeadRepository), new(*repository.CLENLeadRepository)),
+
+	// CLEN Customer Profile integration
+	ProvideCLENCustomerProfileConfig,
+	ProvideCLENCustomerProfileClient,
+	repository.NewCLENCustomerProfileRepository,
+	wire.Bind(new(domainrepo.CustomerProfileRepository), new(*repository.CLENCustomerProfileRepository)),
+	ProvideCustomerProfileEnrichConfig,
+
+	// CLEN Schema Registry (drives per-rule field discovery for delta fetch)
+	repository.NewCLENSchemaRegistryPostgresRepository,
+	wire.Bind(new(domainrepo.CLENSchemaRegistryRepository), new(*repository.CLENSchemaRegistryPostgresRepository)),
+
+	// Attribute repository (drives field-name → UUID transform on resolveUserAttrs return)
+	repository.NewAttributePostgresRepository,
+	wire.Bind(new(domainrepo.AttributeRepository), new(*repository.AttributePostgresRepository)),
 
 	// Providers
 	ProvideCacheMemory,
