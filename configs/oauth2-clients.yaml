@@ -1,0 +1,26 @@
+# OAuth2 Client Credentials Configuration
+# This file defines the clients that can obtain tokens using OAuth2 Client Credentials Flow
+# Add new clients here without modifying the code
+
+clients:
+  - client_id: service-cmc
+    client_secret: super-secret-key-cmc
+    scopes:
+      - read:rules
+      - write:rules
+    description: CMC service for service request from CMC System
+
+  # - client_id: service-decision-rules
+  #   client_secret: super-secret-key-2
+  #   scopes:
+  #     - read:orders
+  #     - read:payments
+  #   description: Decision rules service for managing decision rules
+
+# Example of adding a new client:
+# - client_id: service-inventory
+#   client_secret: your-secret-key-here
+#   scopes:
+#     - read:inventory
+#     - write:inventory
+#   description: Inventory management service

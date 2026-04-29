@@ -1,11 +1,16 @@
 package handler
 
 import (
+	"kbank-ecms/internal/delivery/http/middleware"
+	"kbank-ecms/pkg/auth"
+
 	"github.com/gin-gonic/gin"
 )
 
 func RegisterRoutes(
 	r *gin.Engine,
+	jwtService *auth.JWTService,
+	tokenHandler *TokenHandler,
 	ruleManagementHandler *RuleManagementHandler,
 	scheduleHandler *ScheduleHandler,
 	decisionRuleHandler *DecisionRuleHandler,
@@ -15,67 +20,79 @@ func RegisterRoutes(
 	channelHandler *ChannelHandler,
 	placementHandler *PlacementHandler,
 ) {
-	r.POST("/rule-management", ruleManagementHandler.IngressRuleManagement)
-
-	schedules := r.Group("/schedules")
+	// Public routes (no authentication required)
+	public := r.Group("/")
 	{
-		schedules.POST("", scheduleHandler.CreateSchedule)
-		schedules.GET("", scheduleHandler.ListSchedules)
-		schedules.GET("/:id", scheduleHandler.GetSchedule)
-		schedules.PUT("/:id", scheduleHandler.UpdateSchedule)
-		schedules.DELETE("/:id", scheduleHandler.DeleteSchedule)
-		schedules.GET("/:id/occurrences", occurrenceHandler.ListOccurrencesBySchedule)
+		public.POST("/rule-management", ruleManagementHandler.IngressRuleManagement)
+		// OAuth2 token endpoint for client credentials flow
+		public.POST("/token", tokenHandler.HandleToken)
 	}
 
-	decisionRules := r.Group("/decision-rules")
+	// Protected routes (JWT authentication required)
+	// Following Gin Framework authentication standards
+	protected := r.Group("/")
+	protected.Use(middleware.JWTMiddleware(jwtService))
 	{
-		// Existing route (static prefix takes precedence over :id param)
-		decisionRules.GET("/schedule/:scheduleId", decisionRuleHandler.GetDecisionRuleBySchedule)
+		schedules := protected.Group("/schedules")
+		{
+			schedules.POST("", scheduleHandler.CreateSchedule)
+			schedules.GET("", scheduleHandler.ListSchedules)
+			schedules.GET("/:id", scheduleHandler.GetSchedule)
+			schedules.PUT("/:id", scheduleHandler.UpdateSchedule)
+			schedules.DELETE("/:id", scheduleHandler.DeleteSchedule)
+			schedules.GET("/:id/occurrences", occurrenceHandler.ListOccurrencesBySchedule)
+		}
 
-		// Wizard routes
-		decisionRules.POST("", wizardHandler.CreateDecisionRule)
-		decisionRules.GET("", wizardHandler.ListDecisionRules)
-		decisionRules.PUT("/:id", wizardHandler.UpdateDecisionRule)
-		decisionRules.GET("/:id/conditions", wizardHandler.GetConditions)
-		decisionRules.GET("/:id/rule-sets", wizardHandler.GetRuleSets)
-		decisionRules.PUT("/:id/rule-sets", wizardHandler.SaveRuleSets)
-		decisionRules.GET("/:id/schedules", wizardHandler.GetSchedules)
-		decisionRules.PUT("/:id/schedules", wizardHandler.SaveSchedules)
-		decisionRules.PUT("/:id/activate", wizardHandler.ActivateDecisionRule)
-		decisionRules.POST("/:id/clone", wizardHandler.CloneDecisionRule)
-		decisionRules.PUT("/:id/deactivate", wizardHandler.DeactivateDecisionRule)
-		decisionRules.DELETE("/:id", wizardHandler.DeleteDecisionRule)
-	}
+		decisionRules := protected.Group("/decision-rules")
+		{
+			// Existing route (static prefix takes precedence over :id param)
+			decisionRules.GET("/schedule/:scheduleId", decisionRuleHandler.GetDecisionRuleBySchedule)
 
-	scheduleOccurrences := r.Group("/schedule-occurrences")
-	{
-		scheduleOccurrences.GET("/active", occurrenceHandler.ListActiveOccurrences)
-	}
+			// Wizard routes
+			decisionRules.POST("", wizardHandler.CreateDecisionRule)
+			decisionRules.GET("", wizardHandler.ListDecisionRules)
+			decisionRules.PUT("/:id", wizardHandler.UpdateDecisionRule)
+			decisionRules.GET("/:id/conditions", wizardHandler.GetConditions)
+			decisionRules.GET("/:id/rule-sets", wizardHandler.GetRuleSets)
+			decisionRules.PUT("/:id/rule-sets", wizardHandler.SaveRuleSets)
+			decisionRules.GET("/:id/schedules", wizardHandler.GetSchedules)
+			decisionRules.PUT("/:id/schedules", wizardHandler.SaveSchedules)
+			decisionRules.PUT("/:id/activate", wizardHandler.ActivateDecisionRule)
+			decisionRules.POST("/:id/clone", wizardHandler.CloneDecisionRule)
+			decisionRules.PUT("/:id/deactivate", wizardHandler.DeactivateDecisionRule)
+			decisionRules.DELETE("/:id", wizardHandler.DeleteDecisionRule)
+		}
 
-	attributes := r.Group("/attributes")
-	{
-		attributes.POST("", attributeHandler.CreateAttribute)
-		attributes.GET("", attributeHandler.ListAttributes)
-		attributes.GET("/:id", attributeHandler.GetAttribute)
-		attributes.PUT("/:id", attributeHandler.UpdateAttribute)
-		attributes.DELETE("/:id", attributeHandler.DeleteAttribute)
-	}
+		scheduleOccurrences := protected.Group("/schedule-occurrences")
+		{
+			scheduleOccurrences.GET("/active", occurrenceHandler.ListActiveOccurrences)
+		}
 
-	channels := r.Group("/channels")
-	{
-		channels.POST("", channelHandler.CreateChannel)
-		channels.GET("", channelHandler.ListChannels)
-		channels.GET("/:id", channelHandler.GetChannel)
-		channels.PUT("/:id", channelHandler.UpdateChannel)
-		channels.DELETE("/:id", channelHandler.DeleteChannel)
-	}
+		attributes := protected.Group("/attributes")
+		{
+			attributes.POST("", attributeHandler.CreateAttribute)
+			attributes.GET("", attributeHandler.ListAttributes)
+			attributes.GET("/:id", attributeHandler.GetAttribute)
+			attributes.PUT("/:id", attributeHandler.UpdateAttribute)
+			attributes.DELETE("/:id", attributeHandler.DeleteAttribute)
+		}
 
-	placements := r.Group("/placements")
-	{
-		placements.POST("", placementHandler.CreatePlacement)
-		placements.GET("", placementHandler.ListPlacements)
-		placements.GET("/:id", placementHandler.GetPlacement)
-		placements.PUT("/:id", placementHandler.UpdatePlacement)
-		placements.DELETE("/:id", placementHandler.DeletePlacement)
+		channels := protected.Group("/channels")
+		{
+			channels.POST("", channelHandler.CreateChannel)
+			channels.GET("", channelHandler.ListChannels)
+			channels.GET("/:id", channelHandler.GetChannel)
+			channels.PUT("/:id", channelHandler.UpdateChannel)
+			channels.DELETE("/:id", channelHandler.DeleteChannel)
+		}
+
+		placements := protected.Group("/placements")
+		{
+			placements.POST("", placementHandler.CreatePlacement)
+			placements.GET("", placementHandler.ListPlacements)
+			placements.GET("/:id", placementHandler.GetPlacement)
+			placements.PUT("/:id", placementHandler.UpdatePlacement)
+			placements.DELETE("/:id", placementHandler.DeletePlacement)
+		}
 	}
 }

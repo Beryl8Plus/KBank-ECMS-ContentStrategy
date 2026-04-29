@@ -7,14 +7,13 @@
 package main
 
 import (
+	"gorm.io/gorm"
 	"kbank-ecms/cmd/svc-contstrat-backoffice/handler"
 	service2 "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
-
-	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
@@ -22,6 +21,9 @@ import (
 // InitializeApp wires all dependencies and returns the Application bundle
 // (Gin engine + background occurrence worker).
 func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimit entity.RateLimit) (*Application, error) {
+	jwtService := ProvideJWTService()
+	clientRegistry := ProvideClientRegistry()
+	tokenHandler := handler.NewTokenHandler(jwtService, clientRegistry)
 	ruleManagementService := service.NewRuleManagementService()
 	ruleManagementHandler := handler.NewRuleManagementHandler(ruleManagementService)
 	schedulePostgresRepository := repository.NewSchedulePostgresRepository(db)
@@ -49,7 +51,7 @@ func InitializeApp(db *gorm.DB, redisCache *repository.RedisRepository, rateLimi
 	channelHandler := handler.NewChannelHandler(channelService)
 	placementService := service.NewPlacementService(placementPostgresRepository)
 	placementHandler := handler.NewPlacementHandler(placementService)
-	engine := ProvideRouter(db, rateLimit, redisCache, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
+	engine := ProvideRouter(db, rateLimit, redisCache, jwtService, tokenHandler, ruleManagementHandler, scheduleHandler, decisionRuleHandler, decisionRuleWizardHandler, scheduleOccurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	materializationConfig := ProvideMatConfig()
 	scheduleMaterializationService := service.NewScheduleMaterializationService(materializationConfig, schedulePostgresRepository, scheduleOccurrencePostgresRepository)
 	occurrenceWorkerConfig := ProvideWorkerConfig()

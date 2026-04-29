@@ -1,7 +1,12 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/goccy/go-yaml"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -13,9 +18,20 @@ import (
 	"kbank-ecms/internal/infrastructure/pubsub"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/internal/service"
+	"kbank-ecms/pkg/auth"
 
 	localservice "kbank-ecms/cmd/svc-contstrat-backoffice/service"
 )
+
+// OAuth2ClientsConfig represents the structure of the OAuth2 clients configuration file
+type OAuth2ClientsConfig struct {
+	Clients []struct {
+		ClientID     string   `yaml:"client_id"`
+		ClientSecret string   `yaml:"client_secret"`
+		Scopes       []string `yaml:"scopes"`
+		Description  string   `yaml:"description"`
+	} `yaml:"clients"`
+}
 
 // Application holds the top-level components returned by Wire.
 // Wire injectors may only return a single non-error value, so the
@@ -50,6 +66,75 @@ func ProvideAttributeSyncWorkerConfig() service.AttributeSyncWorkerConfig {
 	}
 }
 
+// ProvideJWTService creates a JWT service instance with configuration from environment variables.
+func ProvideJWTService() *auth.JWTService {
+	secretKey := os.Getenv("JWT_SECRET_KEY")
+	if secretKey == "" {
+		secretKey = "your-secret-key-change-in-production" // Default for development
+	}
+
+	tokenDuration := 24 * time.Hour // Default 24 hours
+	if durationStr := os.Getenv("JWT_TOKEN_DURATION"); durationStr != "" {
+		if duration, err := time.ParseDuration(durationStr); err == nil {
+			tokenDuration = duration
+		}
+	}
+
+	config := auth.JWTConfig{
+		SecretKey:     secretKey,
+		TokenDuration: tokenDuration,
+	}
+
+	return auth.NewJWTService(config)
+}
+
+// ProvideClientRegistry creates a client registry with allowed clients from external config file.
+func ProvideClientRegistry() *auth.ClientRegistry {
+	configPath := os.Getenv("OAUTH2_CLIENTS_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "config/oauth2-clients.yaml" // Default path
+	}
+
+	// Read config file
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		fmt.Printf("Warning: Failed to read OAuth2 clients config from %s: %v\n", configPath, err)
+		fmt.Println("Using fallback empty client registry")
+		return auth.NewClientRegistry(make(map[string]*auth.ClientConfig))
+	}
+
+	// Parse YAML config
+	var config OAuth2ClientsConfig
+	if err := yaml.Unmarshal(configData, &config); err != nil {
+		fmt.Printf("Warning: Failed to parse OAuth2 clients config: %v\n", err)
+		fmt.Println("Using fallback empty client registry")
+		return auth.NewClientRegistry(make(map[string]*auth.ClientConfig))
+	}
+
+	// Convert to client registry format
+	clients := make(map[string]*auth.ClientConfig)
+	for _, client := range config.Clients {
+		// Override client_secret from environment variable if set (for security)
+		envSecret := os.Getenv(fmt.Sprintf("CLIENT_SECRET_%s", client.ClientID))
+		if envSecret != "" {
+			client.ClientSecret = envSecret
+		}
+
+		clients[client.ClientID] = &auth.ClientConfig{
+			ClientID:     client.ClientID,
+			ClientSecret: client.ClientSecret,
+			Scopes:       client.Scopes,
+		}
+		fmt.Printf("Loaded OAuth2 client: %s with scopes: %v\n", client.ClientID, client.Scopes)
+	}
+
+	if len(clients) == 0 {
+		fmt.Println("Warning: No OAuth2 clients found in config")
+	}
+
+	return auth.NewClientRegistry(clients)
+}
+
 // ProvideExternalAttributeAPIClient returns the stub client until a real
 // CLEN HTTP client is implemented.
 func ProvideExternalAttributeAPIClient() service.ExternalAttributeAPIClient {
@@ -61,6 +146,8 @@ func ProvideRouter(
 	db *gorm.DB,
 	rateLimit entity.RateLimit,
 	redisCache *repository.RedisRepository,
+	jwtService *auth.JWTService,
+	tokenHandler *handler.TokenHandler,
 	ruleManagementHandler *handler.RuleManagementHandler,
 	scheduleHandler *handler.ScheduleHandler,
 	decisionRuleHandler *handler.DecisionRuleHandler,
@@ -75,7 +162,7 @@ func ProvideRouter(
 		redisClient = redisCache.Client()
 	}
 	r := deliveryhttp.InitNewRouter(db, rateLimit, redisClient)
-	handler.RegisterRoutes(r, ruleManagementHandler, scheduleHandler, decisionRuleHandler, wizardHandler, occurrenceHandler, attributeHandler, channelHandler, placementHandler)
+	handler.RegisterRoutes(r, jwtService, tokenHandler, ruleManagementHandler, scheduleHandler, decisionRuleHandler, wizardHandler, occurrenceHandler, attributeHandler, channelHandler, placementHandler)
 	return r
 }
 
@@ -140,7 +227,12 @@ var ProviderSet = wire.NewSet(
 	// Activation service for decision rule wizard
 	localservice.NewActivationService,
 
+	// JWT Service
+	ProvideJWTService,
+	ProvideClientRegistry,
+
 	// Handlers
+	handler.NewTokenHandler,
 	handler.NewScheduleHandler,
 	handler.NewScheduleOccurrenceHandler,
 	handler.NewDecisionRuleHandler,
