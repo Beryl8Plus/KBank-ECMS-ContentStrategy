@@ -661,6 +661,34 @@ func (s *CMSDeliveryService) fetchLeadsForRequest(
 // and populates L1 (CacheMemory) and L2 (version hashes).
 // ---------------------------------------------------------------------------
 
+// warmupCache refreshes the cache from the database on startup to ensure
+// the pod starts with fresh data. This prevents serving stale data if the
+// pod was down during a cache invalidation event.
+func (s *CMSDeliveryService) warmupCache(ctx context.Context) {
+	if s.occurrenceRepo == nil {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: "warmup: occurrence repository not available, skipping cache warmup",
+		})
+		return
+	}
+
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "CMS-DELIVERY",
+		Level:   "INFO",
+		Message: "warmup: starting cache warmup from database",
+	})
+
+	s.evaluate(ctx)
+
+	logger.LSystem(ctx, entity.SystemLog{
+		Service: "CMS-DELIVERY",
+		Level:   "INFO",
+		Message: "warmup: cache warmup completed",
+	})
+}
+
 // Start launches the background evaluation ticker.
 // It is safe to call multiple times; only the first call starts the loop.
 func (s *CMSDeliveryService) Start(ctx context.Context) error {
@@ -681,6 +709,9 @@ func (s *CMSDeliveryService) Start(ctx context.Context) error {
 	s.running = true
 	s.stopCh = make(chan struct{})
 	s.done = make(chan struct{})
+
+	// Warmup cache from database on startup to ensure fresh data
+	s.warmupCache(ctx)
 
 	// Start background synchronization loops
 	go s.runLoop(ctx)
