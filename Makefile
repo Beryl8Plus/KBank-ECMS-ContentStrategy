@@ -10,11 +10,9 @@ init:
 	go install github.com/daixiang0/gci@latest
 	@echo "Installing git hooks..."
 	make install-hooks
-	@echo "Workspace initialization complete."
-	make swagger
 	@echo "Running go mod tidy..."
 	go mod tidy
-	@echo "Workspace is ready for development."
+	@echo "Workspace initialization complete."
 
 tidy:
 	go mod tidy
