@@ -751,15 +751,12 @@ func (s *CMSDeliveryService) Stop() error {
 	return nil
 }
 
-// runLoop fires evaluate immediately, then on every tick.
+// runLoop fires evaluate on every tick.
 func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 	defer close(s.done)
 
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
-
-	// Initial pull
-	s.evaluate(ctx)
 
 	for {
 		select {
