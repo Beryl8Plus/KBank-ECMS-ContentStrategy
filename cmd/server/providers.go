@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -9,8 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
+	ecmsdocs "kbank-ecms/cmd/server/docs"
 	cmshandler "kbank-ecms/cmd/server/handler"
 	evaluator "kbank-ecms/cmd/server/internal/evaluator"
 	deliveryservice "kbank-ecms/cmd/server/service"
@@ -19,6 +23,8 @@ import (
 	domainrepo "kbank-ecms/internal/domain/repository"
 	httpclient "kbank-ecms/internal/http/client"
 	"kbank-ecms/internal/infrastructure/cache"
+	"kbank-ecms/internal/infrastructure/database"
+	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/config"
 )
@@ -183,6 +189,87 @@ func ProvideApp(r *gin.Engine, svc *deliveryservice.CMSDeliveryService) *App {
 	return &App{
 		Router:  r,
 		Service: svc,
+	}
+}
+
+// ProvideConfig loads AppConfig so fx can inject it throughout the container.
+func ProvideConfig() (config.AppConfig, error) {
+	return config.LoadConfig("configs/delivery.yaml")
+}
+
+// ProvidePostgresDB opens the Postgres connection and registers an OnStop hook to close it.
+func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) {
+	db, err := database.NewPostgresDB(cfg.Postgres)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			sqlDB, _ := db.DB()
+			return sqlDB.Close()
+		},
+	})
+	return db, nil
+}
+
+// ProvideRedisRepository connects to Redis and registers an OnStop hook to close the client.
+func ProvideRedisRepository(lc fx.Lifecycle, cfg config.AppConfig) (*repository.RedisRepository, error) {
+	repo, err := repository.NewRedisRepository(context.Background(), cfg.Redis)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			return repo.Client().Close()
+		},
+	})
+	return repo, nil
+}
+
+// RegisterServiceLifecycle starts the background evaluation ticker on app start
+// and stops it on shutdown.
+func RegisterServiceLifecycle(lc fx.Lifecycle, svc *deliveryservice.CMSDeliveryService) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			return svc.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			return svc.Stop()
+		},
+	})
+}
+
+// RegisterHTTPServer starts the Gin HTTP server in a goroutine on app start
+// and shuts it down gracefully on stop.
+func RegisterHTTPServer(lc fx.Lifecycle, cfg config.AppConfig, router *gin.Engine) {
+	srv := &http.Server{Addr: ":" + cfg.Server.Port, Handler: router}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go func() {
+				logger.LStartup(context.Background(), entity.StartupLog{
+					Service: "CMS-DELIVERY", Level: "INFO",
+					Message: "Listening on :" + cfg.Server.Port,
+				})
+				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.LSystem(context.Background(), entity.SystemLog{
+						Service: "CMS-DELIVERY", Level: "FATAL",
+						Message: "Server error: " + err.Error(),
+					})
+					os.Exit(1)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			return srv.Shutdown(ctx)
+		},
+	})
+}
+
+// RegisterSwaggerHost overrides the Swagger UI host when SWAGGER_HOST env var is set.
+func RegisterSwaggerHost(cfg config.AppConfig) {
+	if cfg.Swagger.Host != "" {
+		ecmsdocs.SwaggerInfo.Host = cfg.Swagger.Host
 	}
 }
 
