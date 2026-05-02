@@ -74,6 +74,7 @@ func main() {
 		),
 	)
 
+	// app.Err() catches DI graph construction errors (from fx.New) before app.Run() is called.
 	if err := app.Err(); err != nil {
 		logger.LSystem(context.Background(), entity.SystemLog{
 			Service: "CMS-DELIVERY", Level: "FATAL",
