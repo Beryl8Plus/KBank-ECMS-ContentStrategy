@@ -1,0 +1,14 @@
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(kbank-ecms)
+      custom-order: true
+      skip-generated: true
+
+linters:
+  enable-all: false

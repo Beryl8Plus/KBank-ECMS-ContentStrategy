@@ -16,15 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	ecmsdocs "kbank-ecms/cmd/server/docs"
-	"kbank-ecms/pkg/config"
-
 	"github.com/joho/godotenv"
 
+	ecmsdocs "kbank-ecms/cmd/server/docs"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/database"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
+	"kbank-ecms/pkg/config"
 )
 
 func main() {

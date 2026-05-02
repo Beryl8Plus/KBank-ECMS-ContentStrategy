@@ -45,3 +45,6 @@ cmd/migrate-gen/migrations-local/*.sql
 # Postman
 postman/*
 .postman/*
+
+# AI assistant files
+GEMINI.md

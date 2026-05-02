@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"kbank-ecms/pkg/ctxconsts"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
+
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 func TestBaseModel_BeforeCreate(t *testing.T) {

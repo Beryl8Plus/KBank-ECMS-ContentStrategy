@@ -1,11 +1,12 @@
 package middleware
 
 import (
-	"kbank-ecms/pkg/config"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"kbank-ecms/pkg/config"
 )
 
 const TIMEOUT = 30 * time.Second
@@ -18,7 +19,6 @@ func Apply(r *gin.Engine, db *gorm.DB, cfg config.AppConfig) {
 	r.Use(RateLimiterMiddleware(cfg.RateLimit.RPS, cfg.RateLimit.Burst))
 	r.Use(ConcurrencyMiddleware(cfg.RateLimit.MCR))
 	r.Use(LoggerMiddleware())
-	r.Use(UserIDMiddleware())
 	r.Use(TimeoutMiddleware(cfg.Timeout.ReqCtxTimeout))
 	r.Use(DBMiddleware(db, cfg.Timeout.DBCtxTimeout))
 }

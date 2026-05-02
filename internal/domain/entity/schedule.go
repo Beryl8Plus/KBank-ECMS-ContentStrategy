@@ -3,9 +3,9 @@ package entity
 import (
 	"time"
 
-	"kbank-ecms/internal/domain/entity/enums"
-
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // Schedule links a DecisionRule to a Placement with recurrence-based scheduling.

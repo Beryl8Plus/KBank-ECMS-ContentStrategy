@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"gorm.io/datatypes"
 
 	"kbank-ecms/internal/domain/entity"

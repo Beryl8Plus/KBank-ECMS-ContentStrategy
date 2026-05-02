@@ -8,9 +8,19 @@ init:
 	go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing wire..."
 	go install github.com/google/wire/cmd/wire@latest
+	@echo "Installing gci..."
+	go install github.com/daixiang0/gci@latest
 	@echo "Installing git hooks..."
 	make install-hooks
 	@echo "Workspace initialization complete."
+	make swagger
+	@echo "Running go mod tidy..."
+	go mod tidy
+	@echo "Workspace is ready for development."
+
+tidy:
+	go mod tidy
+	@echo "go mod tidy completed."
 
 ## Build the server binary
 build: swagger
@@ -69,6 +79,7 @@ format-tags:
 ## Run all formatters
 fmt:
 	go fmt ./...
+	gci write --skip-generated -s standard -s default -s "prefix(kbank-ecms)" .
 	make format-tags
 
 ## Install git hooks

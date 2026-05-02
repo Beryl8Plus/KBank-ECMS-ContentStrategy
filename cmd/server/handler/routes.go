@@ -1,10 +1,10 @@
 package handler
 
 import (
+	"github.com/gin-gonic/gin"
+
 	"kbank-ecms/cmd/server/service"
 	"kbank-ecms/pkg/util"
-
-	"github.com/gin-gonic/gin"
 )
 
 // RegisterRoutes attaches all routes to the provided gin.Engine.

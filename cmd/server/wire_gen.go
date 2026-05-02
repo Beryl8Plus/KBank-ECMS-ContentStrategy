@@ -7,9 +7,10 @@
 package main
 
 import (
-	"gorm.io/gorm"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/config"
+
+	"gorm.io/gorm"
 )
 
 // Injectors from wire.go:
