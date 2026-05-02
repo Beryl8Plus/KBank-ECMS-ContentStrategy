@@ -5,8 +5,6 @@ go 1.26.2
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azfile v1.5.4
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/brianvoe/gofakeit/v7 v7.14.1
 	github.com/gin-contrib/cors v1.7.7
@@ -23,7 +21,6 @@ require (
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
 	github.com/tavsec/gin-healthcheck v1.7.15
-	github.com/teambition/rrule-go v1.8.2
 	golang.org/x/time v0.15.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.0
@@ -61,6 +58,10 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.6.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/dig v1.19.0 // indirect
+	go.uber.org/fx v1.24.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/zap v1.26.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3 // indirect
 )
@@ -68,7 +69,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.1 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -88,7 +88,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.2
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
