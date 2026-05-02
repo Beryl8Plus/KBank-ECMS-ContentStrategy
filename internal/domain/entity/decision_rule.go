@@ -2,10 +2,11 @@ package entity
 
 import (
 	"fmt"
-	"kbank-ecms/internal/domain/entity/enums"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // DecisionRule is the primary decision rule entity.

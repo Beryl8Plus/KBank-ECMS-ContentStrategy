@@ -13,6 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
+
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
@@ -20,10 +24,6 @@ import (
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/infrastructure/pubsub"
-
-	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 )
 
 func computePlacementHash(schedules []*entity.Schedule) string {
@@ -751,15 +751,12 @@ func (s *CMSDeliveryService) Stop() error {
 	return nil
 }
 
-// runLoop fires evaluate immediately, then on every tick.
+// runLoop fires evaluate on every tick.
 func (s *CMSDeliveryService) runLoop(ctx context.Context) {
 	defer close(s.done)
 
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
-
-	// Initial pull
-	s.evaluate(ctx)
 
 	for {
 		select {

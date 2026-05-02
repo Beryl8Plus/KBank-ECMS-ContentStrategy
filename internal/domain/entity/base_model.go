@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"kbank-ecms/pkg/ctxconsts"
-
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 // BaseModel provides common audit fields for all database entities.

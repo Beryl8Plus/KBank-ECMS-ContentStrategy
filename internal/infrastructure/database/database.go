@@ -3,14 +3,15 @@ package database
 import (
 	"context"
 	"fmt"
-	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/infrastructure/logger"
-	"kbank-ecms/pkg/config"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
+
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/config"
 )
 
 // NewPostgresDB creates and returns a new GORM DB connection for PostgreSQL.

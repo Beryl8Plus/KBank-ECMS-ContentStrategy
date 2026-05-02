@@ -3,10 +3,11 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
-	"kbank-ecms/internal/domain/entity/enums"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // Attribute defines a data attribute used in rule conditions.

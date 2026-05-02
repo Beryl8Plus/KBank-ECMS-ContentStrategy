@@ -2,8 +2,9 @@ package dto
 
 import (
 	"encoding/json"
-	"kbank-ecms/internal/domain/entity/enums"
 	"math"
+
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // CustomerIdType identifies the scheme used for customerId.

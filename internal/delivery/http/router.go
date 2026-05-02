@@ -1,16 +1,16 @@
 package router
 
 import (
-	"kbank-ecms/internal/delivery/http/healthcheck"
-	"kbank-ecms/internal/delivery/http/middleware"
-	"kbank-ecms/pkg/config"
-
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
+
+	"kbank-ecms/internal/delivery/http/healthcheck"
+	"kbank-ecms/internal/delivery/http/middleware"
+	"kbank-ecms/pkg/config"
 )
 
 // InitNewRouter creates the Gin engine and wires all layers in order:

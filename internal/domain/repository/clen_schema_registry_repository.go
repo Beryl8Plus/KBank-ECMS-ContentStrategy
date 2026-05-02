@@ -3,9 +3,9 @@ package repository
 import (
 	"context"
 
-	"kbank-ecms/internal/domain/entity"
-
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity"
 )
 
 // CLENSchemaRegistryRepository abstracts read access to clen_schema_registry.

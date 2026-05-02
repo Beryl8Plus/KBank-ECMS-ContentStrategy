@@ -6,11 +6,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
+
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
-
-	"github.com/google/uuid"
 )
 
 // ---------------------------------------------------------------------------

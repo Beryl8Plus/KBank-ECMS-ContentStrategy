@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/domain/entity/enums"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 func TestGenerateConditionHash(t *testing.T) {

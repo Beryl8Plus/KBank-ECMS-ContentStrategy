@@ -4,16 +4,17 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"kbank-ecms/internal/domain/entity"
-	domainrepo "kbank-ecms/internal/domain/repository"
-	"kbank-ecms/internal/infrastructure/logger"
-	"kbank-ecms/pkg/config"
 	"os"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/redis/go-redis/v9"
+
+	"kbank-ecms/internal/domain/entity"
+	domainrepo "kbank-ecms/internal/domain/repository"
+	"kbank-ecms/internal/infrastructure/logger"
+	"kbank-ecms/pkg/config"
 )
 
 // RedisRepository implements domain repository.CacheRepository using Redis.

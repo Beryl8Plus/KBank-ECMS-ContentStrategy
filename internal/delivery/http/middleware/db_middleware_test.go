@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"kbank-ecms/pkg/ctxconsts"
-
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-
 	"gorm.io/gorm"
+
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 func TestDBMiddleware(t *testing.T) {
