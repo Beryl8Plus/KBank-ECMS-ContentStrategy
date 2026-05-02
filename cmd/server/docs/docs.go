@@ -479,13 +479,6 @@ const docTemplate = `{
                 }
             }
         }
-    },
-    "securityDefinitions": {
-        "XUserIdAuth": {
-            "type": "apiKey",
-            "name": "X-User-Id",
-            "in": "header"
-        }
     }
 }`
 

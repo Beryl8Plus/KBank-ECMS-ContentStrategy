@@ -305,9 +305,4 @@ paths:
       summary: Get cache value
       tags:
       - svc-contstrat-delivery
-securityDefinitions:
-  XUserIdAuth:
-    in: header
-    name: X-User-Id
-    type: apiKey
 swagger: "2.0"
