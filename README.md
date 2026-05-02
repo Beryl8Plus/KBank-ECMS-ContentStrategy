@@ -2,6 +2,72 @@
 
 A read-only personalization API that evaluates campaign content rules against user attributes and returns ranked content results. Built with Go and designed for high-throughput delivery workloads using a three-layer cache architecture.
 
+### Cache Invalidation Flow (Redis Pub/Sub)
+
+When a decision rule is activated or modified in the backoffice, the system uses Redis Pub/Sub to invalidate cached data across all delivery service pods. This ensures consistency without requiring a full cache flush.
+
+**Cache Invalidation Sequence Diagram:**
+
+```mermaid
+sequenceDiagram
+    participant External as CMC Frontend
+    participant Backoffice as CMC Backoffice API
+    participant Publisher as Redis Publisher
+    participant Redis as Redis Pub/Sub
+    participant DeliveryPod1 as Delivery Pod 1
+    participant DeliveryPod2 as Delivery Pod 2
+    participant DeliveryPodN as Delivery Pod N
+
+    Note over External,DeliveryPodN: Decision Rule Activation / Modification
+
+    External->>Backoffice: POST /decision-rules (activate)
+    Backoffice->>Backoffice: Update decision rule in DB
+    Backoffice->>Backoffice: ActivatePublish(ruleID, schedules)
+
+    Note over Backoffice,Publisher: Publish cache invalidation pings
+
+    loop For each unique placement
+        Backoffice->>Publisher: PingSync(placementName, ruleID, versionHash)
+        Publisher->>Publisher: Marshal SyncPingMessage
+        Publisher->>Redis: Publish(channel="cms:sync:ping", payload)
+        Redis-->>Publisher: Publish success
+    end
+
+    Note over Redis,DeliveryPodN: All delivery pods receive the message
+
+    par Multiple Delivery Pods Subscribe
+        DeliveryPod1->>Redis: Subscribe(channel="cms:sync:ping")
+        DeliveryPod2->>Redis: Subscribe(channel="cms:sync:ping")
+        DeliveryPodN->>Redis: Subscribe(channel="cms:sync:ping")
+    end
+
+    Redis-->>DeliveryPod1: SyncPingMessage
+    Redis-->>DeliveryPod2: SyncPingMessage
+    Redis-->>DeliveryPodN: SyncPingMessage
+
+    par Each Pod Processes Cache Invalidation
+        DeliveryPod1->>DeliveryPod1: Parse SyncPingMessage
+        DeliveryPod1->>DeliveryPod1: Delete cache key: rule:{ruleID}
+        DeliveryPod1->>DeliveryPod1: Delete cache key: schedules:placement:{placementName}
+        DeliveryPod1->>DeliveryPod1: Re-evaluate decision rules
+        Note over DeliveryPod1: Cache cleared for placement
+
+        DeliveryPod2->>DeliveryPod2: Parse SyncPingMessage
+        DeliveryPod2->>DeliveryPod2: Delete cache key: rule:{ruleID}
+        DeliveryPod2->>DeliveryPod2: Delete cache key: schedules:placement:{placementName}
+        DeliveryPod2->>DeliveryPod2: Re-evaluate decision rules
+        Note over DeliveryPod2: Cache cleared for placement
+
+        DeliveryPodN->>DeliveryPodN: Parse SyncPingMessage
+        DeliveryPodN->>DeliveryPodN: Delete cache key: rule:{ruleID}
+        DeliveryPodN->>DeliveryPodN: Delete cache key: schedules:placement:{placementName}
+        DeliveryPodN->>DeliveryPodN: Re-evaluate decision rules
+        Note over DeliveryPodN: Cache cleared for placement
+    end
+
+    Backoffice-->>External: 200 OK + Decision Rule Activated
+```
+
 ---
 
 ## Key Features
