@@ -205,7 +205,10 @@ func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) 
 	}
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
-			sqlDB, _ := db.DB()
+			sqlDB, err := db.DB()
+			if err != nil {
+				return err
+			}
 			return sqlDB.Close()
 		},
 	})
@@ -214,6 +217,8 @@ func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) 
 
 // ProvideRedisRepository connects to Redis and registers an OnStop hook to close the client.
 func ProvideRedisRepository(lc fx.Lifecycle, cfg config.AppConfig) (*repository.RedisRepository, error) {
+	// context.Background() is intentional: NewRedisRepository uses the context only
+	// for the initial PING, and fx provider functions do not receive a start context directly.
 	repo, err := repository.NewRedisRepository(context.Background(), cfg.Redis)
 	if err != nil {
 		return nil, err
