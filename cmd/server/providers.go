@@ -267,4 +267,3 @@ func RegisterSwaggerHost(cfg config.AppConfig) {
 		ecmsdocs.SwaggerInfo.Host = cfg.Swagger.Host
 	}
 }
-
