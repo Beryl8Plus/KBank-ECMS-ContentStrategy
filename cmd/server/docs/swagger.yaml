@@ -1,0 +1,313 @@
+basePath: /
+definitions:
+  kbank-ecms_internal_delivery_http_dto.APIResponse:
+    properties:
+      code:
+        type: string
+      data: {}
+      error:
+        type: string
+      pagination:
+        $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.Pagination'
+    type: object
+  kbank-ecms_internal_delivery_http_dto.CacheStatusResponse:
+    properties:
+      cacheKeys:
+        items:
+          type: string
+        type: array
+      isMemPressure:
+        type: boolean
+      memoryUsagePct:
+        type: number
+    type: object
+  kbank-ecms_internal_delivery_http_dto.Campaign:
+    properties:
+      code:
+        type: string
+      endDate:
+        type: string
+      startDate:
+        type: string
+    type: object
+  kbank-ecms_internal_delivery_http_dto.ContentResult:
+    properties:
+      campaign:
+        $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.Campaign'
+      conditions:
+        items:
+          $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.LogicCondition'
+        type: array
+      contentPath:
+        type: string
+      decisionRuleId:
+        type: string
+      endDateTime:
+        type: string
+      logicEval:
+        description: Evaluation result of the logic expression; present for logic
+          cache entries
+        type: boolean
+      logicExpr:
+        description: Human-readable expression; present for logic cache entries
+        type: string
+      logicHash:
+        description: Stable SHA-256 hash; present for logic cache entries
+        type: string
+      ruleSetType:
+        type: string
+      score:
+        type: number
+      source:
+        type: string
+      startDateTime:
+        type: string
+      variation:
+        type: string
+    type: object
+  kbank-ecms_internal_delivery_http_dto.FlushRequest:
+    properties:
+      isEvaluate:
+        description: Optional flag to trigger cache re-population after flush
+        type: boolean
+      placements:
+        items:
+          type: string
+        type: array
+    type: object
+  kbank-ecms_internal_delivery_http_dto.FlushResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  kbank-ecms_internal_delivery_http_dto.LogicCondition:
+    properties:
+      attributeId:
+        type: string
+      conditionId:
+        type: string
+      connectorOperator:
+        type: string
+      dataType:
+        type: string
+      expectedValue:
+        description: compact JSON from RuleAttribute.Value
+        items:
+          type: integer
+        type: array
+      logicalOperator:
+        type: string
+      parentConditionId:
+        description: empty = root
+        type: string
+      sequence:
+        type: integer
+    type: object
+  kbank-ecms_internal_delivery_http_dto.Pagination:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      totalItems:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+host: localhost:8082
+info:
+  contact: {}
+  description: Backend API for KBank ECMS CMS Delivery Runtime Service.
+  title: KBank ECMS CMS Delivery API
+  version: "1.0"
+paths:
+  /api/content-strategy/v1/personalized-content:
+    get:
+      consumes:
+      - application/json
+      description: Returns evaluated content results for one or more placement names.
+      parameters:
+      - description: The type of content request
+        enum:
+        - personalizedContent
+        - staticContent
+        - articleCategory
+        in: query
+        name: requestType
+        required: true
+        type: string
+      - description: The mode of content request
+        enum:
+        - knownContent
+        - logicalBased
+        - contentType
+        - articleCategory
+        in: query
+        name: mode
+        required: true
+        type: string
+      - default: WAMP
+        description: Channel
+        in: query
+        name: channel
+        type: string
+      - collectionFormat: multi
+        default: wsaHomeBanner, wsaPortBanner, wsaTransaction
+        description: One or more placement names
+        in: query
+        items:
+          type: string
+        name: placement
+        required: true
+        type: array
+      - description: Customer identifier value (required when customerIdType=CIS_ID)
+        in: query
+        name: customerId
+        type: string
+      - default: CIS_ID
+        description: Customer identifier scheme
+        enum:
+        - CIS_ID
+        - IP_ID
+        - KPLUS_MOBILE_NUMBER
+        - LINE_UUID
+        in: query
+        name: customerIdType
+        type: string
+      - default: 10
+        description: Number of results per page
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.ContentResult'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+      security:
+      - XUserIdAuth: []
+      summary: Get content by placements
+      tags:
+      - svc-contstrat-delivery
+  /api/content-strategy/v1/purge_requests:
+    get:
+      consumes:
+      - application/json
+      description: Returns in-memory cache keys, heap pressure flag, and heap usage
+        ratio.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.CacheStatusResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+      security:
+      - XUserIdAuth: []
+      summary: Get cache status
+      tags:
+      - svc-contstrat-delivery
+    post:
+      consumes:
+      - application/json
+      description: Flushes the cache for specified placements. An empty or missing
+        body flushes all placements.
+      parameters:
+      - description: Placements to flush; omit to flush all
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.FlushRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.FlushResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+      security:
+      - XUserIdAuth: []
+      summary: Flush content cache
+      tags:
+      - svc-contstrat-delivery
+  /api/content-strategy/v1/purge_requests/value:
+    get:
+      consumes:
+      - application/json
+      description: Returns the cached value for a given key. Used for monitoring and
+        debugging.
+      parameters:
+      - description: The cache key to retrieve
+        in: query
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+            - properties:
+                data:
+                  items:
+                    type: integer
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
+      security:
+      - XUserIdAuth: []
+      summary: Get cache value
+      tags:
+      - svc-contstrat-delivery
+securityDefinitions:
+  XUserIdAuth:
+    in: header
+    name: X-User-Id
+    type: apiKey
+swagger: "2.0"

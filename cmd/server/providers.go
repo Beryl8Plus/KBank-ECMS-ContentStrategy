@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
@@ -137,8 +136,9 @@ func ProvideCustomerProfileEnrichConfig() deliveryservice.CustomerProfileEnrichC
 	}
 }
 
-// ProvideCacheMemory provides the L1 cache.
-func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
+// ProvideCacheMemory builds the L1 in-process cache and registers OnStop hooks
+// to stop each cache's eviction goroutine.
+func ProvideCacheMemory(lc fx.Lifecycle) *deliveryservice.MemoryCache {
 	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
 	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
 	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", 0.60, 24*time.Hour)
@@ -149,12 +149,16 @@ func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
 		VersionHashes: versionHashes,
 		LastSync:      lastSync,
 	}
-	return &memoryCache, func() {
-		schedules.Stop()
-		decisionRule.Stop()
-		versionHashes.Stop()
-		lastSync.Stop()
-	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			schedules.Stop()
+			decisionRule.Stop()
+			versionHashes.Stop()
+			lastSync.Stop()
+			return nil
+		},
+	})
+	return &memoryCache
 }
 
 // ProvideRuntimeEvaluator constructs the LocalEvaluator as the RuntimeEvaluator implementation.
@@ -176,20 +180,6 @@ func parseDurationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
-}
-
-// App groups the dependencies needed by main.
-type App struct {
-	Router  *gin.Engine
-	Service *deliveryservice.CMSDeliveryService
-}
-
-// ProvideApp creates the App struct.
-func ProvideApp(r *gin.Engine, svc *deliveryservice.CMSDeliveryService) *App {
-	return &App{
-		Router:  r,
-		Service: svc,
-	}
 }
 
 // ProvideConfig loads AppConfig so fx can inject it throughout the container.
@@ -278,41 +268,3 @@ func RegisterSwaggerHost(cfg config.AppConfig) {
 	}
 }
 
-// ProviderSet definition
-var ProviderSet = wire.NewSet(
-	repository.NewScheduleOccurrencePostgresRepository,
-	wire.Bind(new(domainrepo.ScheduleOccurrenceRepository), new(*repository.ScheduleOccurrencePostgresRepository)),
-
-	repository.NewDecisionRulePostgresRepository,
-	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
-	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
-	wire.Bind(new(deliveryservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
-
-	// CLEN Lead integration
-	ProvideCLENLeadConfig,
-	ProvideCLENLeadClient,
-	repository.NewCLENLeadRepository,
-	wire.Bind(new(domainrepo.LeadRepository), new(*repository.CLENLeadRepository)),
-
-	// CLEN Customer Profile integration
-	ProvideCLENCustomerProfileConfig,
-	ProvideCLENCustomerProfileClient,
-	repository.NewCLENCustomerProfileRepository,
-	wire.Bind(new(domainrepo.CustomerProfileRepository), new(*repository.CLENCustomerProfileRepository)),
-	ProvideCustomerProfileEnrichConfig,
-
-	// CLEN Schema Registry (drives per-rule field discovery for delta fetch)
-	repository.NewCLENSchemaRegistryPostgresRepository,
-	wire.Bind(new(domainrepo.CLENSchemaRegistryRepository), new(*repository.CLENSchemaRegistryPostgresRepository)),
-
-	// Attribute repository (drives field-name → UUID transform on resolveUserAttrs return)
-	repository.NewAttributePostgresRepository,
-	wire.Bind(new(domainrepo.AttributeRepository), new(*repository.AttributePostgresRepository)),
-
-	// Providers
-	ProvideCacheMemory,
-	ProvideRuntimeEvaluator,
-	ProvideCMSDeliveryService,
-	ProvideRouter,
-	ProvideApp,
-)
