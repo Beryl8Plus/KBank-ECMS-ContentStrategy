@@ -29,7 +29,7 @@ func (e *LocalEvaluator) Evaluate(
 	userAttrs map[string]json.RawMessage,
 	leads []entity.Lead,
 ) ([]dto.ContentResult, error) {
-	var results map[string]dto.ContentResult = make(map[string]dto.ContentResult)
+	var results = make(map[string]dto.ContentResult)
 	for _, sched := range schedules {
 		if sched.DecisionRule == nil {
 			continue

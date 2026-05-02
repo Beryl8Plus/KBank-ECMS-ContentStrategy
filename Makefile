@@ -1,9 +1,20 @@
-.PHONY: init build run dev-build dev-up dev-down test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-server
+.PHONY: init build run dev-build dev-up dev-down test vet lint install-golangci-lint fmt format-tags clean install-hooks swagger swagger-format swagger-server
+
+
+## Install golangci-lint v2 (cross-platform: macOS/Linux via install script, Windows via winget)
+install-golangci-lint:
+ifeq ($(OS),Windows_NT)
+	@echo "Installing golangci-lint v2 for Windows..."
+	winget install golangci.golangci-lint
+else
+	@echo "Installing golangci-lint v2..."
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(shell go env GOPATH)/bin
+endif
 
 ## Initialize workspace
 init:
 	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	$(MAKE) install-golangci-lint
 	@echo "Installing swag..."
 	go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing gci..."
