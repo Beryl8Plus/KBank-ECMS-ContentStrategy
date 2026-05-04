@@ -202,8 +202,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
-      security:
-      - XUserIdAuth: []
       summary: Get content by placements
       tags:
       - svc-contstrat-delivery
@@ -229,8 +227,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
-      security:
-      - XUserIdAuth: []
       summary: Get cache status
       tags:
       - svc-contstrat-delivery
@@ -261,8 +257,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
-      security:
-      - XUserIdAuth: []
       summary: Flush content cache
       tags:
       - svc-contstrat-delivery
@@ -300,8 +294,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.APIResponse'
-      security:
-      - XUserIdAuth: []
       summary: Get cache value
       tags:
       - svc-contstrat-delivery

@@ -17,11 +17,6 @@ const docTemplate = `{
     "paths": {
         "/api/content-strategy/v1/personalized-content": {
             "get": {
-                "security": [
-                    {
-                        "XUserIdAuth": []
-                    }
-                ],
                 "description": "Returns evaluated content results for one or more placement names.",
                 "consumes": [
                     "application/json"
@@ -145,11 +140,6 @@ const docTemplate = `{
         },
         "/api/content-strategy/v1/purge_requests": {
             "get": {
-                "security": [
-                    {
-                        "XUserIdAuth": []
-                    }
-                ],
                 "description": "Returns in-memory cache keys, heap pressure flag, and heap usage ratio.",
                 "consumes": [
                     "application/json"
@@ -189,11 +179,6 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "security": [
-                    {
-                        "XUserIdAuth": []
-                    }
-                ],
                 "description": "Flushes the cache for specified placements. An empty or missing body flushes all placements.",
                 "consumes": [
                     "application/json"
@@ -245,11 +230,6 @@ const docTemplate = `{
         },
         "/api/content-strategy/v1/purge_requests/value": {
             "get": {
-                "security": [
-                    {
-                        "XUserIdAuth": []
-                    }
-                ],
                 "description": "Returns the cached value for a given key. Used for monitoring and debugging.",
                 "consumes": [
                     "application/json"
