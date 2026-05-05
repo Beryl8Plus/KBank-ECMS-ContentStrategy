@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -68,30 +69,22 @@ func ProvideCMSDeliveryService(
 	)
 }
 
-// ProvideCLENLeadConfig reads CLEN Lead API settings from env.
-// CLEN_LEAD_EXP_F defaults to "true" (only non-expired leads). Set to "false"
-// for expired leads, or to the literal string "none" to omit the filter.
-func ProvideCLENLeadConfig() httpclient.CLENLeadConfig {
-	retry := 2
-	if raw := os.Getenv("CLEN_LEAD_API_RETRIES"); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil {
-			retry = v
-		}
-	}
-	expFilter := os.Getenv("CLEN_LEAD_EXP_F")
-	switch strings.ToLower(expFilter) {
-	case "":
-		expFilter = "true" // default: only non-expired leads
-	case "none":
+// ProvideCLENLeadConfig maps CLEN Lead settings from the central AppConfig into
+// the httpclient config type. "none" (case-insensitive) is translated to an
+// empty ExpireFilter so the upstream omits the exp_f query param entirely.
+func ProvideCLENLeadConfig(cfg config.AppConfig) httpclient.CLENLeadConfig {
+	c := cfg.Server.Config.CLENLead
+	expFilter := c.ExpireFilter
+	if strings.ToLower(expFilter) == "none" {
 		expFilter = "" // explicit opt-out: CLEN returns both expired and active
 	}
 	return httpclient.CLENLeadConfig{
-		BaseURL:       os.Getenv("CLEN_LEAD_API_BASE_URL"),
-		Path:          os.Getenv("CLEN_LEAD_API_PATH"), // constructor fills default when empty
-		APIKey:        os.Getenv("CLEN_LEAD_API_KEY"),
-		AppIdentifier: os.Getenv("CLEN_LEAD_APP_ID"),
-		Timeout:       parseDurationEnv("CLEN_LEAD_API_TIMEOUT", 5*time.Second),
-		RetryCount:    retry,
+		BaseURL:       c.BaseURL,
+		Path:          c.Path,
+		APIKey:        c.APIKey,
+		AppIdentifier: c.AppIdentifier,
+		Timeout:       c.Timeout,
+		RetryCount:    c.RetryCount,
 		ExpireFilter:  expFilter,
 	}
 }
@@ -207,9 +200,11 @@ func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) 
 
 // ProvideRedisRepository connects to Redis and registers an OnStop hook to close the client.
 func ProvideRedisRepository(lc fx.Lifecycle, cfg config.AppConfig) (*repository.RedisRepository, error) {
-	// context.Background() is intentional: NewRedisRepository uses the context only
-	// for the initial PING, and fx provider functions do not receive a start context directly.
-	repo, err := repository.NewRedisRepository(context.Background(), cfg.Server.Env, cfg.Server.Config.Redis)
+	// Bound the startup PING so a hung Redis fails boot fast instead of blocking forever.
+	// fx provider functions do not receive a start context directly, so we derive one here.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	repo, err := repository.NewRedisRepository(ctx, cfg.Server.Env, cfg.Server.Config.Redis)
 	if err != nil {
 		return nil, err
 	}
@@ -236,21 +231,31 @@ func RegisterServiceLifecycle(lc fx.Lifecycle, svc *deliveryservice.CMSDeliveryS
 
 // RegisterHTTPServer starts the Gin HTTP server in a goroutine on app start
 // and shuts it down gracefully on stop.
-func RegisterHTTPServer(lc fx.Lifecycle, cfg config.AppConfig, router *gin.Engine) {
+//
+// The listener is bound synchronously in OnStart so port-conflict / permission
+// errors surface through app.Run() and trigger fx's normal startup-failure path.
+// Runtime errors from Serve signal fx via Shutdowner so every OnStop hook
+// (Postgres close, Redis close, cache eviction goroutines, service.Stop) runs
+// before the process exits — os.Exit from inside a goroutine would skip them.
+func RegisterHTTPServer(lc fx.Lifecycle, sd fx.Shutdowner, cfg config.AppConfig, router *gin.Engine) {
 	srv := &http.Server{Addr: ":" + cfg.Server.Port, Handler: router}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			ln, err := net.Listen("tcp", srv.Addr)
+			if err != nil {
+				return err
+			}
 			go func() {
 				logger.LStartup(context.Background(), entity.StartupLog{
 					Service: "CMS-DELIVERY", Level: "INFO",
 					Message: "Listening on :" + cfg.Server.Port,
 				})
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 					logger.LSystem(context.Background(), entity.SystemLog{
 						Service: "CMS-DELIVERY", Level: "FATAL",
 						Message: "Server error: " + err.Error(),
 					})
-					os.Exit(1)
+					_ = sd.Shutdown(fx.ExitCode(1))
 				}
 			}()
 			return nil

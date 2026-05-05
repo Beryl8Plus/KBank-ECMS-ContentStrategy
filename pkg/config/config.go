@@ -21,12 +21,25 @@ type ServerConfig struct {
 }
 
 type ServiceConfig struct {
-	Timeout   TimeoutConfig   `yaml:"timeout"`
-	Postgres  PostgresConfig  `yaml:"postgres"`
-	Redis     RedisConfig     `yaml:"redis"`
-	Cache     CacheConfig     `yaml:"cache"`
-	Swagger   SwaggerConfig   `yaml:"swagger"`
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	Timeout   TimeoutConfig     `yaml:"timeout"`
+	Postgres  PostgresConfig    `yaml:"postgres"`
+	Redis     RedisConfig       `yaml:"redis"`
+	Cache     CacheConfig       `yaml:"cache"`
+	Swagger   SwaggerConfig     `yaml:"swagger"`
+	RateLimit RateLimitConfig   `yaml:"rate_limit"`
+	CLENLead  CLENLeadAPIConfig `yaml:"clen_lead"`
+}
+
+// CLENLeadAPIConfig holds connection settings for the CLEN Lead API.
+// Credentials (APIKey, AppIdentifier) must always be supplied via ENV vars and never committed to YAML.
+type CLENLeadAPIConfig struct {
+	BaseURL       string        `yaml:"base_url"       env:"CLEN_LEAD_API_BASE_URL"`
+	Path          string        `yaml:"path"           env:"CLEN_LEAD_API_PATH"`
+	APIKey        string        `yaml:"api_key"        env:"CLEN_LEAD_API_KEY"`
+	AppIdentifier string        `yaml:"app_identifier" env:"CLEN_LEAD_APP_ID"`
+	Timeout       time.Duration `yaml:"timeout"        env:"CLEN_LEAD_API_TIMEOUT" env-default:"5s"`
+	RetryCount    int           `yaml:"retry_count"    env:"CLEN_LEAD_API_RETRIES"  env-default:"2"`
+	ExpireFilter  string        `yaml:"expire_filter"  env:"CLEN_LEAD_EXP_F"        env-default:"true"`
 }
 
 // PostgresConfig holds PostgreSQL connection details.
@@ -82,7 +95,7 @@ type JWTConfig struct {
 }
 
 // LoadConfig reads the YAML file at path and applies ENV overrides automatically.
-// Pass the service-specific config path, e.g. "configs/backoffice.yaml".
+// Pass the service-specific config path, e.g. "configs/delivery.yaml".
 func LoadConfig(path string) (AppConfig, error) {
 	var cfg AppConfig
 	if err := cleanenv.ReadConfig(path, &cfg); err != nil {

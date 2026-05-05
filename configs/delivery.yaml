@@ -29,3 +29,10 @@ server:
       requests_per_second: 50
       burst: 100
       max_concurrent_requests: 10
+
+    # CLEN Lead API integration. Credentials must be supplied via env vars in all environments.
+    # expire_filter: "true" → non-expired leads only (default), "false" → expired only, "none" → no filter.
+    clen_lead:
+      timeout: 5s
+      retry_count: 2
+      expire_filter: "true"
