@@ -1,5 +1,0 @@
-redis:
-  host: "10.10.10.11" #"localhost"
-  port: "12000"
-  password: ""
-  db: 0
