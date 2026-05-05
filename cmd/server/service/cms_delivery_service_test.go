@@ -383,10 +383,10 @@ func TestGetPersonalizedContent_LoadsUserAttrsFromRedisByCISID(t *testing.T) {
 		Score:          9.5,
 	}
 
-	// Cache stores the per-datasource shape; attribute repo maps the field
-	// name to the UUID the evaluator expects.
+	// Cache stores the upstream CLEN envelope verbatim; attribute repo maps
+	// the field name to the UUID the evaluator expects.
 	stored := map[string]string{
-		cmsUserAttrsKey("CIS_ID", "cis42"): `{"cst_info_prfl_dly":{"investor_type":"balanced"}}`,
+		cmsUserAttrsKey("CIS_ID", "cis42"): `{"cis_id":"cis42","results":[{"datasource":"cst_info_prfl_dly","status":"success","data":{"investor_type":"balanced"},"error_message":null}],"total_sources_queried":1,"total_sources_success":1}`,
 	}
 	attrRepo := &fakeAttributeRepo{byDatasource: map[string][]*entity.Attribute{
 		"cst_info_prfl_dly": {
