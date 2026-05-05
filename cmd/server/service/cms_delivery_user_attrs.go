@@ -17,10 +17,6 @@ func cmsUserAttrsKey(customerType, customerID string) string {
 	return "customer_profile:" + customerType + ":" + customerID
 }
 
-// attributeSourceCLEN is the SourceSystem marker for attributes that resolve
-// from CLEN. Only these attributes participate in CLEN datasource routing.
-const attributeSourceCLEN = "CLEN"
-
 // ruleScope captures, per CLEN datasource (TableSourceName), the union of
 // fields directly referenced by the rule and the schema-registry ID those
 // attributes belong to. The schema ID is later used to look up the master
@@ -103,13 +99,13 @@ func extractCLENDataSources(
 	return out
 }
 
-// collectCLENAttr filters in only CLEN-sourced attributes that have both a
-// TableSourceName (CLEN datasource identifier) and FieldName, then records
-// the field under its datasource in the needed map. The schemaID of the
-// first attribute seen for a datasource wins (attributes mapping to the
-// same datasource are expected to share a schema in practice).
+// collectCLENAttr filters in attributes that have both a TableSourceName
+// (CLEN datasource identifier) and FieldName, then records the field under
+// its datasource in the needed map. The schemaID of the first attribute
+// seen for a datasource wins (attributes mapping to the same datasource
+// are expected to share a schema in practice).
 func collectCLENAttr(a *entity.Attribute, into map[string]*ruleScope) {
-	if a == nil || a.SourceSystem != attributeSourceCLEN || a.TableSourceName == "" || a.FieldName == "" {
+	if a == nil || a.TableSourceName == "" || a.FieldName == "" {
 		return
 	}
 	scope, ok := into[a.TableSourceName]
@@ -224,11 +220,41 @@ func (s *CMSDeliveryService) transformToUUIDKeyed(
 	return out
 }
 
-// resolveUserAttrs reads the per-datasource customer-profile map from Redis
-// at key customer_profile:{customerType}:{customerID}, computes the delta between what the rules need and
-// what is already cached, fetches only the missing fields from CLEN, and
-// returns the merged map. Keys are CLEN datasource names (e.g.
-// "cst_info_prfl_dly"); values are JSON objects of {field: value}.
+// parseRawEnvelope extracts a per-datasource map from the verbatim CLEN
+// envelope cached under customer_profile:{type}:{id}. Only "success" results
+// with non-empty data are surfaced; envelope-level metadata (cis_id, totals)
+// and non-success results are dropped. Returns an empty map when the body is
+// not a parseable envelope or contains no successful results, so legacy
+// per-datasource cache entries (different shape) self-heal via TTL.
+func parseRawEnvelope(body []byte) map[string]json.RawMessage {
+	if len(body) == 0 {
+		return map[string]json.RawMessage{}
+	}
+	var env struct {
+		Results []struct {
+			Datasource string          `json:"datasource"`
+			Status     string          `json:"status"`
+			Data       json.RawMessage `json:"data"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return map[string]json.RawMessage{}
+	}
+	out := make(map[string]json.RawMessage, len(env.Results))
+	for _, r := range env.Results {
+		if r.Status != "success" || len(r.Data) == 0 || r.Datasource == "" {
+			continue
+		}
+		out[r.Datasource] = r.Data
+	}
+	return out
+}
+
+// resolveUserAttrs reads the cached CLEN customer-profile envelope from Redis
+// at key customer_profile:{customerType}:{customerID}, projects it into a
+// per-datasource map (success-only), computes the delta between what the
+// rules need and what is already cached, fetches only the missing fields from
+// CLEN, and returns the merged map.
 //
 // rules drives the per-request enrichment scope — when nil/empty, no CLEN
 // call is made and only the cached blob (possibly empty) is returned.
@@ -246,15 +272,9 @@ func (s *CMSDeliveryService) resolveUserAttrs(
 	}
 
 	cacheKey := cmsUserAttrsKey(customerType, customerId)
-	var cached map[string]json.RawMessage
-	raw, err := s.cacheRepo.Get(ctx, cacheKey)
-	if err == nil {
-		if err := json.Unmarshal([]byte(raw), &cached); err != nil {
-			return nil, fmt.Errorf("decode user attrs from %q: %w", cacheKey, err)
-		}
-	}
-	if cached == nil {
-		cached = map[string]json.RawMessage{}
+	cached := map[string]json.RawMessage{}
+	if raw, err := s.cacheRepo.Get(ctx, cacheKey); err == nil {
+		cached = parseRawEnvelope([]byte(raw))
 	}
 
 	// Schema-driven warm fetch — for each datasource a rule touches, look up
@@ -282,11 +302,16 @@ func (s *CMSDeliveryService) resolveUserAttrs(
 	return resolved, nil
 }
 
-// enrichCustomerProfile fetches the requested CLEN data sources, then merges
-// each successful result into attrs at field level (preserving any existing
-// fields under the same datasource), and persists the updated blob back to
-// Redis. Upstream errors are logged but swallowed — the personalized-content
-// request must not fail because of a CLEN outage.
+// enrichCustomerProfile fetches the requested CLEN data sources and stores
+// the upstream response body verbatim in Redis (no transformation). The
+// in-memory attrs map is also updated — field-level merged per datasource —
+// so the current request sees the freshly fetched fields alongside anything
+// the rule already had cached. Upstream errors are logged but swallowed —
+// the personalized-content request must not fail because of a CLEN outage.
+//
+// Cache stores only the latest envelope, so accumulated fields from earlier
+// requests do not survive across calls (the next request will re-fetch any
+// fields the latest envelope omits).
 //
 // sources is the per-request datasource/field list — typically the delta
 // computed by extractCLENDataSources.
@@ -317,35 +342,22 @@ func (s *CMSDeliveryService) enrichCustomerProfile(
 		return
 	}
 
-	var parsed struct {
-		Results []struct {
-			Datasource string          `json:"datasource"`
-			Status     string          `json:"status"`
-			Data       json.RawMessage `json:"data"`
-		} `json:"results"`
+	ttl := s.customerProfileEnrich.CacheTTL
+	if ttl <= 0 {
+		ttl = 1 * time.Hour
 	}
-	if uErr := json.Unmarshal(raw.Body, &parsed); uErr != nil {
-		logger.LSystem(ctx, entity.SystemLog{
-			Service: "CMS-DELIVERY",
-			Level:   "WARN",
-			Message: "decode CLEN customer profile body for cis " + cisID + ": " + uErr.Error(),
-		})
-		return
-	}
+	_ = s.cacheRepo.Set(ctx, cmsUserAttrsKey(customerType, cisID), string(raw.Body), ttl)
 
-	// Field-level merge — preserve existing fields under each datasource and
-	// only add/overwrite fields that the upstream returned.
-	mutated := false
-	for _, r := range parsed.Results {
-		if r.Status != "success" || len(r.Data) == 0 {
-			continue
-		}
+	// Field-level merge into the in-memory attrs so the current request can
+	// see freshly fetched fields plus anything that was already cached under
+	// the same datasource (the upstream response only carries the delta).
+	for ds, dataBlob := range parseRawEnvelope(raw.Body) {
 		var incoming map[string]json.RawMessage
-		if err := json.Unmarshal(r.Data, &incoming); err != nil {
+		if err := json.Unmarshal(dataBlob, &incoming); err != nil {
 			continue
 		}
 		var existing map[string]json.RawMessage
-		if blob, ok := attrs[r.Datasource]; ok && len(blob) > 0 {
+		if blob, ok := attrs[ds]; ok && len(blob) > 0 {
 			_ = json.Unmarshal(blob, &existing)
 		}
 		if existing == nil {
@@ -354,23 +366,8 @@ func (s *CMSDeliveryService) enrichCustomerProfile(
 		for k, v := range incoming {
 			existing[k] = v
 		}
-		merged, mErr := json.Marshal(existing)
-		if mErr != nil {
-			continue
+		if merged, mErr := json.Marshal(existing); mErr == nil {
+			attrs[ds] = merged
 		}
-		attrs[r.Datasource] = merged
-		mutated = true
-	}
-
-	if !mutated {
-		return
-	}
-
-	if buf, bErr := json.Marshal(attrs); bErr == nil {
-		ttl := s.customerProfileEnrich.CacheTTL
-		if ttl <= 0 {
-			ttl = 1 * time.Hour
-		}
-		_ = s.cacheRepo.Set(ctx, cmsUserAttrsKey(customerType, cisID), string(buf), ttl)
 	}
 }
