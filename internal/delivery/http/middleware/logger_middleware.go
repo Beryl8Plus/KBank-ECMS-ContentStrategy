@@ -44,7 +44,6 @@ func LoggerMiddleware() gin.HandlerFunc {
 		}
 
 		// Propagate correlation ID through the request context so downstream
-		// callers (e.g. the gRPC client) can forward it without re-reading headers.
 		c.Request = c.Request.WithContext(ctxconsts.SetCorrelationID(c.Request.Context(), correlationID))
 
 		logger.LRequest(c.Request.Context(), entity.RequestLog{

@@ -9,7 +9,6 @@ import (
 )
 
 // RuntimeEvaluator defines the contract for on-demand rule evaluation.
-// Used by cms-delivery to call cms-runtime via gRPC on cache miss.
 // The caller (cms-delivery) is responsible for querying active schedules
 // from the database before calling this interface.
 type RuntimeEvaluator interface {

@@ -11,22 +11,22 @@ import (
 // Values are loaded from a YAML file first, then overridden by environment variables.
 // Priority order: ENV > YAML value > env-default tag.
 type AppConfig struct {
-	Env       string          `yaml:"env"        env:"SETENV"`
-	Server    ServerConfig    `yaml:"server"`
+	Server ServerConfig `yaml:"server"`
+}
+
+type ServerConfig struct {
+	Env    string        `yaml:"env"    env:"SETENV"`
+	Port   string        `yaml:"port"   env:"PORT"           env-default:"8081"`
+	Config ServiceConfig `yaml:"config"`
+}
+
+type ServiceConfig struct {
+	Timeout   TimeoutConfig   `yaml:"timeout"`
 	Postgres  PostgresConfig  `yaml:"postgres"`
 	Redis     RedisConfig     `yaml:"redis"`
 	Cache     CacheConfig     `yaml:"cache"`
 	Swagger   SwaggerConfig   `yaml:"swagger"`
-	Timeout   TimeoutConfig   `yaml:"timeout"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
-	GRPC      GRPCConfig      `yaml:"grpc"`
-	JWT       JWTConfig       `yaml:"jwt"`
-}
-
-type ServerConfig struct {
-	Port         string        `yaml:"port"          env:"PORT"           env-default:"8081"`
-	ReadTimeout  time.Duration `yaml:"read_timeout"                       env-default:"30s"`
-	WriteTimeout time.Duration `yaml:"write_timeout"                      env-default:"30s"`
 }
 
 // PostgresConfig holds PostgreSQL connection details.
@@ -45,6 +45,7 @@ type PostgresConfig struct {
 type RedisConfig struct {
 	Host        string `yaml:"host"         env:"REDIS_HOST"          env-default:"localhost"`
 	Port        string `yaml:"port"         env:"REDIS_PORT"          env-default:"6379"`
+	Username    string `yaml:"username"     env:"REDIS_USERNAME"` // Only needed for DEVGCP; ignored otherwise
 	Password    string `yaml:"password"     env:"REDIS_PASSWORD"`
 	PrincipalID string `yaml:"principal_id" env:"REDIS_PRINCIPAL_ID"`
 }
@@ -69,11 +70,6 @@ type RateLimitConfig struct {
 	RPS   int `yaml:"requests_per_second"     env-default:"50"`
 	Burst int `yaml:"burst"                   env-default:"100"`
 	MCR   int `yaml:"max_concurrent_requests" env-default:"10"`
-}
-
-type GRPCConfig struct {
-	Addr string `yaml:"addr" env:"CMS_RUNTIME_GRPC_ADDR" env-default:"localhost:50051"`
-	Port string `yaml:"port" env:"CMS_RUNTIME_GRPC_PORT" env-default:"50051"`
 }
 
 // JWTConfig holds JWT signing configuration.

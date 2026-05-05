@@ -60,7 +60,7 @@ func ProvideCMSDeliveryService(
 ) *deliveryservice.CMSDeliveryService {
 	return deliveryservice.NewCMSDeliveryService(
 		cacheRepo, occurrenceRepo, decisionRuleRepo,
-		evaluator, cacheMemory, cfg.Cache.TTL, cfg.Cache.RefreshInterval,
+		evaluator, cacheMemory, cfg.Server.Config.Cache.TTL, cfg.Server.Config.Cache.RefreshInterval,
 		leadRepo,
 		customerProfileRepo, customerProfileEnrich,
 		schemaRegistryRepo,
@@ -189,7 +189,7 @@ func ProvideConfig() (config.AppConfig, error) {
 
 // ProvidePostgresDB opens the Postgres connection and registers an OnStop hook to close it.
 func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) {
-	db, err := database.NewPostgresDB(cfg.Postgres)
+	db, err := database.NewPostgresDB(cfg.Server.Config.Postgres)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) 
 func ProvideRedisRepository(lc fx.Lifecycle, cfg config.AppConfig) (*repository.RedisRepository, error) {
 	// context.Background() is intentional: NewRedisRepository uses the context only
 	// for the initial PING, and fx provider functions do not receive a start context directly.
-	repo, err := repository.NewRedisRepository(context.Background(), cfg.Redis)
+	repo, err := repository.NewRedisRepository(context.Background(), cfg.Server.Env, cfg.Server.Config.Redis)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func RegisterHTTPServer(lc fx.Lifecycle, cfg config.AppConfig, router *gin.Engin
 
 // RegisterSwaggerHost overrides the Swagger UI host when SWAGGER_HOST env var is set.
 func RegisterSwaggerHost(cfg config.AppConfig) {
-	if cfg.Swagger.Host != "" {
-		ecmsdocs.SwaggerInfo.Host = cfg.Swagger.Host
+	if cfg.Server.Config.Swagger.Host != "" {
+		ecmsdocs.SwaggerInfo.Host = cfg.Server.Config.Swagger.Host
 	}
 }
