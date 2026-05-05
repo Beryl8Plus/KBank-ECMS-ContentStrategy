@@ -47,17 +47,17 @@ func NewRedisRepository(ctx context.Context, env string, cfg config.RedisConfig)
 			Password: cfg.Password,
 		})
 	case "DEVGCP":
-		// GCP Memorystore over private VPC — no TLS by default.
-		// If in-transit encryption is enabled on the Memorystore instance, add:
-		//   TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}
-		rdb = redis.NewClient(&redis.Options{
+		// GCP Memorystore over private VPC. TLS is opt-in via REDIS_TLS=true —
+		// only needed when in-transit encryption is enabled on the Memorystore instance.
+		opts := &redis.Options{
 			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 			Username: cfg.Username,
 			Password: cfg.Password,
-			TLSConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		})
+		}
+		if cfg.TLS {
+			opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		rdb = redis.NewClient(opts)
 	default:
 		principalID := cfg.PrincipalID
 
