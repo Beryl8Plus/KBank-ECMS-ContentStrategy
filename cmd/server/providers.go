@@ -69,30 +69,22 @@ func ProvideCMSDeliveryService(
 	)
 }
 
-// ProvideCLENLeadConfig reads CLEN Lead API settings from env.
-// CLEN_LEAD_EXP_F defaults to "true" (only non-expired leads). Set to "false"
-// for expired leads, or to the literal string "none" to omit the filter.
-func ProvideCLENLeadConfig() httpclient.CLENLeadConfig {
-	retry := 2
-	if raw := os.Getenv("CLEN_LEAD_API_RETRIES"); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil {
-			retry = v
-		}
-	}
-	expFilter := os.Getenv("CLEN_LEAD_EXP_F")
-	switch strings.ToLower(expFilter) {
-	case "":
-		expFilter = "true" // default: only non-expired leads
-	case "none":
+// ProvideCLENLeadConfig maps CLEN Lead settings from the central AppConfig into
+// the httpclient config type. "none" (case-insensitive) is translated to an
+// empty ExpireFilter so the upstream omits the exp_f query param entirely.
+func ProvideCLENLeadConfig(cfg config.AppConfig) httpclient.CLENLeadConfig {
+	c := cfg.Server.Config.CLENLead
+	expFilter := c.ExpireFilter
+	if strings.ToLower(expFilter) == "none" {
 		expFilter = "" // explicit opt-out: CLEN returns both expired and active
 	}
 	return httpclient.CLENLeadConfig{
-		BaseURL:       os.Getenv("CLEN_LEAD_API_BASE_URL"),
-		Path:          os.Getenv("CLEN_LEAD_API_PATH"), // constructor fills default when empty
-		APIKey:        os.Getenv("CLEN_LEAD_API_KEY"),
-		AppIdentifier: os.Getenv("CLEN_LEAD_APP_ID"),
-		Timeout:       parseDurationEnv("CLEN_LEAD_API_TIMEOUT", 5*time.Second),
-		RetryCount:    retry,
+		BaseURL:       c.BaseURL,
+		Path:          c.Path,
+		APIKey:        c.APIKey,
+		AppIdentifier: c.AppIdentifier,
+		Timeout:       c.Timeout,
+		RetryCount:    c.RetryCount,
 		ExpireFilter:  expFilter,
 	}
 }
