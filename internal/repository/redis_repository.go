@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -30,23 +29,37 @@ func (r *RedisRepository) Client() *redis.Client {
 	return r.client
 }
 
+// azureRedisResourceID is the fixed resource ID for Azure Redis Enterprise Entra auth.
+// https://learn.microsoft.com/en-us/azure/redis/entra-for-authentication
+const azureRedisResourceID = "acca5fbb-b7e4-4009-81f1-37e38fd66d78"
+
 // NewRedisRepository creates a Redis client and returns a RedisRepository.
-func NewRedisRepository(ctx context.Context, cfg config.RedisConfig) (*RedisRepository, error) {
-	SETENV := os.Getenv("SETENV")
+// env should be cfg.Server.Env (sourced from YAML "env" field or SETENV env var via cleanenv).
+func NewRedisRepository(ctx context.Context, env string, cfg config.RedisConfig) (*RedisRepository, error) {
+	SETENV := env
 
 	var rdb *redis.Client
 
-	// If DEVLOCAL, use basic setup
-	if SETENV == "DEVLOCAL" {
+	switch SETENV {
+	case "DEVLOCAL":
 		rdb = redis.NewClient(&redis.Options{
 			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 			Password: cfg.Password,
 		})
-
-	} else {
-		// Default to ENV variable, if not set use the hardcoded one (as fallback/placeholder)
-		principalID := os.Getenv("REDIS_PRINCIPAL_ID")
-		redisResourceID := "acca5fbb-b7e4-4009-81f1-37e38fd66d78" // https://learn.microsoft.com/en-us/azure/redis/entra-for-authentication
+	case "DEVGCP":
+		// GCP Memorystore over private VPC — no TLS by default.
+		// If in-transit encryption is enabled on the Memorystore instance, add:
+		//   TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}
+		rdb = redis.NewClient(&redis.Options{
+			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
+			Username: cfg.Username,
+			Password: cfg.Password,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		})
+	default:
+		principalID := cfg.PrincipalID
 
 		opts := &redis.Options{
 			Addr:     fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
@@ -68,9 +81,8 @@ func NewRedisRepository(ctx context.Context, cfg config.RedisConfig) (*RedisRepo
 			}
 
 			opts.CredentialsProvider = func() (string, string) {
-				// Get token for Redis
 				token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-					Scopes: []string{redisResourceID + "/.default"},
+					Scopes: []string{azureRedisResourceID + "/.default"},
 				})
 				if err != nil {
 					logger.LSystem(ctx, entity.SystemLog{
@@ -97,9 +109,12 @@ func NewRedisRepository(ctx context.Context, cfg config.RedisConfig) (*RedisRepo
 		Level:   "INFO",
 		Message: fmt.Sprintf("Connected to %s %s:%s successfully",
 			func() string {
-				if SETENV == "DEVLOCAL" {
+				switch SETENV {
+				case "DEVLOCAL":
 					return "Local Redis"
-				} else {
+				case "DEVGCP":
+					return "GCP Memorystore"
+				default:
 					return "Azure Redis Enterprise"
 				}
 			}(), cfg.Host, cfg.Port),

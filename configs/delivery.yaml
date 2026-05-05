@@ -1,17 +1,31 @@
 server:
+  env: "DEVLOCAL"
   port: "8082"
-  read_timeout: 30s
-  write_timeout: 30s
+  config:
+    # Database credentials should always be supplied via environment variables in production.
+    postgres:
+      host: "localhost"
+      port: "5432"
+      user: "postgres"
+      password: "" # override via DB_PASSWORD env var
+      db_name: "contgw"
+      ssl_mode: "disable"
+    # Redis credentials should always be supplied via environment variables in production. Username is only needed for DEVGCP; ignored otherwise.
+    timeout:
+      req_ctx_timeout: 30s
+      db_ctx_timeout: 10s
 
-timeout:
-  req_ctx_timeout: 30s
-  db_ctx_timeout: 10s
+    # Cache settings for CMS Delivery Service. TTL is the duration for which cached content is considered valid, while refresh_interval is how often the cache should be refreshed in the background.
+    cache:
+      ttl: 15m
+      refresh_interval: 5m
 
-cache:
-  ttl: 15m
-  refresh_interval: 5m
+    # Swagger UI host override (useful for local development with Docker). In production, the host is determined automatically and this should typically be left empty.
+    swagger:
+      host: "localhost:8082"
 
-rate_limit:
-  requests_per_second: 50
-  burst: 100
-  max_concurrent_requests: 10
+    # Rate limiting settings for incoming HTTP requests. RPS is the average number of requests per second allowed, burst is the maximum number of requests allowed to accumulate in a short burst, and MCR is the maximum number of concurrent requests allowed at any time.
+    rate_limit:
+      requests_per_second: 50
+      burst: 100
+      max_concurrent_requests: 10
