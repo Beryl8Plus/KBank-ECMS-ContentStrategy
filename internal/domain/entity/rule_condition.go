@@ -1,9 +1,9 @@
 package entity
 
 import (
-	"kbank-ecms/internal/domain/entity/enums"
-
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // RuleCondition defines a single condition entry in the decision rule engine.

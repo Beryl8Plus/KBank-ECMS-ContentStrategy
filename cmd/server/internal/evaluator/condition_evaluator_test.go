@@ -5,14 +5,14 @@ import (
 	"sync"
 	"testing"
 
-	"kbank-ecms/internal/delivery/http/dto"
-	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/domain/entity/enums"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
+
+	"kbank-ecms/internal/delivery/http/dto"
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // ---------------------------------------------------------------------------

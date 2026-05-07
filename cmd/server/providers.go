@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
+	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
+	ecmsdocs "kbank-ecms/cmd/server/docs"
 	cmshandler "kbank-ecms/cmd/server/handler"
 	evaluator "kbank-ecms/cmd/server/internal/evaluator"
 	deliveryservice "kbank-ecms/cmd/server/service"
@@ -19,6 +23,8 @@ import (
 	domainrepo "kbank-ecms/internal/domain/repository"
 	httpclient "kbank-ecms/internal/http/client"
 	"kbank-ecms/internal/infrastructure/cache"
+	"kbank-ecms/internal/infrastructure/database"
+	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/repository"
 	"kbank-ecms/pkg/config"
 )
@@ -55,7 +61,7 @@ func ProvideCMSDeliveryService(
 ) *deliveryservice.CMSDeliveryService {
 	return deliveryservice.NewCMSDeliveryService(
 		cacheRepo, occurrenceRepo, decisionRuleRepo,
-		evaluator, cacheMemory, cfg.Cache.TTL, cfg.Cache.RefreshInterval,
+		evaluator, cacheMemory, cfg.Server.Config.Cache.TTL, cfg.Server.Config.Cache.RefreshInterval,
 		leadRepo,
 		customerProfileRepo, customerProfileEnrich,
 		schemaRegistryRepo,
@@ -63,30 +69,22 @@ func ProvideCMSDeliveryService(
 	)
 }
 
-// ProvideCLENLeadConfig reads CLEN Lead API settings from env.
-// CLEN_LEAD_EXP_F defaults to "true" (only non-expired leads). Set to "false"
-// for expired leads, or to the literal string "none" to omit the filter.
-func ProvideCLENLeadConfig() httpclient.CLENLeadConfig {
-	retry := 2
-	if raw := os.Getenv("CLEN_LEAD_API_RETRIES"); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil {
-			retry = v
-		}
-	}
-	expFilter := os.Getenv("CLEN_LEAD_EXP_F")
-	switch strings.ToLower(expFilter) {
-	case "":
-		expFilter = "true" // default: only non-expired leads
-	case "none":
+// ProvideCLENLeadConfig maps CLEN Lead settings from the central AppConfig into
+// the httpclient config type. "none" (case-insensitive) is translated to an
+// empty ExpireFilter so the upstream omits the exp_f query param entirely.
+func ProvideCLENLeadConfig(cfg config.AppConfig) httpclient.CLENLeadConfig {
+	c := cfg.Server.Config.CLENLead
+	expFilter := c.ExpireFilter
+	if strings.ToLower(expFilter) == "none" {
 		expFilter = "" // explicit opt-out: CLEN returns both expired and active
 	}
 	return httpclient.CLENLeadConfig{
-		BaseURL:       os.Getenv("CLEN_LEAD_API_BASE_URL"),
-		Path:          os.Getenv("CLEN_LEAD_API_PATH"), // constructor fills default when empty
-		APIKey:        os.Getenv("CLEN_LEAD_API_KEY"),
-		AppIdentifier: os.Getenv("CLEN_LEAD_APP_ID"),
-		Timeout:       parseDurationEnv("CLEN_LEAD_API_TIMEOUT", 5*time.Second),
-		RetryCount:    retry,
+		BaseURL:       c.BaseURL,
+		Path:          c.Path,
+		APIKey:        c.APIKey,
+		AppIdentifier: c.AppIdentifier,
+		Timeout:       c.Timeout,
+		RetryCount:    c.RetryCount,
 		ExpireFilter:  expFilter,
 	}
 }
@@ -131,8 +129,9 @@ func ProvideCustomerProfileEnrichConfig() deliveryservice.CustomerProfileEnrichC
 	}
 }
 
-// ProvideCacheMemory provides the L1 cache.
-func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
+// ProvideCacheMemory builds the L1 in-process cache and registers OnStop hooks
+// to stop each cache's eviction goroutine.
+func ProvideCacheMemory(lc fx.Lifecycle) *deliveryservice.MemoryCache {
 	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
 	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
 	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", 0.60, 24*time.Hour)
@@ -143,12 +142,16 @@ func ProvideCacheMemory() (*deliveryservice.MemoryCache, func()) {
 		VersionHashes: versionHashes,
 		LastSync:      lastSync,
 	}
-	return &memoryCache, func() {
-		schedules.Stop()
-		decisionRule.Stop()
-		versionHashes.Stop()
-		lastSync.Stop()
-	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			schedules.Stop()
+			decisionRule.Stop()
+			versionHashes.Stop()
+			lastSync.Stop()
+			return nil
+		},
+	})
+	return &memoryCache
 }
 
 // ProvideRuntimeEvaluator constructs the LocalEvaluator as the RuntimeEvaluator implementation.
@@ -172,55 +175,100 @@ func parseDurationEnv(key string, def time.Duration) time.Duration {
 	return d
 }
 
-// App groups the dependencies needed by main.
-type App struct {
-	Router  *gin.Engine
-	Service *deliveryservice.CMSDeliveryService
+// ProvideConfig loads AppConfig so fx can inject it throughout the container.
+func ProvideConfig() (config.AppConfig, error) {
+	return config.LoadConfig("configs/delivery.yaml")
 }
 
-// ProvideApp creates the App struct.
-func ProvideApp(r *gin.Engine, svc *deliveryservice.CMSDeliveryService) *App {
-	return &App{
-		Router:  r,
-		Service: svc,
+// ProvidePostgresDB opens the Postgres connection and registers an OnStop hook to close it.
+func ProvidePostgresDB(lc fx.Lifecycle, cfg config.AppConfig) (*gorm.DB, error) {
+	db, err := database.NewPostgresDB(cfg.Server.Config.Postgres)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			sqlDB, err := db.DB()
+			if err != nil {
+				return err
+			}
+			return sqlDB.Close()
+		},
+	})
+	return db, nil
+}
+
+// ProvideRedisRepository connects to Redis and registers an OnStop hook to close the client.
+func ProvideRedisRepository(lc fx.Lifecycle, cfg config.AppConfig) (*repository.RedisRepository, error) {
+	// Bound the startup PING so a hung Redis fails boot fast instead of blocking forever.
+	// fx provider functions do not receive a start context directly, so we derive one here.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	repo, err := repository.NewRedisRepository(ctx, cfg.Server.Env, cfg.Server.Config.Redis)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			return repo.Client().Close()
+		},
+	})
+	return repo, nil
+}
+
+// RegisterServiceLifecycle starts the background evaluation ticker on app start
+// and stops it on shutdown.
+func RegisterServiceLifecycle(lc fx.Lifecycle, svc *deliveryservice.CMSDeliveryService) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			return svc.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			return svc.Stop()
+		},
+	})
+}
+
+// RegisterHTTPServer starts the Gin HTTP server in a goroutine on app start
+// and shuts it down gracefully on stop.
+//
+// The listener is bound synchronously in OnStart so port-conflict / permission
+// errors surface through app.Run() and trigger fx's normal startup-failure path.
+// Runtime errors from Serve signal fx via Shutdowner so every OnStop hook
+// (Postgres close, Redis close, cache eviction goroutines, service.Stop) runs
+// before the process exits — os.Exit from inside a goroutine would skip them.
+func RegisterHTTPServer(lc fx.Lifecycle, sd fx.Shutdowner, cfg config.AppConfig, router *gin.Engine) {
+	srv := &http.Server{Addr: ":" + cfg.Server.Port, Handler: router}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			ln, err := net.Listen("tcp", srv.Addr)
+			if err != nil {
+				return err
+			}
+			go func() {
+				logger.LStartup(context.Background(), entity.StartupLog{
+					Service: "CMS-DELIVERY", Level: "INFO",
+					Message: "Listening on :" + cfg.Server.Port,
+				})
+				if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+					logger.LSystem(context.Background(), entity.SystemLog{
+						Service: "CMS-DELIVERY", Level: "FATAL",
+						Message: "Server error: " + err.Error(),
+					})
+					_ = sd.Shutdown(fx.ExitCode(1))
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			return srv.Shutdown(ctx)
+		},
+	})
+}
+
+// RegisterSwaggerHost overrides the Swagger UI host when SWAGGER_HOST env var is set.
+func RegisterSwaggerHost(cfg config.AppConfig) {
+	if cfg.Server.Config.Swagger.Host != "" {
+		ecmsdocs.SwaggerInfo.Host = cfg.Server.Config.Swagger.Host
 	}
 }
-
-// ProviderSet definition
-var ProviderSet = wire.NewSet(
-	repository.NewScheduleOccurrencePostgresRepository,
-	wire.Bind(new(domainrepo.ScheduleOccurrenceRepository), new(*repository.ScheduleOccurrencePostgresRepository)),
-
-	repository.NewDecisionRulePostgresRepository,
-	wire.Bind(new(domainrepo.DecisionRuleRepository), new(*repository.DecisionRulePostgresRepository)),
-	wire.Bind(new(deliveryservice.RuntimeEvaluator), new(*evaluator.LocalEvaluator)),
-	wire.Bind(new(deliveryservice.DeliveryService), new(*deliveryservice.CMSDeliveryService)),
-
-	// CLEN Lead integration
-	ProvideCLENLeadConfig,
-	ProvideCLENLeadClient,
-	repository.NewCLENLeadRepository,
-	wire.Bind(new(domainrepo.LeadRepository), new(*repository.CLENLeadRepository)),
-
-	// CLEN Customer Profile integration
-	ProvideCLENCustomerProfileConfig,
-	ProvideCLENCustomerProfileClient,
-	repository.NewCLENCustomerProfileRepository,
-	wire.Bind(new(domainrepo.CustomerProfileRepository), new(*repository.CLENCustomerProfileRepository)),
-	ProvideCustomerProfileEnrichConfig,
-
-	// CLEN Schema Registry (drives per-rule field discovery for delta fetch)
-	repository.NewCLENSchemaRegistryPostgresRepository,
-	wire.Bind(new(domainrepo.CLENSchemaRegistryRepository), new(*repository.CLENSchemaRegistryPostgresRepository)),
-
-	// Attribute repository (drives field-name → UUID transform on resolveUserAttrs return)
-	repository.NewAttributePostgresRepository,
-	wire.Bind(new(domainrepo.AttributeRepository), new(*repository.AttributePostgresRepository)),
-
-	// Providers
-	ProvideCacheMemory,
-	ProvideRuntimeEvaluator,
-	ProvideCMSDeliveryService,
-	ProvideRouter,
-	ProvideApp,
-)

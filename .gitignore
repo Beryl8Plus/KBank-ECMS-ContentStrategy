@@ -19,8 +19,9 @@ deploy/production/.env.delivery
 # IDE settings
 .vscode/
 
-# docs
-docs/
+# docs (swagger generated — exclude generated swagger, keep specs)
+docs/*
+!docs/superpowers/
 
 # agent and bmad folders
 _bmad/*
@@ -45,3 +46,6 @@ cmd/migrate-gen/migrations-local/*.sql
 # Postman
 postman/*
 .postman/*
+
+# AI assistant files
+GEMINI.md

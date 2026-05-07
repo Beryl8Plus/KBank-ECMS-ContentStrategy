@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"gorm.io/datatypes"
 
 	"kbank-ecms/internal/domain/entity"
@@ -208,13 +207,13 @@ func TestResolveUserAttrs_CustomerProfileEnrichment_CacheMiss(t *testing.T) {
 	assert.Equal(t, "cst_info_prfl_dly", repo.lastQuery.DataSources[0].Datasource)
 	assert.ElementsMatch(t, []string{"wlth_size", "avg_aum_6_mo"}, repo.lastQuery.DataSources[0].RequiredFields)
 
-	// The Redis cache still stores the nested per-datasource shape
-	// (UUID-keyed transform happens only on the returned value).
+	// The Redis cache stores the upstream CLEN envelope verbatim — no
+	// transformation. UUID-keyed projection happens only on the returned value.
 	assert.Equal(t, 1, setCalls)
 	assert.Equal(t, "customer_profile:CIS_ID:123", setKey)
 	assert.Equal(t, 30*time.Second, setTTL)
-	assert.JSONEq(t, `{"cst_info_prfl_dly":{"wlth_size":5000000,"avg_aum_6_mo":4800000}}`, setVal,
-		"cache value must contain only the per-datasource fetched data")
+	assert.JSONEq(t, rawBody, setVal,
+		"cache must store the raw upstream envelope as-is")
 }
 
 // TestResolveUserAttrs_CustomerProfileEnrichment_AlreadyCached verifies that
@@ -228,7 +227,7 @@ func TestResolveUserAttrs_CustomerProfileEnrichment_AlreadyCached(t *testing.T) 
 	schemaID := uuid.New()
 	yUUID := uuid.New()
 	wUUID := uuid.New()
-	cached := `{"x":{"y":"z","w":"q"}}`
+	cached := `{"cis_id":"123","results":[{"datasource":"x","status":"success","data":{"y":"z","w":"q"},"error_message":null}],"total_sources_queried":1,"total_sources_success":1}`
 	cache := &mockCacheRepo{getFn: func(_ context.Context, _ string) (string, error) { return cached, nil }}
 	repo := &fakeCustomerProfileRepo{}
 	schemaRepo := &fakeSchemaRegistryRepo{byID: map[uuid.UUID]*entity.CLENSchemaRegistry{

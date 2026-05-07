@@ -1,24 +1,38 @@
-.PHONY: init build run dev-build dev-up dev-down test vet lint fmt format-tags clean install-hooks swagger swagger-format swagger-server wire-gen
+.PHONY: init build run dev-build dev-up dev-down test vet lint install-golangci-lint fmt format-tags clean install-hooks swagger swagger-format swagger-server
+
+
+## Install golangci-lint v2 (cross-platform: macOS/Linux via install script, Windows via winget)
+install-golangci-lint:
+ifeq ($(OS),Windows_NT)
+	@echo "Installing golangci-lint v2 for Windows..."
+	winget install golangci.golangci-lint
+else
+	@echo "Installing golangci-lint v2..."
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(shell go env GOPATH)/bin
+endif
 
 ## Initialize workspace
 init:
 	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	$(MAKE) install-golangci-lint
 	@echo "Installing swag..."
 	go install github.com/swaggo/swag/cmd/swag@latest
-	@echo "Installing wire..."
-	go install github.com/google/wire/cmd/wire@latest
+	@echo "Installing gci..."
+	go install github.com/daixiang0/gci@latest
 	@echo "Installing git hooks..."
 	make install-hooks
+	@echo "Running go mod tidy..."
+	go mod tidy
 	@echo "Workspace initialization complete."
+
+tidy:
+	go mod tidy
+	@echo "go mod tidy completed."
 
 ## Build the server binary
 build: swagger
 	go build -o bin/server ./cmd/server/
 
-## Generate wire dependencies
-wire-gen:
-	wire gen ./cmd/server
 
 ## Run the server locally
 run:
@@ -69,6 +83,7 @@ format-tags:
 ## Run all formatters
 fmt:
 	go fmt ./...
+	gci write --skip-generated -s standard -s default -s "prefix(kbank-ecms)" .
 	make format-tags
 
 ## Install git hooks

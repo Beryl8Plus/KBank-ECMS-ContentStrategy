@@ -14,6 +14,7 @@ type contextKey string
 const (
 	// UserIDKey is the context key for the current user's UUID
 	UserIDKey contextKey = "userID"
+
 	// CisIDKey is the context key for the current user's CIS ID
 	CisIDKey contextKey = "cisID"
 

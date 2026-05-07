@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+
 	deliveryservice "kbank-ecms/cmd/server/service"
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 	"kbank-ecms/internal/infrastructure/logger"
-
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 )
 
 // Handler handles HTTP requests for the cms-delivery module.
@@ -42,7 +42,6 @@ func NewHandler(svc deliveryservice.DeliveryService) *Handler {
 //	@Success		200				{object}	dto.APIResponse{data=[]dto.ContentResult}
 //	@Failure		400				{object}	dto.APIResponse
 //	@Failure		500				{object}	dto.APIResponse
-//	@Security		XUserIdAuth
 //	@Router			/api/content-strategy/v1/personalized-content [get]
 func (h *Handler) getContent(c *gin.Context) {
 	// Validate requestType query parameter
@@ -100,7 +99,6 @@ func (h *Handler) getContent(c *gin.Context) {
 //	@Produce		json
 //	@Success		200	{object}	dto.APIResponse{data=dto.CacheStatusResponse}
 //	@Failure		500	{object}	dto.APIResponse
-//	@Security		XUserIdAuth
 //	@Router			/api/content-strategy/v1/purge_requests [get]
 func (h *Handler) getStatus(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -146,7 +144,6 @@ func (h *Handler) getStatus(c *gin.Context) {
 //	@Success		200	{object}	dto.APIResponse{data=json.RawMessage}
 //	@Failure		400	{object}	dto.APIResponse
 //	@Failure		500	{object}	dto.APIResponse
-//	@Security		XUserIdAuth
 //	@Router			/api/content-strategy/v1/purge_requests/value [get]
 func (h *Handler) getCacheValue(c *gin.Context) {
 	var req struct {
@@ -179,7 +176,6 @@ func (h *Handler) getCacheValue(c *gin.Context) {
 //	@Param			body	body		dto.FlushRequest	false	"Placements to flush; omit to flush all"
 //	@Success		200		{object}	dto.APIResponse{data=dto.FlushResponse}
 //	@Failure		500		{object}	dto.APIResponse
-//	@Security		XUserIdAuth
 //	@Router			/api/content-strategy/v1/purge_requests [post]
 func (h *Handler) flushCache(c *gin.Context) {
 	var req dto.FlushRequest

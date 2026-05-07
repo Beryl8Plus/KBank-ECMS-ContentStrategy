@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"kbank-ecms/internal/domain/entity"
-
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity"
 )
 
 // ScheduleOccurrenceRepository defines the contract for schedule occurrence

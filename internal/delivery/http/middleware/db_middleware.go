@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/pkg/ctxconsts"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // DBMiddleware integrates GORM's DB instance into the request context.

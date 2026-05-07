@@ -3,9 +3,9 @@ package repository
 import (
 	"context"
 
-	"kbank-ecms/internal/domain/entity"
-
 	"github.com/google/uuid"
+
+	"kbank-ecms/internal/domain/entity"
 )
 
 // AttributeRepository defines the contract for attribute-related database operations.

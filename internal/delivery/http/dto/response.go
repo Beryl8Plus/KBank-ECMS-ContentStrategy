@@ -2,6 +2,7 @@ package dto
 
 import (
 	"encoding/json"
+
 	"kbank-ecms/internal/domain/entity/enums"
 )
 

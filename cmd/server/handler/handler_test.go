@@ -9,14 +9,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	deliveryservice "kbank-ecms/cmd/server/service"
-	"kbank-ecms/internal/delivery/http/dto"
-	"kbank-ecms/pkg/ctxconsts"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	deliveryservice "kbank-ecms/cmd/server/service"
+	"kbank-ecms/internal/delivery/http/dto"
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 var _ deliveryservice.DeliveryService = (*mockDeliveryService)(nil)
