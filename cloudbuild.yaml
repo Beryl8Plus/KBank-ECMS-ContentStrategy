@@ -1,0 +1,20 @@
+substitutions:
+  _IMAGE_TAG: latest  # override ได้ผ่าน --substitutions=_IMAGE_TAG=$(git rev-parse --short HEAD)
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - asia-southeast1-docker.pkg.dev/be8-ecms-test/ecms-ar-gcp/svc-contstrat-delivery:${_IMAGE_TAG}
+      - -t
+      - asia-southeast1-docker.pkg.dev/be8-ecms-test/ecms-ar-gcp/svc-contstrat-delivery:latest
+      - .
+
+images:
+  - asia-southeast1-docker.pkg.dev/be8-ecms-test/ecms-ar-gcp/svc-contstrat-delivery:${_IMAGE_TAG}
+  - asia-southeast1-docker.pkg.dev/be8-ecms-test/ecms-ar-gcp/svc-contstrat-delivery:latest
+
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY
