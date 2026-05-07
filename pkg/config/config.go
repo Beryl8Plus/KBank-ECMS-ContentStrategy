@@ -58,7 +58,7 @@ type PostgresConfig struct {
 type RedisConfig struct {
 	Host        string `yaml:"host"         env:"REDIS_HOST"          env-default:"localhost"`
 	Port        string `yaml:"port"         env:"REDIS_PORT"          env-default:"6379"`
-	Username    string `yaml:"username"     env:"REDIS_USERNAME"`     // Only needed for DEVGCP; ignored otherwise
+	Username    string `yaml:"username"     env:"REDIS_USERNAME"` // Only needed for DEVGCP; ignored otherwise
 	Password    string `yaml:"password"     env:"REDIS_PASSWORD"`
 	TLS         bool   `yaml:"tls"          env:"REDIS_TLS"           env-default:"false"` // DEVGCP: set true only when Memorystore in-transit encryption is enabled
 	PrincipalID string `yaml:"principal_id" env:"REDIS_PRINCIPAL_ID"`
