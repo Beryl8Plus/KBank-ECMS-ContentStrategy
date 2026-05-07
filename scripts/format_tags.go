@@ -79,7 +79,7 @@ func parseTags(tagStr string) []Tag {
 	return tags
 }
 
-func formatTags(tagStr string, maxGormLen int) string {
+func formatTags(tagStr string, maxTagLen map[string]int) string {
 	if tagStr == "" {
 		return ""
 	}
@@ -92,9 +92,9 @@ func formatTags(tagStr string, maxGormLen int) string {
 	var resultParts []string
 	for i, t := range tags {
 		part := t.String()
-		if t.Key == "gorm" && i < len(tags)-1 {
-			if maxGormLen > len(part) {
-				part += strings.Repeat(" ", maxGormLen-len(part))
+		if i < len(tags)-1 {
+			if maxLen, ok := maxTagLen[t.Key]; ok && maxLen > len(part) {
+				part += strings.Repeat(" ", maxLen-len(part))
 			}
 		}
 		resultParts = append(resultParts, part)
@@ -114,25 +114,25 @@ func processFile(path string) error {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.StructType:
-			// First pass: find max GORM length for this struct
-			maxGormLen := 0
+			// First pass: find max length per tag key across all fields in this struct
+			maxTagLen := map[string]int{}
 			for _, field := range x.Fields.List {
-				if len(field.Names) > 0 {
-					fieldName := field.Names[0].Name
-					if !ast.IsExported(fieldName) {
-						continue
-					}
-					var currentTag string
-					if field.Tag != nil {
-						currentTag = field.Tag.Value
-					}
-					tags := parseTags(currentTag)
-					for _, t := range tags {
-						if t.Key == "gorm" {
-							gormPart := fmt.Sprintf("gorm:%q", t.Value)
-							if len(gormPart) > maxGormLen {
-								maxGormLen = len(gormPart)
-							}
+				if len(field.Names) == 0 {
+					continue
+				}
+				if !ast.IsExported(field.Names[0].Name) {
+					continue
+				}
+				var currentTag string
+				if field.Tag != nil {
+					currentTag = field.Tag.Value
+				}
+				tags := parseTags(currentTag)
+				for i, t := range tags {
+					if i < len(tags)-1 {
+						part := t.String()
+						if len(part) > maxTagLen[t.Key] {
+							maxTagLen[t.Key] = len(part)
 						}
 					}
 				}
@@ -140,30 +140,30 @@ func processFile(path string) error {
 
 			// Second pass: apply formatting
 			for _, field := range x.Fields.List {
-				if len(field.Names) > 0 {
-					fieldName := field.Names[0].Name
-					if !ast.IsExported(fieldName) {
-						continue
-					}
+				if len(field.Names) == 0 {
+					continue
+				}
+				if !ast.IsExported(field.Names[0].Name) {
+					continue
+				}
 
-					var currentTag string
+				var currentTag string
+				if field.Tag != nil {
+					currentTag = field.Tag.Value
+				}
+
+				newTag := formatTags(currentTag, maxTagLen)
+				if newTag == "" {
 					if field.Tag != nil {
-						currentTag = field.Tag.Value
-					}
-
-					newTag := formatTags(currentTag, maxGormLen)
-					if newTag == "" {
-						if field.Tag != nil {
-							field.Tag = nil
-							modified = true
-						}
-					} else if field.Tag == nil || field.Tag.Value != newTag {
-						field.Tag = &ast.BasicLit{
-							Kind:  token.STRING,
-							Value: newTag,
-						}
+						field.Tag = nil
 						modified = true
 					}
+				} else if field.Tag == nil || field.Tag.Value != newTag {
+					field.Tag = &ast.BasicLit{
+						Kind:  token.STRING,
+						Value: newTag,
+					}
+					modified = true
 				}
 			}
 		}
@@ -182,16 +182,13 @@ func processFile(path string) error {
 	return nil
 }
 
-type Config struct {
-	TargetDir string
-}
-
 func main() {
-	cfg := Config{
-		TargetDir: "internal/domain/entity",
+	targetDir := "."
+	if len(os.Args) > 1 {
+		targetDir = os.Args[1]
 	}
 
-	err := filepath.Walk(cfg.TargetDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

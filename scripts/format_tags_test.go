@@ -10,7 +10,8 @@ import (
 func TestFormatTagsPreservesEscapedQuotes(t *testing.T) {
 	tag := "`gorm:\"size:255;index:idx_decision_rules_active_status,where:\\\"STATUS\\\" = 'ACTIVE' AND \\\"DELETED_AT\\\" IS NULL\" json:\"status\"`"
 
-	formatted := formatTags(tag, len("gorm:\"size:255;index:idx_decision_rules_active_status,where:\\\"STATUS\\\" = 'ACTIVE' AND \\\"DELETED_AT\\\" IS NULL\""))
+	gormPart := "gorm:\"size:255;index:idx_decision_rules_active_status,where:\\\"STATUS\\\" = 'ACTIVE' AND \\\"DELETED_AT\\\" IS NULL\""
+	formatted := formatTags(tag, map[string]int{"gorm": len(gormPart)})
 
 	if formatted != tag {
 		t.Fatalf("formatted tag mismatch\nwant: %s\ngot:  %s", tag, formatted)
