@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-contstrat-delivery
+  namespace: dev
+  labels:
+    app: svc-contstrat-delivery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: svc-contstrat-delivery
+  template:
+    metadata:
+      labels:
+        app: svc-contstrat-delivery
+    spec:
+      containers:
+        - name: svc-contstrat-delivery
+          image: asia-southeast1-docker.pkg.dev/be8-ecms-test/ecms-ar-gcp/svc-contstrat-delivery:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: svc-contstrat-delivery-config
+            - secretRef:
+                name: svc-contstrat-delivery-secret
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-contstrat-delivery-config
+  namespace: dev
+data:
+  SETENV: "DEVGCP"
+  PREFIX_CONTENT_STRATEGY_API_V1: "/api/content-strategy/v1/"
+
+  # PostgreSQL
+  DB_PORT: "5432"
+  DB_SSLMODE: "disable"
+
+  # Redis
+  REDIS_PORT: "6379"
+  REDIS_TLS: "false"
+
+  # Swagger — ต้องตรงกับ host ใน ingress.yaml
+  SWAGGER_HOST: "ecms-svc-contstrat-delivery.be8-customdev.com"
+
+  # CORS — explicit origins สำหรับ Swagger UI และ frontend (คั่นด้วย comma ถ้ามีหลาย origin)
+  CORS_ALLOWED_ORIGINS: "https://ecms-swagger.be8-customdev.com"
+
+  # Cache TTLs
+  CMS_RUNTIME_TTL: "15m"
+  CMS_RUNTIME_INTERVAL: "5m"
+
+  # CLEN Lead API
+  CLEN_LEAD_API_PATH: "/v1/leads/customer-level"
+  CLEN_LEAD_APP_ID: "845"
+  CLEN_LEAD_API_TIMEOUT: "5s"
+  CLEN_LEAD_API_RETRIES: "2"
+  CLEN_LEAD_CACHE_TTL: "1h"
+  CLEN_LEAD_EXP_F: "true"
+
+  # CLEN Customer Profile API
+  CLEN_CUSTOMER_PROFILE_API_PATH: "/v1/customers/query"
+  CLEN_CUSTOMER_PROFILE_API_TIMEOUT: "5s"
+  CLEN_CUSTOMER_PROFILE_API_RETRIES: "2"
+  CLEN_CUSTOMER_PROFILE_CACHE_TTL: "1h"
+
+  # JWT
+  JWT_TOKEN_DURATION: "24h"
+  JWT_ISSUER: "kbank-ecms"

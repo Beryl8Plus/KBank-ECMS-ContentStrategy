@@ -13,6 +13,7 @@ const (
 	LogicalOperatorEQ      LogicalOperator = "="
 	LogicalOperatorNEQ     LogicalOperator = "!="
 	LogicalOperatorIN      LogicalOperator = "IN"
+	LogicalOperatorNIN     LogicalOperator = "NOT IN"
 	LogicalOperatorBETWEEN LogicalOperator = "BETWEEN"
 )
 
@@ -28,7 +29,7 @@ func (o LogicalOperator) IsValid() bool {
 		LogicalOperatorLT, LogicalOperatorLTE,
 		LogicalOperatorGT, LogicalOperatorGTE,
 		LogicalOperatorEQ, LogicalOperatorNEQ,
-		LogicalOperatorIN, LogicalOperatorBETWEEN:
+		LogicalOperatorIN, LogicalOperatorNIN, LogicalOperatorBETWEEN:
 		return true
 	}
 	return false

@@ -15,8 +15,8 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Env    string        `yaml:"env"    env:"SETENV"`
-	Port   string        `yaml:"port"   env:"PORT"           env-default:"8081"`
+	Env    string        `yaml:"env"  env:"SETENV"`
+	Port   string        `yaml:"port" env:"PORT" env-default:"8081"`
 	Config ServiceConfig `yaml:"config"`
 }
 
@@ -38,29 +38,29 @@ type CLENLeadAPIConfig struct {
 	APIKey        string        `yaml:"api_key"        env:"CLEN_LEAD_API_KEY"`
 	AppIdentifier string        `yaml:"app_identifier" env:"CLEN_LEAD_APP_ID"`
 	Timeout       time.Duration `yaml:"timeout"        env:"CLEN_LEAD_API_TIMEOUT" env-default:"5s"`
-	RetryCount    int           `yaml:"retry_count"    env:"CLEN_LEAD_API_RETRIES"  env-default:"2"`
-	ExpireFilter  string        `yaml:"expire_filter"  env:"CLEN_LEAD_EXP_F"        env-default:"true"`
+	RetryCount    int           `yaml:"retry_count"    env:"CLEN_LEAD_API_RETRIES" env-default:"2"`
+	ExpireFilter  string        `yaml:"expire_filter"  env:"CLEN_LEAD_EXP_F"       env-default:"true"`
 }
 
 // PostgresConfig holds PostgreSQL connection details.
 // Credentials are always supplied via ENV; YAML provides non-secret defaults.
 type PostgresConfig struct {
-	Host     string `yaml:"host"     env:"DB_HOST"     env-default:"localhost"`
-	Port     string `yaml:"port"     env:"DB_PORT"     env-default:"5432"`
-	User     string `yaml:"user"     env:"DB_USER"     env-default:"postgres"`
+	Host     string `yaml:"host"     env:"DB_HOST"    env-default:"localhost"`
+	Port     string `yaml:"port"     env:"DB_PORT"    env-default:"5432"`
+	User     string `yaml:"user"     env:"DB_USER"    env-default:"postgres"`
 	Password string `yaml:"password" env:"DB_PASSWORD"`
-	DBName   string `yaml:"db_name"  env:"DB_NAME"     env-default:"kbank_ecms"`
-	SSLMode  string `yaml:"ssl_mode" env:"DB_SSLMODE"  env-default:"disable"`
+	DBName   string `yaml:"db_name"  env:"DB_NAME"    env-default:"kbank_ecms"`
+	SSLMode  string `yaml:"ssl_mode" env:"DB_SSLMODE" env-default:"disable"`
 }
 
 // RedisConfig holds Redis connection details.
 // PrincipalID is required only when SETENV != DEVLOCAL (Azure Workload Identity).
 type RedisConfig struct {
-	Host        string `yaml:"host"         env:"REDIS_HOST"          env-default:"localhost"`
-	Port        string `yaml:"port"         env:"REDIS_PORT"          env-default:"6379"`
+	Host        string `yaml:"host"         env:"REDIS_HOST" env-default:"localhost"`
+	Port        string `yaml:"port"         env:"REDIS_PORT" env-default:"6379"`
 	Username    string `yaml:"username"     env:"REDIS_USERNAME"` // Only needed for DEVGCP; ignored otherwise
 	Password    string `yaml:"password"     env:"REDIS_PASSWORD"`
-	TLS         bool   `yaml:"tls"          env:"REDIS_TLS"           env-default:"false"` // DEVGCP: set true only when Memorystore in-transit encryption is enabled
+	TLS         bool   `yaml:"tls"          env:"REDIS_TLS"  env-default:"false"` // DEVGCP: set true only when Memorystore in-transit encryption is enabled
 	PrincipalID string `yaml:"principal_id" env:"REDIS_PRINCIPAL_ID"`
 }
 
@@ -89,9 +89,9 @@ type RateLimitConfig struct {
 // JWTConfig holds JWT signing configuration.
 // Secret must be supplied via ENV; never commit to YAML.
 type JWTConfig struct {
-	Secret string        `yaml:"secret"   env:"JWT_SECRET_KEY"      env-default:"change-me-in-production"`
-	Expiry time.Duration `yaml:"expiry"   env:"JWT_TOKEN_DURATION"  env-default:"24h"`
-	Issuer string        `yaml:"issuer"   env:"JWT_ISSUER"          env-default:"kbank-ecms"`
+	Secret string        `yaml:"secret" env:"JWT_SECRET_KEY"     env-default:"change-me-in-production"`
+	Expiry time.Duration `yaml:"expiry" env:"JWT_TOKEN_DURATION" env-default:"24h"`
+	Issuer string        `yaml:"issuer" env:"JWT_ISSUER"         env-default:"kbank-ecms"`
 }
 
 // LoadConfig reads the YAML file at path and applies ENV overrides automatically.

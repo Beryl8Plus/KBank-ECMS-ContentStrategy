@@ -18,14 +18,14 @@ const (
 )
 
 type ContentRequestQueryParams struct {
-	RequestType enums.RequestType `form:"requestType" binding:"required,oneof=personalizedContent staticContent articleCategory"`
-	Mode        string            `form:"mode" binding:"required,oneof=knownContent logicalBased contentType articleCategory"`
-	Channel     string            `form:"channel" binding:"required"`
-	Placements  []string          `form:"placement" binding:"required,min=1,dive,required"`
+	RequestType enums.RequestType `form:"requestType"         binding:"required,oneof=personalizedContent staticContent articleCategory"`
+	Mode        string            `form:"mode"                binding:"required,oneof=knownContent logicalBased contentType articleCategory"`
+	Channel     string            `form:"channel"             binding:"required"`
+	Placements  []string          `form:"placement"           binding:"required,min=1,dive,required"`
 	// CustomerID is required. When CustomerIDType is CIS_ID or IP_ID the value
 	// must additionally be exactly 10 decimal digits (customer_id_format tag).
-	CustomerID     string         `form:"customerId" binding:"required,customer_id_format"`
-	CustomerIDType CustomerIdType `form:"customerIdType" binding:"required,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID"`
+	CustomerID     string         `form:"customerId"          binding:"required,customer_id_format"`
+	CustomerIDType CustomerIdType `form:"customerIdType"      binding:"required,oneof=CIS_ID IP_ID KPLUS_MOBILE_NUMBER LINE_UUID"`
 	PageSize       int            `form:"pageSize,default=10" binding:"omitempty,max=2000"`
 }
 
