@@ -12,7 +12,9 @@ import (
 const TIMEOUT = 30 * time.Second
 
 // Apply registers all global middleware onto an existing Gin engine.
-// Called by the router layer after the engine is created.
+// Called by the router layer after the engine is created. DBMiddleware is
+// skipped when db is nil so services without a Postgres dependency can
+// reuse this initializer.
 func Apply(r *gin.Engine, db *gorm.DB, cfg config.AppConfig) {
 	r.Use(CORSMiddleware())
 	r.Use(ResponseHeaderMiddleware())
@@ -20,5 +22,7 @@ func Apply(r *gin.Engine, db *gorm.DB, cfg config.AppConfig) {
 	r.Use(ConcurrencyMiddleware(cfg.Server.Config.RateLimit.MCR))
 	r.Use(LoggerMiddleware())
 	r.Use(TimeoutMiddleware(cfg.Server.Config.Timeout.ReqCtxTimeout))
-	r.Use(DBMiddleware(db, cfg.Server.Config.Timeout.DBCtxTimeout))
+	if db != nil {
+		r.Use(DBMiddleware(db, cfg.Server.Config.Timeout.DBCtxTimeout))
+	}
 }
