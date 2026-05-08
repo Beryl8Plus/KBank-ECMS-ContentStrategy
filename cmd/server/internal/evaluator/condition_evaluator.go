@@ -3,6 +3,7 @@ package evaluator
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -481,12 +482,19 @@ func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expecte
 		if !ok {
 			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
-		for _, v := range exps {
-			if actual == v {
-				return true, nil
-			}
+		if slices.Contains(exps, actual) {
+			return true, nil
 		}
 		return false, nil
+	case enums.LogicalOperatorNIN:
+		exps, ok := expectedVals.GetStringSlice(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text NOT IN values (want JSON string array) for attr %s", attrKey)
+		}
+		if slices.Contains(exps, actual) {
+			return false, nil
+		}
+		return true, nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)
 	}
