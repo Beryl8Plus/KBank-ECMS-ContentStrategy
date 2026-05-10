@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
+	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -293,6 +295,14 @@ func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMe
 		return nil, rule.Score, nil
 	}
 
+	if err := ValidateConditionTree(rule.RuleConditions); err != nil {
+		logger.LError(context.Background(), entity.ErrorLog{
+			Service: "EvaluateRuleScore",
+			Message: err.Error(),
+		})
+		return nil, rule.Score, nil
+	}
+
 	parsed := NewParsedUserAttrs(userAttrs)
 
 	for _, v := range sortedVariations(rule.Rules) {
@@ -330,6 +340,14 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 	rcs := make([]entity.RuleCondition, 0, len(conditions))
 	for _, lc := range conditions {
 		rcs = append(rcs, logicConditionToRuleCondition(lc))
+	}
+
+	if err := ValidateConditionTree(rcs); err != nil {
+		logger.LError(context.Background(), entity.ErrorLog{
+			Service: "EvaluateLogicConditions",
+			Message: err.Error(),
+		})
+		return false, nil
 	}
 
 	// Only stamp entries where ExpectedValue is a non-nil, non-JSON-null value.
@@ -374,33 +392,69 @@ func evaluateConditionGroup(conditions []entity.RuleCondition, expectedVals *Par
 	return evalSiblings(byParent, roots, 1, expectedVals, parsed)
 }
 
+// evalSiblings evaluates a sorted sibling chain using forward-link semantics.
+// siblings[i].ConnectorOperator is a forward-link: it joins siblings[i] with siblings[i+1].
+// The last sibling must omit ConnectorOperator.
 func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
 	result, err := evalNode(byParent, siblings[0], depth, expectedVals, parsed)
 	if err != nil {
 		return false, err
 	}
-	for i := 1; i < len(siblings); i++ {
-		c := siblings[i]
-		val, err := evalNode(byParent, c, depth, expectedVals, parsed)
+	for i := 0; i < len(siblings)-1; i++ {
+		// Forward-link: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
+		next, err := evalNode(byParent, siblings[i+1], depth, expectedVals, parsed)
 		if err != nil {
 			return false, err
 		}
-		if c.ConnectorOperator == enums.ConnectorOperatorOR {
-			result = result || val
+		if connectorValue(siblings[i].ConnectorOperator) == enums.ConnectorOperatorOR {
+			result = result || next
 		} else {
-			result = result && val
+			result = result && next
 		}
 	}
 	return result, nil
 }
 
+// evalNode evaluates a single condition node.
+// If the node is a pure group (AttributeID == uuid.Nil), its result is determined entirely by its children.
+// If the node has an own leaf check AND children, the own-check result is combined with the
+// children-combined result using the node's ChildConnectorOperator.
 func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
+	hasOwnCheck := c.AttributeID != uuid.Nil
+
+	var children []entity.RuleCondition
 	if depth < maxConditionDepth {
-		if children := byParent[c.ID.String()]; len(children) > 0 {
-			return evalSiblings(byParent, children, depth+1, expectedVals, parsed)
-		}
+		children = byParent[c.ID.String()]
 	}
-	return evaluateSingleCondition(c, expectedVals, parsed)
+
+	if len(children) == 0 {
+		if !hasOwnCheck {
+			// Pure group with no children — trivially true.
+			return true, nil
+		}
+		return evaluateSingleCondition(c, expectedVals, parsed)
+	}
+
+	// Node has children.
+	childrenResult, err := evalSiblings(byParent, children, depth+1, expectedVals, parsed)
+	if err != nil {
+		return false, err
+	}
+
+	if !hasOwnCheck {
+		// Pure group container: children determine the result.
+		return childrenResult, nil
+	}
+
+	// Own check + children: combine using ChildConnectorOperator.
+	ownResult, err := evaluateSingleCondition(c, expectedVals, parsed)
+	if err != nil {
+		return false, err
+	}
+	if connectorValue(c.ChildConnectorOperator) == enums.ConnectorOperatorOR {
+		return ownResult || childrenResult, nil
+	}
+	return ownResult && childrenResult, nil
 }
 
 func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
@@ -605,12 +659,19 @@ func compareBooleanParsed(op enums.LogicalOperator, actual bool, attrKey string,
 func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
-		BaseModel:         entity.BaseModel{ID: id},
-		AttributeID:       mustParseUUID(lc.AttributeID),
-		Sequence:          lc.Sequence,
-		LogicalOperator:   enums.LogicalOperator(lc.LogicalOperator),
-		ConnectorOperator: enums.ConnectorOperator(lc.ConnectorOperator),
-		Attribute:         &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
+		BaseModel:       entity.BaseModel{ID: id},
+		AttributeID:     mustParseUUID(lc.AttributeID),
+		Sequence:        lc.Sequence,
+		LogicalOperator: enums.LogicalOperator(lc.LogicalOperator),
+		Attribute:       &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
+	}
+	if lc.ConnectorOperator != "" {
+		op := enums.ConnectorOperator(lc.ConnectorOperator)
+		rc.ConnectorOperator = &op
+	}
+	if lc.ChildConnectorOperator != "" {
+		op := enums.ConnectorOperator(lc.ChildConnectorOperator)
+		rc.ChildConnectorOperator = &op
 	}
 	if lc.ParentConditionID != "" {
 		pid, _ := uuid.Parse(lc.ParentConditionID)
@@ -635,6 +696,20 @@ func sortedVariations(rules []entity.Rule) []entity.Rule {
 		return out[i].OrderNo < out[j].OrderNo
 	})
 	return out
+}
+
+// connectorPtr returns &op (helper for building *enums.ConnectorOperator literals).
+func connectorPtr(op enums.ConnectorOperator) *enums.ConnectorOperator {
+	return &op
+}
+
+// connectorValue safely dereferences a *enums.ConnectorOperator, returning
+// the zero ConnectorOperator ("") when p is nil.
+func connectorValue(p *enums.ConnectorOperator) enums.ConnectorOperator {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func parseDate(s string) (time.Time, error) {

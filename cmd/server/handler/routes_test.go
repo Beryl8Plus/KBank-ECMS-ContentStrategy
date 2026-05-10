@@ -21,10 +21,12 @@ type stubService struct{}
 func (stubService) GetPersonalizedContent(_ context.Context, _ *dto.CustomerRequest, _ string, _ []string) ([]dto.ContentResult, error) {
 	return nil, nil
 }
-func (stubService) GetCacheKeys(_ context.Context) ([]string, error)              { return nil, nil }
-func (stubService) GetCacheValue(_ context.Context, _ string) (json.RawMessage, error) { return nil, nil }
-func (stubService) GetCacheStatus(_ context.Context) (bool, float64, error)        { return false, 0, nil }
-func (stubService) FlushCache(_ context.Context, _ []string, _ bool) error         { return nil }
+func (stubService) GetCacheKeys(_ context.Context) ([]string, error) { return nil, nil }
+func (stubService) GetCacheValue(_ context.Context, _ string) (json.RawMessage, error) {
+	return nil, nil
+}
+func (stubService) GetCacheStatus(_ context.Context) (bool, float64, error) { return false, 0, nil }
+func (stubService) FlushCache(_ context.Context, _ []string, _ bool) error  { return nil }
 
 func TestRegisterRoutes_AttachesExpectedRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -28,14 +28,14 @@ func TestGenerateConditionHash(t *testing.T) {
 			AttributeID:       attr1,
 			LogicalOperator:   enums.LogicalOperatorEQ,
 			Sequence:          1,
-			ConnectorOperator: enums.ConnectorOperatorAND,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		cond2 := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: uuid.New()},
 			AttributeID:       attr2,
 			LogicalOperator:   enums.LogicalOperatorGT,
 			Sequence:          2,
-			ConnectorOperator: enums.ConnectorOperatorAND,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 
 		// Hash with order 1, 2
@@ -61,7 +61,7 @@ func TestGenerateConditionHash(t *testing.T) {
 		condParent := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: parentID},
 			Sequence:          2,
-			ConnectorOperator: enums.ConnectorOperatorOR,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
 		}
 		// Children of parentID
 		child1 := entity.RuleCondition{
@@ -77,7 +77,7 @@ func TestGenerateConditionHash(t *testing.T) {
 			AttributeID:           attr1,
 			LogicalOperator:       enums.LogicalOperatorNEQ,
 			Sequence:              2,
-			ConnectorOperator:     enums.ConnectorOperatorAND,
+			ConnectorOperator:     connectorPtr(enums.ConnectorOperatorAND),
 		}
 
 		hash, err := GenerateConditionHash([]entity.RuleCondition{cond1, condParent, child1, child2})
@@ -118,13 +118,17 @@ func TestBuildLogicExpression(t *testing.T) {
 	attr2 := uuid.New()
 
 	baseCond := func(attrID uuid.UUID, op enums.LogicalOperator, seq int, connector enums.ConnectorOperator) entity.RuleCondition {
-		return entity.RuleCondition{
-			BaseModel:         entity.BaseModel{ID: uuid.New()},
-			AttributeID:       attrID,
-			LogicalOperator:   op,
-			Sequence:          seq,
-			ConnectorOperator: connector,
+		rc := entity.RuleCondition{
+			BaseModel:       entity.BaseModel{ID: uuid.New()},
+			AttributeID:     attrID,
+			LogicalOperator: op,
+			Sequence:        seq,
 		}
+		if connector != "" {
+			c := connector
+			rc.ConnectorOperator = &c
+		}
+		return rc
 	}
 
 	t.Run("SingleLeafEQ", func(t *testing.T) {
@@ -180,4 +184,55 @@ func TestBuildLogicExpression(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Empty(t, hash)
 	})
+}
+
+// TestBuildCanonicalString_OwnCheckPlusChildren verifies that a node carrying both
+// an own leaf check (AttributeID != uuid.Nil) AND children is distinguished from
+// a pure group container (no own check) in the canonical hash.
+func TestBuildCanonicalString_OwnCheckPlusChildren(t *testing.T) {
+	attr1 := uuid.New()
+	attr2 := uuid.New()
+	attr3 := uuid.New()
+
+	parentID := uuid.New()
+
+	// parent has own check (attr1 EQ) + one child (attr2 GT).
+	parent := entity.RuleCondition{
+		BaseModel:              entity.BaseModel{ID: parentID},
+		AttributeID:            attr1,
+		LogicalOperator:        enums.LogicalOperatorEQ,
+		Sequence:               1,
+		ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+	}
+	child := entity.RuleCondition{
+		BaseModel:             entity.BaseModel{ID: uuid.New()},
+		ParentRuleConditionID: &parentID,
+		AttributeID:           attr2,
+		LogicalOperator:       enums.LogicalOperatorGT,
+		Sequence:              1,
+	}
+
+	hash1, err := GenerateConditionHash([]entity.RuleCondition{parent, child})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, hash1)
+
+	// Change parent's own-check attribute — hash must differ.
+	parent2 := parent
+	parent2.AttributeID = attr3
+	hash2, _ := GenerateConditionHash([]entity.RuleCondition{parent2, child})
+	assert.NotEqual(t, hash1, hash2, "Changing parent's own-check attribute must change the hash")
+
+	// Same for BuildLogicExpression / GenerateLogicHash.
+	vals := map[string]json.RawMessage{
+		attr1.String(): json.RawMessage(`"gold"`),
+		attr2.String(): json.RawMessage(`30`),
+	}
+	vals3 := map[string]json.RawMessage{
+		attr3.String(): json.RawMessage(`"gold"`),
+		attr2.String(): json.RawMessage(`30`),
+	}
+
+	lhash1, _ := GenerateLogicHash([]entity.RuleCondition{parent, child}, vals)
+	lhash2, _ := GenerateLogicHash([]entity.RuleCondition{parent2, child}, vals3)
+	assert.NotEqual(t, lhash1, lhash2, "Changing parent's own-check attribute must change the logic hash")
 }

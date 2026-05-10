@@ -414,10 +414,15 @@ const docTemplate = `{
                 "attributeId": {
                     "type": "string"
                 },
+                "childConnectorOperator": {
+                    "description": "joins own leaf check with children-group",
+                    "type": "string"
+                },
                 "conditionId": {
                     "type": "string"
                 },
                 "connectorOperator": {
+                    "description": "forward-link to next sibling",
                     "type": "string"
                 },
                 "dataType": {
