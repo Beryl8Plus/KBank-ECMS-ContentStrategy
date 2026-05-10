@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
+	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -294,6 +296,10 @@ func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMe
 	}
 
 	if err := ValidateConditionTree(rule.RuleConditions); err != nil {
+		logger.LError(context.Background(), entity.ErrorLog{
+			Service: "EvaluateRuleScore",
+			Message: err.Error(),
+		})
 		return nil, rule.Score, nil
 	}
 
@@ -337,6 +343,10 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 	}
 
 	if err := ValidateConditionTree(rcs); err != nil {
+		logger.LError(context.Background(), entity.ErrorLog{
+			Service: "EvaluateLogicConditions",
+			Message: err.Error(),
+		})
 		return false, nil
 	}
 
