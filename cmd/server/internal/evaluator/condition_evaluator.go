@@ -374,33 +374,69 @@ func evaluateConditionGroup(conditions []entity.RuleCondition, expectedVals *Par
 	return evalSiblings(byParent, roots, 1, expectedVals, parsed)
 }
 
+// evalSiblings evaluates a sorted sibling chain using forward-link semantics.
+// siblings[i].ConnectorOperator is a forward-link: it joins siblings[i] with siblings[i+1].
+// The last sibling must omit ConnectorOperator.
 func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
 	result, err := evalNode(byParent, siblings[0], depth, expectedVals, parsed)
 	if err != nil {
 		return false, err
 	}
-	for i := 1; i < len(siblings); i++ {
-		c := siblings[i]
-		val, err := evalNode(byParent, c, depth, expectedVals, parsed)
+	for i := 0; i < len(siblings)-1; i++ {
+		// Forward-link: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
+		next, err := evalNode(byParent, siblings[i+1], depth, expectedVals, parsed)
 		if err != nil {
 			return false, err
 		}
-		if connectorValue(c.ConnectorOperator) == enums.ConnectorOperatorOR {
-			result = result || val
+		if connectorValue(siblings[i].ConnectorOperator) == enums.ConnectorOperatorOR {
+			result = result || next
 		} else {
-			result = result && val
+			result = result && next
 		}
 	}
 	return result, nil
 }
 
+// evalNode evaluates a single condition node.
+// If the node is a pure group (AttributeID == uuid.Nil), its result is determined entirely by its children.
+// If the node has an own leaf check AND children, the own-check result is combined with the
+// children-combined result using the node's ChildConnectorOperator.
 func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
+	hasOwnCheck := c.AttributeID != uuid.Nil
+
+	var children []entity.RuleCondition
 	if depth < maxConditionDepth {
-		if children := byParent[c.ID.String()]; len(children) > 0 {
-			return evalSiblings(byParent, children, depth+1, expectedVals, parsed)
-		}
+		children = byParent[c.ID.String()]
 	}
-	return evaluateSingleCondition(c, expectedVals, parsed)
+
+	if len(children) == 0 {
+		if !hasOwnCheck {
+			// Pure group with no children — trivially true.
+			return true, nil
+		}
+		return evaluateSingleCondition(c, expectedVals, parsed)
+	}
+
+	// Node has children.
+	childrenResult, err := evalSiblings(byParent, children, depth+1, expectedVals, parsed)
+	if err != nil {
+		return false, err
+	}
+
+	if !hasOwnCheck {
+		// Pure group container: children determine the result.
+		return childrenResult, nil
+	}
+
+	// Own check + children: combine using ChildConnectorOperator.
+	ownResult, err := evaluateSingleCondition(c, expectedVals, parsed)
+	if err != nil {
+		return false, err
+	}
+	if connectorValue(c.ChildConnectorOperator) == enums.ConnectorOperatorOR {
+		return ownResult || childrenResult, nil
+	}
+	return ownResult && childrenResult, nil
 }
 
 func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
