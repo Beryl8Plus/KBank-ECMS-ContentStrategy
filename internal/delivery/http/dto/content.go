@@ -141,14 +141,15 @@ func (r ContentResult) ToResponse() ContentResult {
 // rule condition stored inside a ContentResult. It carries everything
 // needed to evaluate the condition against live user attributes without a DB hit.
 type LogicCondition struct {
-	ConditionID       string          `json:"conditionId"`
-	ParentConditionID string          `json:"parentConditionId,omitempty"` // empty = root
-	AttributeID       string          `json:"attributeId"`
-	DataType          string          `json:"dataType"`
-	LogicalOperator   string          `json:"logicalOperator"`
-	ConnectorOperator string          `json:"connectorOperator,omitempty"`
-	Sequence          int             `json:"sequence"`
-	ExpectedValue     json.RawMessage `json:"expectedValue"` // compact JSON from RuleAttribute.Value
+	ConditionID            string          `json:"conditionId"`
+	ParentConditionID      string          `json:"parentConditionId,omitempty"` // empty = root
+	AttributeID            string          `json:"attributeId"`
+	DataType               string          `json:"dataType"`
+	LogicalOperator        string          `json:"logicalOperator"`
+	ConnectorOperator      string          `json:"connectorOperator,omitempty"`      // forward-link to next sibling
+	ChildConnectorOperator string          `json:"childConnectorOperator,omitempty"` // joins own leaf check with children-group
+	Sequence               int             `json:"sequence"`
+	ExpectedValue          json.RawMessage `json:"expectedValue"` // compact JSON from RuleAttribute.Value
 }
 
 func ToContentResultResponses(results []ContentResult) []ContentResult {

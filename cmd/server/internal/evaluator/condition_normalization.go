@@ -8,7 +8,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/domain/entity/enums"
 )
 
 // GenerateConditionHash generates a stable SHA-256 hash for a set of rule conditions.
@@ -59,32 +62,61 @@ func GenerateConditionHash(conditions []entity.RuleCondition) (string, error) {
 }
 
 // buildCanonicalString recursively builds a deterministic string representation of the condition tree.
+// Forward-link semantics: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
 func buildCanonicalString(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition) string {
 	var parts []string
 	for i, c := range siblings {
-		var nodeStr string
-		children := byParent[c.ID.String()]
-
-		if len(children) > 0 {
-			// Nested group
-			nodeStr = "(" + buildCanonicalString(byParent, children) + ")"
-		} else {
-			// Leaf node: attribute:operator
-			nodeStr = fmt.Sprintf("%s:%s", c.AttributeID.String(), c.LogicalOperator)
-		}
-
-		// Append connector (AND/OR) if not the first sibling
-		if i > 0 {
-			connector := string(c.ConnectorOperator)
-			if connector == "" {
-				connector = "AND" // Default connector
-			}
-			parts = append(parts, connector)
-		}
+		nodeStr := renderCanonicalNode(byParent, c)
 		parts = append(parts, nodeStr)
+		// Forward-link: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
+		if i < len(siblings)-1 {
+			parts = append(parts, forwardConnector(c.ConnectorOperator))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// renderCanonicalNode renders a single node, handling three cases:
+//  1. Pure leaf (own check, no children): "attr_uuid:operator"
+//  2. Pure group container (no own check, has children): "(children)"
+//  3. Mixed node (own check + children): "attr_uuid:operator [ChildConnectorOp] (children)"
+func renderCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition) string {
+	children := byParent[c.ID.String()]
+	hasOwnCheck := c.AttributeID != uuid.Nil
+
+	if len(children) == 0 {
+		if !hasOwnCheck {
+			return "()" // pure group with no children — edge case
+		}
+		return fmt.Sprintf("%s:%s", c.AttributeID.String(), c.LogicalOperator)
 	}
 
-	return strings.Join(parts, " ")
+	childrenStr := "(" + buildCanonicalString(byParent, children) + ")"
+
+	if !hasOwnCheck {
+		// Pure group container: children determine the full result.
+		return childrenStr
+	}
+
+	// Mixed node: own check combined with children via ChildConnectorOperator.
+	ownStr := fmt.Sprintf("%s:%s", c.AttributeID.String(), c.LogicalOperator)
+	return ownStr + " " + childConnectorOf(c.ChildConnectorOperator) + " " + childrenStr
+}
+
+// forwardConnector returns the connector string for the forward-link between siblings.
+func forwardConnector(op *enums.ConnectorOperator) string {
+	if op == nil {
+		return "AND"
+	}
+	return string(*op)
+}
+
+// childConnectorOf returns the string representation of a node's ChildConnectorOperator.
+func childConnectorOf(op *enums.ConnectorOperator) string {
+	if op == nil {
+		return "AND"
+	}
+	return string(*op)
 }
 
 // BuildLogicExpression builds a value-aware canonical string for a set of rule
@@ -142,40 +174,55 @@ func GenerateLogicHash(conditions []entity.RuleCondition, expectedValues map[str
 
 // buildValueCanonicalString recursively builds a canonical string with expected values
 // embedded in each leaf node.
+// Forward-link semantics: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
 func buildValueCanonicalString(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, expectedValues map[string]json.RawMessage) string {
 	var parts []string
 	for i, c := range siblings {
-		var nodeStr string
-		children := byParent[c.ID.String()]
+		nodeStr := renderValueCanonicalNode(byParent, c, expectedValues)
+		parts = append(parts, nodeStr)
+		// Forward-link: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
+		if i < len(siblings)-1 {
+			parts = append(parts, forwardConnector(c.ConnectorOperator))
+		}
+	}
+	return strings.Join(parts, " ")
+}
 
-		if len(children) > 0 {
-			// Nested group
-			nodeStr = "(" + buildValueCanonicalString(byParent, children, expectedValues) + ")"
-		} else {
-			// Leaf node: attr_uuid:operator:compact_json_value
-			valStr := "null"
-			if raw, ok := expectedValues[c.AttributeID.String()]; ok {
-				// Compact the JSON to strip whitespace for determinism.
-				var v interface{}
-				if err := json.Unmarshal(raw, &v); err == nil {
-					if compacted, err := json.Marshal(v); err == nil {
-						valStr = string(compacted)
-					}
+// renderValueCanonicalNode renders a single node with embedded expected values,
+// handling three cases:
+//  1. Pure leaf (own check, no children): "attr_uuid:operator:compact_json_value"
+//  2. Pure group container (no own check, has children): "(children)"
+//  3. Mixed node (own check + children): "attr_uuid:operator:value [ChildConnectorOp] (children)"
+func renderValueCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, expectedValues map[string]json.RawMessage) string {
+	children := byParent[c.ID.String()]
+	hasOwnCheck := c.AttributeID != uuid.Nil
+
+	leafStr := func() string {
+		valStr := "null"
+		if raw, ok := expectedValues[c.AttributeID.String()]; ok {
+			var v interface{}
+			if err := json.Unmarshal(raw, &v); err == nil {
+				if compacted, err := json.Marshal(v); err == nil {
+					valStr = string(compacted)
 				}
 			}
-			nodeStr = fmt.Sprintf("%s:%s:%s", c.AttributeID.String(), c.LogicalOperator, valStr)
 		}
-
-		// Append connector (AND/OR) if not the first sibling
-		if i > 0 {
-			connector := string(c.ConnectorOperator)
-			if connector == "" {
-				connector = "AND"
-			}
-			parts = append(parts, connector)
-		}
-		parts = append(parts, nodeStr)
+		return fmt.Sprintf("%s:%s:%s", c.AttributeID.String(), c.LogicalOperator, valStr)
 	}
 
-	return strings.Join(parts, " ")
+	if len(children) == 0 {
+		if !hasOwnCheck {
+			return "()" // pure group with no children — edge case
+		}
+		return leafStr()
+	}
+
+	childrenStr := "(" + buildValueCanonicalString(byParent, children, expectedValues) + ")"
+
+	if !hasOwnCheck {
+		return childrenStr
+	}
+
+	// Mixed node: own check combined with children via ChildConnectorOperator.
+	return leafStr() + " " + childConnectorOf(c.ChildConnectorOperator) + " " + childrenStr
 }

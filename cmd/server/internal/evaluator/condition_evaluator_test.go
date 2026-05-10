@@ -31,11 +31,11 @@ func buildSimpleRule(attrID uuid.UUID, expectedValue string, op enums.LogicalOpe
 	ruleID := uuid.New()
 
 	cond := entity.RuleCondition{
-		BaseModel:         entity.BaseModel{ID: condID},
-		AttributeID:       attrID,
-		Sequence:          1,
-		LogicalOperator:   op,
-		ConnectorOperator: enums.ConnectorOperatorAND,
+		BaseModel:       entity.BaseModel{ID: condID},
+		AttributeID:     attrID,
+		Sequence:        1,
+		LogicalOperator: op,
+		// Single-sibling rule: forward-link ConnectorOperator must be omitted.
 		Attribute: &entity.Attribute{
 			DataType: enums.AttributeDataTypeText,
 		},
@@ -137,13 +137,13 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 
 	makeLogicCond := func(attrIDStr, expectedVal, logicalOp, dataType string) dto.LogicCondition {
 		return dto.LogicCondition{
-			ConditionID:       uuid.New().String(),
-			AttributeID:       attrIDStr,
-			DataType:          dataType,
-			LogicalOperator:   logicalOp,
-			ConnectorOperator: string(enums.ConnectorOperatorAND),
-			Sequence:          1,
-			ExpectedValue:     mustJSON(expectedVal),
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrIDStr,
+			DataType:        dataType,
+			LogicalOperator: logicalOp,
+			// ConnectorOperator omitted: single-condition callers are last (and only) siblings.
+			Sequence:      1,
+			ExpectedValue: mustJSON(expectedVal),
 		}
 	}
 
@@ -181,11 +181,11 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		attr2 := uuid.New()
 		cond1 := makeLogicCond(attrID.String(), `"gold"`, string(enums.LogicalOperatorEQ), string(enums.AttributeDataTypeText))
 		cond1.Sequence = 1
-		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND) // forward-link to cond2
 
 		cond2 := makeLogicCond(attr2.String(), `42`, string(enums.LogicalOperatorGTE), string(enums.AttributeDataTypeNumber))
 		cond2.Sequence = 2
-		cond2.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		// cond2 is the last sibling: ConnectorOperator must be omitted.
 
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"gold"`),
@@ -200,9 +200,10 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		attr2 := uuid.New()
 		cond1 := makeLogicCond(attrID.String(), `"gold"`, string(enums.LogicalOperatorEQ), string(enums.AttributeDataTypeText))
 		cond1.Sequence = 1
+		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND) // forward-link to cond2
 		cond2 := makeLogicCond(attr2.String(), `100`, string(enums.LogicalOperatorGTE), string(enums.AttributeDataTypeNumber))
 		cond2.Sequence = 2
-		cond2.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		// cond2 is the last sibling: ConnectorOperator must be omitted.
 
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"gold"`),
@@ -211,6 +212,235 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond1, cond2}, userAttrs)
 		require.NoError(t, err)
 		assert.False(t, ok)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestEvaluateLogicConditions_InvalidTree_ReturnsFalse
+// ---------------------------------------------------------------------------
+
+func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
+	attrID := uuid.New()
+
+	t.Run("MixedConnectors_ReturnsFalse", func(t *testing.T) {
+		// Two siblings: c1 has AND forward-link, c2 has OR forward-link, c3 is last.
+		// Mixed connectors at one level must be rejected.
+		c1 := dto.LogicCondition{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrID.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorAND),
+			Sequence:          1,
+			ExpectedValue:     mustJSON(`"gold"`),
+		}
+		c2 := dto.LogicCondition{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrID.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorOR),
+			Sequence:          2,
+			ExpectedValue:     mustJSON(`"gold"`),
+		}
+		c3 := dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID.String(),
+			DataType:        string(enums.AttributeDataTypeText),
+			LogicalOperator: string(enums.LogicalOperatorEQ),
+			Sequence:        3,
+			ExpectedValue:   mustJSON(`"gold"`),
+		}
+		userAttrs := map[string]json.RawMessage{attrID.String(): mustJSON(`"gold"`)}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{c1, c2, c3}, userAttrs)
+		require.NoError(t, err)
+		assert.False(t, ok, "invalid tree must return false, not evaluate")
+	})
+}
+
+// c1.ConnectorOperator = AND means "combine c1's result with c2 using AND".
+// The last sibling omits ConnectorOperator entirely.
+
+func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
+	tier := uuid.New()
+	age := uuid.New()
+	score := uuid.New()
+	tierAttr := &entity.Attribute{DataType: enums.AttributeDataTypeText}
+	ageAttr := &entity.Attribute{DataType: enums.AttributeDataTypeNumber}
+	scoreAttr := &entity.Attribute{DataType: enums.AttributeDataTypeNumber}
+
+	t.Run("ForwardLink_AND_TwoPass", func(t *testing.T) {
+		c1 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		c2 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`35`),
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{c1, c2}, expected, user)
+		require.NoError(t, err)
+		assert.True(t, result)
+	})
+
+	t.Run("ForwardLink_AND_FirstFails", func(t *testing.T) {
+		c1 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		c2 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"silver"`), // fails
+			age.String():  mustJSON(`35`),
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{c1, c2}, expected, user)
+		require.NoError(t, err)
+		assert.False(t, result)
+	})
+
+	t.Run("ForwardLink_OR_SecondPasses", func(t *testing.T) {
+		c1 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
+		}
+		c2 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"silver"`), // fails
+			age.String():  mustJSON(`35`),       // passes
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{c1, c2}, expected, user)
+		require.NoError(t, err)
+		assert.True(t, result)
+	})
+
+	t.Run("OwnCheckPlusChildren_ChildConnector_AND_BothPass", func(t *testing.T) {
+		parentID := uuid.New()
+		parent := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		child := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
+			AttributeID: age, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`35`),
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{parent, child}, expected, user)
+		require.NoError(t, err)
+		assert.True(t, result)
+	})
+
+	t.Run("OwnCheckPlusChildren_ChildConnector_AND_OwnFails", func(t *testing.T) {
+		parentID := uuid.New()
+		parent := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		child := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
+			AttributeID: age, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"silver"`), // fails
+			age.String():  mustJSON(`35`),
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{parent, child}, expected, user)
+		require.NoError(t, err)
+		assert.False(t, result)
+	})
+
+	t.Run("OwnCheckPlusChildren_ChildConnector_OR_OwnFails_ChildPasses", func(t *testing.T) {
+		parentID := uuid.New()
+		parent := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
+		}
+		child := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
+			AttributeID: age, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"gold"`),
+			age.String():  mustJSON(`30`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String(): mustJSON(`"silver"`), // fails
+			age.String():  mustJSON(`35`),       // passes
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{parent, child}, expected, user)
+		require.NoError(t, err)
+		assert.True(t, result)
+	})
+
+	t.Run("PureGroup_NoOwnCheck_ChildrenDetermineResult", func(t *testing.T) {
+		parentID := uuid.New()
+		parent := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: parentID}, Sequence: 1,
+			// No AttributeID = pure container. No ChildConnectorOperator needed.
+		}
+		child1 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
+			AttributeID: tier, Sequence: 1,
+			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		child2 := entity.RuleCondition{
+			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
+			AttributeID: score, Sequence: 2,
+			LogicalOperator: enums.LogicalOperatorGTE, Attribute: scoreAttr,
+		}
+		expected := NewParsedExpectedValues(map[string]json.RawMessage{
+			tier.String():  mustJSON(`"gold"`),
+			score.String(): mustJSON(`80`),
+		})
+		user := NewParsedUserAttrs(map[string]json.RawMessage{
+			tier.String():  mustJSON(`"gold"`),
+			score.String(): mustJSON(`90`),
+		})
+		result, err := evaluateConditionGroup([]entity.RuleCondition{parent, child1, child2}, expected, user)
+		require.NoError(t, err)
+		assert.True(t, result)
 	})
 }
 
