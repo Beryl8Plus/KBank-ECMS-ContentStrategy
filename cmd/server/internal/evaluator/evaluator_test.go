@@ -49,12 +49,12 @@ func audienceSchedule(contentPath string, attrID uuid.UUID, expected string, op 
 		ContentPath: contentPath,
 		RuleConditions: []entity.RuleCondition{
 			{
-				BaseModel:         entity.BaseModel{ID: uuid.New()},
-				AttributeID:       attrID,
-				Sequence:          1,
-				LogicalOperator:   op,
-				ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
-				Attribute:         &entity.Attribute{DataType: enums.AttributeDataTypeText},
+				BaseModel:       entity.BaseModel{ID: uuid.New()},
+				AttributeID:     attrID,
+				Sequence:        1,
+				LogicalOperator: op,
+				// Single-sibling: forward-link ConnectorOperator must be omitted.
+				Attribute: &entity.Attribute{DataType: enums.AttributeDataTypeText},
 			},
 		},
 		Rules: []entity.Rule{{

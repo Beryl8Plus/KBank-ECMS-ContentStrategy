@@ -293,6 +293,10 @@ func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMe
 		return nil, rule.Score, nil
 	}
 
+	if err := ValidateConditionTree(rule.RuleConditions); err != nil {
+		return nil, rule.Score, nil
+	}
+
 	parsed := NewParsedUserAttrs(userAttrs)
 
 	for _, v := range sortedVariations(rule.Rules) {
@@ -330,6 +334,10 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 	rcs := make([]entity.RuleCondition, 0, len(conditions))
 	for _, lc := range conditions {
 		rcs = append(rcs, logicConditionToRuleCondition(lc))
+	}
+
+	if err := ValidateConditionTree(rcs); err != nil {
+		return false, nil
 	}
 
 	// Only stamp entries where ExpectedValue is a non-nil, non-JSON-null value.

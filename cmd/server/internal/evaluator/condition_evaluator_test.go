@@ -31,11 +31,11 @@ func buildSimpleRule(attrID uuid.UUID, expectedValue string, op enums.LogicalOpe
 	ruleID := uuid.New()
 
 	cond := entity.RuleCondition{
-		BaseModel:         entity.BaseModel{ID: condID},
-		AttributeID:       attrID,
-		Sequence:          1,
-		LogicalOperator:   op,
-		ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		BaseModel:       entity.BaseModel{ID: condID},
+		AttributeID:     attrID,
+		Sequence:        1,
+		LogicalOperator: op,
+		// Single-sibling rule: forward-link ConnectorOperator must be omitted.
 		Attribute: &entity.Attribute{
 			DataType: enums.AttributeDataTypeText,
 		},
@@ -137,13 +137,13 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 
 	makeLogicCond := func(attrIDStr, expectedVal, logicalOp, dataType string) dto.LogicCondition {
 		return dto.LogicCondition{
-			ConditionID:       uuid.New().String(),
-			AttributeID:       attrIDStr,
-			DataType:          dataType,
-			LogicalOperator:   logicalOp,
-			ConnectorOperator: string(enums.ConnectorOperatorAND),
-			Sequence:          1,
-			ExpectedValue:     mustJSON(expectedVal),
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrIDStr,
+			DataType:        dataType,
+			LogicalOperator: logicalOp,
+			// ConnectorOperator omitted: single-condition callers are last (and only) siblings.
+			Sequence:      1,
+			ExpectedValue: mustJSON(expectedVal),
 		}
 	}
 
@@ -181,11 +181,11 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		attr2 := uuid.New()
 		cond1 := makeLogicCond(attrID.String(), `"gold"`, string(enums.LogicalOperatorEQ), string(enums.AttributeDataTypeText))
 		cond1.Sequence = 1
-		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND) // forward-link to cond2
 
 		cond2 := makeLogicCond(attr2.String(), `42`, string(enums.LogicalOperatorGTE), string(enums.AttributeDataTypeNumber))
 		cond2.Sequence = 2
-		cond2.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		// cond2 is the last sibling: ConnectorOperator must be omitted.
 
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"gold"`),
@@ -200,9 +200,10 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 		attr2 := uuid.New()
 		cond1 := makeLogicCond(attrID.String(), `"gold"`, string(enums.LogicalOperatorEQ), string(enums.AttributeDataTypeText))
 		cond1.Sequence = 1
+		cond1.ConnectorOperator = string(enums.ConnectorOperatorAND) // forward-link to cond2
 		cond2 := makeLogicCond(attr2.String(), `100`, string(enums.LogicalOperatorGTE), string(enums.AttributeDataTypeNumber))
 		cond2.Sequence = 2
-		cond2.ConnectorOperator = string(enums.ConnectorOperatorAND)
+		// cond2 is the last sibling: ConnectorOperator must be omitted.
 
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"gold"`),
@@ -215,9 +216,48 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestEvaluateConditionGroup_NestedPrecedence — forward-link semantics
+// TestEvaluateLogicConditions_InvalidTree_ReturnsFalse
 // ---------------------------------------------------------------------------
-// In the new model, c.ConnectorOperator is a FORWARD-link to the NEXT sibling.
+
+func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
+	attrID := uuid.New()
+
+	t.Run("MixedConnectors_ReturnsFalse", func(t *testing.T) {
+		// Two siblings: c1 has AND forward-link, c2 has OR forward-link, c3 is last.
+		// Mixed connectors at one level must be rejected.
+		c1 := dto.LogicCondition{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrID.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorAND),
+			Sequence:          1,
+			ExpectedValue:     mustJSON(`"gold"`),
+		}
+		c2 := dto.LogicCondition{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrID.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorOR),
+			Sequence:          2,
+			ExpectedValue:     mustJSON(`"gold"`),
+		}
+		c3 := dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID.String(),
+			DataType:        string(enums.AttributeDataTypeText),
+			LogicalOperator: string(enums.LogicalOperatorEQ),
+			Sequence:        3,
+			ExpectedValue:   mustJSON(`"gold"`),
+		}
+		userAttrs := map[string]json.RawMessage{attrID.String(): mustJSON(`"gold"`)}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{c1, c2, c3}, userAttrs)
+		require.NoError(t, err)
+		assert.False(t, ok, "invalid tree must return false, not evaluate")
+	})
+}
+
 // c1.ConnectorOperator = AND means "combine c1's result with c2 using AND".
 // The last sibling omits ConnectorOperator entirely.
 
