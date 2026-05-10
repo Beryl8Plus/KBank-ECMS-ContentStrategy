@@ -56,12 +56,13 @@ func buildLogicEntry(
 	conditions := make([]dto.LogicCondition, 0, len(rule.RuleConditions))
 	for _, rc := range rule.RuleConditions {
 		lc := dto.LogicCondition{
-			ConditionID:       rc.ID.String(),
-			AttributeID:       rc.AttributeID.String(),
-			LogicalOperator:   string(rc.LogicalOperator),
-			ConnectorOperator: string(rc.ConnectorOperator),
-			Sequence:          rc.Sequence,
-			ExpectedValue:     expectedValues[rc.AttributeID.String()],
+			ConditionID:            rc.ID.String(),
+			AttributeID:            rc.AttributeID.String(),
+			LogicalOperator:        string(rc.LogicalOperator),
+			ConnectorOperator:      string(connectorValue(rc.ConnectorOperator)),
+			ChildConnectorOperator: string(connectorValue(rc.ChildConnectorOperator)),
+			Sequence:               rc.Sequence,
+			ExpectedValue:          expectedValues[rc.AttributeID.String()],
 		}
 		if rc.ParentRuleConditionID != nil {
 			lc.ParentConditionID = rc.ParentRuleConditionID.String()

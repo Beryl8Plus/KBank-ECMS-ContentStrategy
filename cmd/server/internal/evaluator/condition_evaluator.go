@@ -385,7 +385,7 @@ func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.
 		if err != nil {
 			return false, err
 		}
-		if c.ConnectorOperator == enums.ConnectorOperatorOR {
+		if connectorValue(c.ConnectorOperator) == enums.ConnectorOperatorOR {
 			result = result || val
 		} else {
 			result = result && val
@@ -605,12 +605,19 @@ func compareBooleanParsed(op enums.LogicalOperator, actual bool, attrKey string,
 func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
-		BaseModel:         entity.BaseModel{ID: id},
-		AttributeID:       mustParseUUID(lc.AttributeID),
-		Sequence:          lc.Sequence,
-		LogicalOperator:   enums.LogicalOperator(lc.LogicalOperator),
-		ConnectorOperator: enums.ConnectorOperator(lc.ConnectorOperator),
-		Attribute:         &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
+		BaseModel:       entity.BaseModel{ID: id},
+		AttributeID:     mustParseUUID(lc.AttributeID),
+		Sequence:        lc.Sequence,
+		LogicalOperator: enums.LogicalOperator(lc.LogicalOperator),
+		Attribute:       &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
+	}
+	if lc.ConnectorOperator != "" {
+		op := enums.ConnectorOperator(lc.ConnectorOperator)
+		rc.ConnectorOperator = &op
+	}
+	if lc.ChildConnectorOperator != "" {
+		op := enums.ConnectorOperator(lc.ChildConnectorOperator)
+		rc.ChildConnectorOperator = &op
 	}
 	if lc.ParentConditionID != "" {
 		pid, _ := uuid.Parse(lc.ParentConditionID)
@@ -635,6 +642,20 @@ func sortedVariations(rules []entity.Rule) []entity.Rule {
 		return out[i].OrderNo < out[j].OrderNo
 	})
 	return out
+}
+
+// connectorPtr returns &op (helper for building *enums.ConnectorOperator literals).
+func connectorPtr(op enums.ConnectorOperator) *enums.ConnectorOperator {
+	return &op
+}
+
+// connectorValue safely dereferences a *enums.ConnectorOperator, returning
+// the zero ConnectorOperator ("") when p is nil.
+func connectorValue(p *enums.ConnectorOperator) enums.ConnectorOperator {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func parseDate(s string) (time.Time, error) {

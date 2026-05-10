@@ -35,7 +35,7 @@ func buildSimpleRule(attrID uuid.UUID, expectedValue string, op enums.LogicalOpe
 		AttributeID:       attrID,
 		Sequence:          1,
 		LogicalOperator:   op,
-		ConnectorOperator: enums.ConnectorOperatorAND,
+		ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		Attribute: &entity.Attribute{
 			DataType: enums.AttributeDataTypeText,
 		},

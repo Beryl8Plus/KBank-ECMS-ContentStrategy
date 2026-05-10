@@ -28,14 +28,14 @@ func TestGenerateConditionHash(t *testing.T) {
 			AttributeID:       attr1,
 			LogicalOperator:   enums.LogicalOperatorEQ,
 			Sequence:          1,
-			ConnectorOperator: enums.ConnectorOperatorAND,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		cond2 := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: uuid.New()},
 			AttributeID:       attr2,
 			LogicalOperator:   enums.LogicalOperatorGT,
 			Sequence:          2,
-			ConnectorOperator: enums.ConnectorOperatorAND,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 
 		// Hash with order 1, 2
@@ -61,7 +61,7 @@ func TestGenerateConditionHash(t *testing.T) {
 		condParent := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: parentID},
 			Sequence:          2,
-			ConnectorOperator: enums.ConnectorOperatorOR,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
 		}
 		// Children of parentID
 		child1 := entity.RuleCondition{
@@ -77,7 +77,7 @@ func TestGenerateConditionHash(t *testing.T) {
 			AttributeID:           attr1,
 			LogicalOperator:       enums.LogicalOperatorNEQ,
 			Sequence:              2,
-			ConnectorOperator:     enums.ConnectorOperatorAND,
+			ConnectorOperator:     connectorPtr(enums.ConnectorOperatorAND),
 		}
 
 		hash, err := GenerateConditionHash([]entity.RuleCondition{cond1, condParent, child1, child2})
@@ -118,13 +118,17 @@ func TestBuildLogicExpression(t *testing.T) {
 	attr2 := uuid.New()
 
 	baseCond := func(attrID uuid.UUID, op enums.LogicalOperator, seq int, connector enums.ConnectorOperator) entity.RuleCondition {
-		return entity.RuleCondition{
-			BaseModel:         entity.BaseModel{ID: uuid.New()},
-			AttributeID:       attrID,
-			LogicalOperator:   op,
-			Sequence:          seq,
-			ConnectorOperator: connector,
+		rc := entity.RuleCondition{
+			BaseModel:       entity.BaseModel{ID: uuid.New()},
+			AttributeID:     attrID,
+			LogicalOperator: op,
+			Sequence:        seq,
 		}
+		if connector != "" {
+			c := connector
+			rc.ConnectorOperator = &c
+		}
+		return rc
 	}
 
 	t.Run("SingleLeafEQ", func(t *testing.T) {

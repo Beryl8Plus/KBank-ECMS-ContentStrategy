@@ -75,7 +75,7 @@ func buildCanonicalString(byParent map[string][]entity.RuleCondition, siblings [
 
 		// Append connector (AND/OR) if not the first sibling
 		if i > 0 {
-			connector := string(c.ConnectorOperator)
+			connector := string(connectorValue(c.ConnectorOperator))
 			if connector == "" {
 				connector = "AND" // Default connector
 			}
@@ -168,7 +168,7 @@ func buildValueCanonicalString(byParent map[string][]entity.RuleCondition, sibli
 
 		// Append connector (AND/OR) if not the first sibling
 		if i > 0 {
-			connector := string(c.ConnectorOperator)
+			connector := string(connectorValue(c.ConnectorOperator))
 			if connector == "" {
 				connector = "AND"
 			}

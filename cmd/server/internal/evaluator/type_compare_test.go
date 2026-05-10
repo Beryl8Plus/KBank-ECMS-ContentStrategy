@@ -22,8 +22,8 @@ func parsedPair(attrID, actual, expected string) (*ParsedUserAttrs, *ParsedExpec
 
 func TestParsedUserAttrs_Len(t *testing.T) {
 	t.Parallel()
-	if (&ParsedUserAttrs{}).Len() != 0 {
-		// hits the !nil branch with empty map
+	if got := (&ParsedUserAttrs{}).Len(); got != 0 {
+		t.Errorf("empty ParsedUserAttrs Len = %d, want 0", got)
 	}
 	pa := NewParsedUserAttrs(map[string]json.RawMessage{"x": json.RawMessage(`"y"`)})
 	if pa.Len() != 1 {

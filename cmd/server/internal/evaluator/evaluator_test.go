@@ -53,7 +53,7 @@ func audienceSchedule(contentPath string, attrID uuid.UUID, expected string, op 
 				AttributeID:       attrID,
 				Sequence:          1,
 				LogicalOperator:   op,
-				ConnectorOperator: enums.ConnectorOperatorAND,
+				ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 				Attribute:         &entity.Attribute{DataType: enums.AttributeDataTypeText},
 			},
 		},
@@ -147,10 +147,10 @@ func TestEvaluate_SortsByScoreDesc(t *testing.T) {
 func TestEvaluate_SalesTargetExpandsWithLeads(t *testing.T) {
 	t.Parallel()
 	rule := entity.DecisionRule{
-		BaseModel:   entity.BaseModel{ID: uuid.New()},
-		Type:        enums.DecisionTypeSalesTarget,
-		Score:       3.0,
-		ContentPath: "/sales",
+		BaseModel:    entity.BaseModel{ID: uuid.New()},
+		Type:         enums.DecisionTypeSalesTarget,
+		Score:        3.0,
+		ContentPath:  "/sales",
 		CampaignCode: "CAMP",
 	}
 	sched := &entity.Schedule{
