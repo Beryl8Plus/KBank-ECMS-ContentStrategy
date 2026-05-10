@@ -24,11 +24,11 @@ func (s *stubRedis) Publish(_ context.Context, channel, payload string) error {
 
 // satisfy the rest of the RedisCacheRepository interface — none of these
 // are called by Publisher.PingSync.
-func (s *stubRedis) Get(context.Context, string) (string, error)            { return "", nil }
+func (s *stubRedis) Get(context.Context, string) (string, error)              { return "", nil }
 func (s *stubRedis) Set(context.Context, string, string, time.Duration) error { return nil }
-func (s *stubRedis) HGet(context.Context, string, string) (string, error)   { return "", nil }
-func (s *stubRedis) HSet(context.Context, string, string, string) error     { return nil }
-func (s *stubRedis) FlushDB(context.Context) error                          { return nil }
+func (s *stubRedis) HGet(context.Context, string, string) (string, error)     { return "", nil }
+func (s *stubRedis) HSet(context.Context, string, string, string) error       { return nil }
+func (s *stubRedis) FlushDB(context.Context) error                            { return nil }
 func (s *stubRedis) GetSet(_ context.Context, _ string, _ time.Duration, _ func(context.Context) (string, error)) (string, error) {
 	return "", nil
 }
