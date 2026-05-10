@@ -105,6 +105,7 @@ type mockSet struct {
 	AttributeID            string
 	LogicalOperator        string
 	ConnectorOperator      string
+	ChildConnectorOperator string
 	Variations             []ruleVariation
 	ScheduleID             string
 	EffectiveFromExpr      string
@@ -330,6 +331,7 @@ func buildMockSets(count int, placements []placementDef, attributes []attributeD
 			AttributeID:            primaryAttr.ID,
 			LogicalOperator:        logicalOperator,
 			ConnectorOperator:      "AND",
+			ChildConnectorOperator: "",
 			Variations:             variations,
 			ScheduleID:             gofakeit.UUID(),
 			EffectiveFromExpr:      fmt.Sprintf("NOW() - interval '%d day'", fromDaysAgo),
@@ -451,7 +453,7 @@ func buildSQL(seed int64, schemaID string, channels []channelDef, placements []p
 	)
 
 	writeInsert(&buf, "rule_conditions",
-		[]string{`"ID"`, `"SEQUENCE"`, `"DECISION_RULE_ID"`, `"ATTRIBUTE_ID"`, `"LOGICAL_OPERATOR"`, `"CONNECTOR_OPERATOR"`, `"CREATED_AT"`, `"UPDATED_AT"`},
+		[]string{`"ID"`, `"SEQUENCE"`, `"DECISION_RULE_ID"`, `"ATTRIBUTE_ID"`, `"LOGICAL_OPERATOR"`, `"CONNECTOR_OPERATOR"`, `"CHILD_CONNECTOR_OPERATOR"`, `"CREATED_AT"`, `"UPDATED_AT"`},
 		ruleConditionValues(sets),
 	)
 
@@ -555,6 +557,10 @@ func decisionRuleValues(sets []mockSet) [][]string {
 func ruleConditionValues(sets []mockSet) [][]string {
 	out := make([][]string, 0, len(sets))
 	for _, s := range sets {
+		childConnector := "NULL"
+		if s.ChildConnectorOperator != "" {
+			childConnector = sqlStringLiteral(s.ChildConnectorOperator)
+		}
 		out = append(out, []string{
 			sqlStringLiteral(s.ConditionID),
 			"1",
@@ -562,6 +568,7 @@ func ruleConditionValues(sets []mockSet) [][]string {
 			sqlStringLiteral(s.AttributeID),
 			sqlStringLiteral(s.LogicalOperator),
 			sqlStringLiteral(s.ConnectorOperator),
+			childConnector,
 			"NOW()", "NOW()",
 		})
 	}
