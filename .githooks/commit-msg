@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-repo_root=$(git rev-parse --show-toplevel)
-exec "$repo_root/scripts/commit-lint.sh" "$1"

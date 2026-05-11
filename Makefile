@@ -88,11 +88,8 @@ fmt:
 
 ## Install git hooks
 install-hooks:
-	chmod +x scripts/commit-lint.sh
 	chmod +x .githooks/pre-commit
-	chmod +x .githooks/commit-msg
 	cp .githooks/pre-commit .git/hooks/pre-commit
-	cp .githooks/commit-msg .git/hooks/commit-msg
 	@echo "Git hooks installed successfully."
 
 ## Remove build artifacts
