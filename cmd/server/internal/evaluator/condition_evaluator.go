@@ -240,6 +240,16 @@ func (p *ParsedExpectedValues) Has(attrID string) bool {
 	return ok
 }
 
+// Raw returns the raw JSON expected value for attrID. The second return value
+// is false when attrID is absent or the receiver is nil.
+func (p *ParsedExpectedValues) Raw(attrID string) (json.RawMessage, bool) {
+	if p == nil {
+		return nil, false
+	}
+	v, ok := p.raw[attrID]
+	return v, ok
+}
+
 func (p *ParsedExpectedValues) get(attrID string) *parsedEntry {
 	if p == nil {
 		return nil

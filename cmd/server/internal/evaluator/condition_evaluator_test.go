@@ -749,3 +749,30 @@ func TestEvaluateLogicConditions_NilOrNullExpectedValue(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestParsedExpectedValues_Raw(t *testing.T) {
+	raw := map[string]json.RawMessage{
+		"a": json.RawMessage(`"ANY"`),
+		"b": json.RawMessage(`42`),
+	}
+	p := NewParsedExpectedValues(raw)
+
+	t.Run("PresentKey_ReturnsRawAndTrue", func(t *testing.T) {
+		v, ok := p.Raw("a")
+		assert.True(t, ok)
+		assert.Equal(t, json.RawMessage(`"ANY"`), v)
+	})
+
+	t.Run("MissingKey_ReturnsNilAndFalse", func(t *testing.T) {
+		v, ok := p.Raw("missing")
+		assert.False(t, ok)
+		assert.Nil(t, v)
+	})
+
+	t.Run("NilReceiver_ReturnsNilAndFalse", func(t *testing.T) {
+		var p *ParsedExpectedValues
+		v, ok := p.Raw("a")
+		assert.False(t, ok)
+		assert.Nil(t, v)
+	})
+}
