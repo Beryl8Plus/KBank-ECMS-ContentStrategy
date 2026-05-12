@@ -550,26 +550,27 @@ func compareValuesParsed(
 // ---------------------------------------------------------------------------
 
 func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
+	actual = strings.TrimSpace(actual)
 	switch op {
 	case enums.LogicalOperatorEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return strings.EqualFold(actual, exp), nil
+		return strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorNEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return !strings.EqualFold(actual, exp), nil
+		return !strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
 		return slices.ContainsFunc(exps, func(e string) bool {
-			return strings.EqualFold(e, actual)
+			return strings.EqualFold(strings.TrimSpace(e), actual)
 		}), nil
 	case enums.LogicalOperatorNIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
@@ -577,7 +578,7 @@ func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expecte
 			return false, fmt.Errorf("parse text NOT IN values (want JSON string array) for attr %s", attrKey)
 		}
 		return !slices.ContainsFunc(exps, func(e string) bool {
-			return strings.EqualFold(e, actual)
+			return strings.EqualFold(strings.TrimSpace(e), actual)
 		}), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)
