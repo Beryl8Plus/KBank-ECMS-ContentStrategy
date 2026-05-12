@@ -492,11 +492,17 @@ func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpecte
 	if parsed == nil {
 		return false, nil
 	}
-	if _, present := parsed.Raw(attrKey); !present {
-		return false, nil
-	}
 	if c.Attribute == nil {
 		return false, fmt.Errorf("condition %s: Attribute association not preloaded (need DataType)", c.ID)
+	}
+
+	rawExpected, _ := expectedVals.Raw(attrKey)
+	if result, handled, err := applySentinel(c.Attribute.DataType, c.LogicalOperator, rawExpected, parsed, attrKey); handled {
+		return result, err
+	}
+
+	if _, present := parsed.Raw(attrKey); !present {
+		return false, nil
 	}
 
 	return compareValuesParsed(c.Attribute.DataType, c.LogicalOperator, parsed, attrKey, expectedVals)
