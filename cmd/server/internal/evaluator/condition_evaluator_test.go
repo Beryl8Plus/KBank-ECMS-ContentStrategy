@@ -880,3 +880,44 @@ func TestEvaluateSingleCondition_SentinelIntegration(t *testing.T) {
 		assert.Nil(t, v)
 	})
 }
+
+func TestEvaluateLogicConditions_Sentinels(t *testing.T) {
+	attrID := uuid.New().String()
+	makeCond := func(ev string, op enums.LogicalOperator, dt enums.AttributeDataType) dto.LogicCondition {
+		return dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID,
+			DataType:        string(dt),
+			LogicalOperator: string(op),
+			Sequence:        1,
+			ExpectedValue:   json.RawMessage(ev),
+		}
+	}
+
+	t.Run("ANY_AlwaysMatches", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{attrID: json.RawMessage(`"whatever"`)},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("NULL_MatchesAbsentUser", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("CaretList_IN_Promoted", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"a^b^c"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{attrID: json.RawMessage(`"b"`)},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+}
