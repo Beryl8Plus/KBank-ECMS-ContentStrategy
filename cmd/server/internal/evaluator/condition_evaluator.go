@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -191,6 +192,20 @@ func (p *ParsedUserAttrs) Len() int {
 		return 0
 	}
 	return len(p.raw)
+}
+
+// IsNull reports whether the user attribute is null. It returns true when
+// attrID is absent from the map, when the raw value is nil, or when the raw
+// JSON is the literal "null" (possibly surrounded by whitespace).
+func (p *ParsedUserAttrs) IsNull(attrID string) bool {
+	if p == nil {
+		return true
+	}
+	raw, ok := p.raw[attrID]
+	if !ok || len(raw) == 0 {
+		return true
+	}
+	return string(bytes.TrimSpace(raw)) == "null"
 }
 
 func (p *ParsedUserAttrs) get(attrID string) *parsedEntry {

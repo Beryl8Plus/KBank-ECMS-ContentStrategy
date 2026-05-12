@@ -776,3 +776,29 @@ func TestParsedExpectedValues_Raw(t *testing.T) {
 		assert.Nil(t, v)
 	})
 }
+
+func TestParsedUserAttrs_IsNull(t *testing.T) {
+	attrs := map[string]json.RawMessage{
+		"present_string": json.RawMessage(`"gold"`),
+		"present_null":   json.RawMessage(`null`),
+		"present_spaced": json.RawMessage(` null `), // whitespace-padded null
+	}
+	p := NewParsedUserAttrs(attrs)
+
+	t.Run("AbsentKey_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("missing_absent"))
+	})
+	t.Run("RawJsonNull_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("present_null"))
+	})
+	t.Run("WhitespacePaddedNull_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("present_spaced"))
+	})
+	t.Run("RawString_IsNotNull", func(t *testing.T) {
+		assert.False(t, p.IsNull("present_string"))
+	})
+	t.Run("NilReceiver_IsNull", func(t *testing.T) {
+		var p *ParsedUserAttrs
+		assert.True(t, p.IsNull("anything"))
+	})
+}
