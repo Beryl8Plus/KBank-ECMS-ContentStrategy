@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -193,6 +194,20 @@ func (p *ParsedUserAttrs) Len() int {
 	return len(p.raw)
 }
 
+// IsNull reports whether the user attribute is null. It returns true when
+// attrID is absent from the map, when the raw value is nil, or when the raw
+// JSON is the literal "null" (possibly surrounded by whitespace).
+func (p *ParsedUserAttrs) IsNull(attrID string) bool {
+	if p == nil {
+		return true
+	}
+	raw, ok := p.raw[attrID]
+	if !ok || len(raw) == 0 {
+		return true
+	}
+	return string(bytes.TrimSpace(raw)) == "null"
+}
+
 func (p *ParsedUserAttrs) get(attrID string) *parsedEntry {
 	if p == nil {
 		return nil
@@ -238,6 +253,16 @@ func (p *ParsedExpectedValues) Has(attrID string) bool {
 	}
 	_, ok := p.raw[attrID]
 	return ok
+}
+
+// Raw returns the raw JSON expected value for attrID. The second return value
+// is false when attrID is absent or the receiver is nil.
+func (p *ParsedExpectedValues) Raw(attrID string) (json.RawMessage, bool) {
+	if p == nil {
+		return nil, false
+	}
+	v, ok := p.raw[attrID]
+	return v, ok
 }
 
 func (p *ParsedExpectedValues) get(attrID string) *parsedEntry {
@@ -467,11 +492,17 @@ func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpecte
 	if parsed == nil {
 		return false, nil
 	}
-	if _, present := parsed.Raw(attrKey); !present {
-		return false, nil
-	}
 	if c.Attribute == nil {
 		return false, fmt.Errorf("condition %s: Attribute association not preloaded (need DataType)", c.ID)
+	}
+
+	rawExpected, _ := expectedVals.Raw(attrKey)
+	if result, handled, err := applySentinel(c.Attribute.DataType, c.LogicalOperator, rawExpected, parsed, attrKey); handled {
+		return result, err
+	}
+
+	if _, present := parsed.Raw(attrKey); !present {
+		return false, nil
 	}
 
 	return compareValuesParsed(c.Attribute.DataType, c.LogicalOperator, parsed, attrKey, expectedVals)
@@ -519,26 +550,27 @@ func compareValuesParsed(
 // ---------------------------------------------------------------------------
 
 func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
+	actual = strings.TrimSpace(actual)
 	switch op {
 	case enums.LogicalOperatorEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return strings.EqualFold(actual, exp), nil
+		return strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorNEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return !strings.EqualFold(actual, exp), nil
+		return !strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
 		return slices.ContainsFunc(exps, func(e string) bool {
-			return strings.EqualFold(e, actual)
+			return strings.EqualFold(strings.TrimSpace(e), actual)
 		}), nil
 	case enums.LogicalOperatorNIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
@@ -546,7 +578,7 @@ func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expecte
 			return false, fmt.Errorf("parse text NOT IN values (want JSON string array) for attr %s", attrKey)
 		}
 		return !slices.ContainsFunc(exps, func(e string) bool {
-			return strings.EqualFold(e, actual)
+			return strings.EqualFold(strings.TrimSpace(e), actual)
 		}), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)

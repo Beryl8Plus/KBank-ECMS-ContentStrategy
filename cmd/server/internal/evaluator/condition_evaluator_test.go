@@ -749,3 +749,175 @@ func TestEvaluateLogicConditions_NilOrNullExpectedValue(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestParsedExpectedValues_Raw(t *testing.T) {
+	raw := map[string]json.RawMessage{
+		"a": json.RawMessage(`"ANY"`),
+		"b": json.RawMessage(`42`),
+	}
+	p := NewParsedExpectedValues(raw)
+
+	t.Run("PresentKey_ReturnsRawAndTrue", func(t *testing.T) {
+		v, ok := p.Raw("a")
+		assert.True(t, ok)
+		assert.Equal(t, json.RawMessage(`"ANY"`), v)
+	})
+
+	t.Run("MissingKey_ReturnsNilAndFalse", func(t *testing.T) {
+		v, ok := p.Raw("missing")
+		assert.False(t, ok)
+		assert.Nil(t, v)
+	})
+
+	t.Run("NilReceiver_ReturnsNilAndFalse", func(t *testing.T) {
+		var p *ParsedExpectedValues
+		v, ok := p.Raw("a")
+		assert.False(t, ok)
+		assert.Nil(t, v)
+	})
+}
+
+func TestParsedUserAttrs_IsNull(t *testing.T) {
+	attrs := map[string]json.RawMessage{
+		"present_string": json.RawMessage(`"gold"`),
+		"present_null":   json.RawMessage(`null`),
+		"present_spaced": json.RawMessage(` null `), // whitespace-padded null
+	}
+	p := NewParsedUserAttrs(attrs)
+
+	t.Run("AbsentKey_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("missing_absent"))
+	})
+	t.Run("RawJsonNull_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("present_null"))
+	})
+	t.Run("WhitespacePaddedNull_IsNull", func(t *testing.T) {
+		assert.True(t, p.IsNull("present_spaced"))
+	})
+	t.Run("RawString_IsNotNull", func(t *testing.T) {
+		assert.False(t, p.IsNull("present_string"))
+	})
+	t.Run("NilReceiver_IsNull", func(t *testing.T) {
+		var p *ParsedUserAttrs
+		assert.True(t, p.IsNull("anything"))
+	})
+}
+
+func TestEvaluateSingleCondition_SentinelIntegration(t *testing.T) {
+	attrID := uuid.New()
+	buildRule := func(expectedJSON string, op enums.LogicalOperator, dt enums.AttributeDataType) entity.DecisionRule {
+		condID := uuid.New()
+		ruleID := uuid.New()
+		cond := entity.RuleCondition{
+			BaseModel:       entity.BaseModel{ID: condID},
+			AttributeID:     attrID,
+			Sequence:        1,
+			LogicalOperator: op,
+			Attribute:       &entity.Attribute{DataType: dt},
+		}
+		variation := entity.Rule{
+			BaseModel:     entity.BaseModel{ID: ruleID},
+			VariationName: "v",
+			Score:         99,
+			OrderNo:       1,
+			RuleAttributes: []entity.RuleAttribute{
+				{AttributeID: attrID, Value: datatypes.JSON(expectedJSON)},
+			},
+		}
+		return entity.DecisionRule{
+			Score:          1.0,
+			RuleConditions: []entity.RuleCondition{cond},
+			Rules:          []entity.Rule{variation},
+		}
+	}
+
+	t.Run("ANY_Text_AlwaysMatches", func(t *testing.T) {
+		rule := buildRule(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"anything"`)}
+		v, score, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		require.NotNil(t, v)
+		assert.Equal(t, 99.0, score)
+	})
+
+	t.Run("NULL_Text_MatchesWhenUserAbsent", func(t *testing.T) {
+		rule := buildRule(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		ua := map[string]json.RawMessage{uuid.New().String(): mustJSON(`"x"`)}
+		v, _, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		assert.NotNil(t, v)
+	})
+
+	t.Run("NULL_Text_NoMatchWhenUserHasValue", func(t *testing.T) {
+		rule := buildRule(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"gold"`)}
+		v, _, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		assert.Nil(t, v)
+	})
+
+	t.Run("CaretList_Text_EQ_PromotedToIN", func(t *testing.T) {
+		rule := buildRule(`"gold^silver^bronze"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"silver"`)}
+		v, _, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		assert.NotNil(t, v)
+	})
+
+	t.Run("CaretList_Number_IN", func(t *testing.T) {
+		rule := buildRule(`"10^20^30"`, enums.LogicalOperatorIN, enums.AttributeDataTypeNumber)
+		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`20`)}
+		v, _, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		assert.NotNil(t, v)
+	})
+
+	t.Run("Date_ANY_FallsThroughToNormalComparator", func(t *testing.T) {
+		rule := buildRule(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeDate)
+		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"2026-01-01"`)}
+		v, _, err := EvaluateRuleScore(rule, ua)
+		require.NoError(t, err)
+		assert.Nil(t, v)
+	})
+}
+
+func TestEvaluateLogicConditions_Sentinels(t *testing.T) {
+	attrID := uuid.New().String()
+	makeCond := func(ev string, op enums.LogicalOperator, dt enums.AttributeDataType) dto.LogicCondition {
+		return dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID,
+			DataType:        string(dt),
+			LogicalOperator: string(op),
+			Sequence:        1,
+			ExpectedValue:   json.RawMessage(ev),
+		}
+	}
+
+	t.Run("ANY_AlwaysMatches", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{attrID: json.RawMessage(`"whatever"`)},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("NULL_MatchesAbsentUser", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("CaretList_IN_Promoted", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(
+			[]dto.LogicCondition{makeCond(`"a^b^c"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)},
+			map[string]json.RawMessage{attrID: json.RawMessage(`"b"`)},
+		)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+}
