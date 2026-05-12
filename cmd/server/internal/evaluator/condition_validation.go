@@ -3,15 +3,13 @@ package evaluator
 import (
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"kbank-ecms/internal/domain/entity"
 )
 
 // ValidateConditionTree enforces the invariants required by the new
 // childConnectorOperator / forward-link semantics:
 //
-//  1. A node that has BOTH an own leaf check (AttributeID != uuid.Nil) AND
+//  1. A node that has BOTH an own leaf check (AttributeID != nil) AND
 //     children MUST set ChildConnectorOperator (it joins own_check with the
 //     children-combined result).
 //  2. In any sibling chain (root or inner), every non-last sibling MUST set
@@ -47,7 +45,7 @@ func ValidateConditionTree(conditions []entity.RuleCondition) error {
 		if !ok {
 			continue // dangling parent reference; not this validator's concern
 		}
-		if parent.AttributeID != uuid.Nil && parent.ChildConnectorOperator == nil {
+		if parent.AttributeID != nil && parent.ChildConnectorOperator == nil {
 			return fmt.Errorf("rule_condition %s has own check and children but ChildConnectorOperator is unset", parent.ID)
 		}
 	}

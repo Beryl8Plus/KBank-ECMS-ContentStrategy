@@ -442,11 +442,11 @@ func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.
 }
 
 // evalNode evaluates a single condition node.
-// If the node is a pure group (AttributeID == uuid.Nil), its result is determined entirely by its children.
+// If the node is a pure group (AttributeID == nil), its result is determined entirely by its children.
 // If the node has an own leaf check AND children, the own-check result is combined with the
 // children-combined result using the node's ChildConnectorOperator.
 func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
-	hasOwnCheck := c.AttributeID != uuid.Nil
+	hasOwnCheck := c.AttributeID != nil
 
 	var children []entity.RuleCondition
 	if depth < maxConditionDepth {
@@ -691,7 +691,7 @@ func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
 		BaseModel:       entity.BaseModel{ID: id},
-		AttributeID:     mustParseUUID(lc.AttributeID),
+		AttributeID:     mustParseUUIDPtr(lc.AttributeID),
 		Sequence:        lc.Sequence,
 		LogicalOperator: enums.LogicalOperator(lc.LogicalOperator),
 		Attribute:       &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
@@ -711,9 +711,20 @@ func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	return rc
 }
 
-func mustParseUUID(s string) uuid.UUID {
-	id, _ := uuid.Parse(s)
-	return id
+// func mustParseUUID(s string) uuid.UUID {
+// 	id, _ := uuid.Parse(s)
+// 	return id
+// }
+
+func mustParseUUIDPtr(s string) *uuid.UUID {
+	if s == "" {
+		return nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil || id == uuid.Nil {
+		return nil
+	}
+	return &id
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +743,11 @@ func sortedVariations(rules []entity.Rule) []entity.Rule {
 // connectorPtr returns &op (helper for building *enums.ConnectorOperator literals).
 func connectorPtr(op enums.ConnectorOperator) *enums.ConnectorOperator {
 	return &op
+}
+
+// uuidPtr returns &id (helper for building *uuid.UUID literals).
+func uuidPtr(id uuid.UUID) *uuid.UUID {
+	return &id
 }
 
 // connectorValue safely dereferences a *enums.ConnectorOperator, returning

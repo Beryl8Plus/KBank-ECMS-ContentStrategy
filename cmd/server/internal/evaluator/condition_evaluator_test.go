@@ -32,7 +32,7 @@ func buildSimpleRule(attrID uuid.UUID, expectedValue string, op enums.LogicalOpe
 
 	cond := entity.RuleCondition{
 		BaseModel:       entity.BaseModel{ID: condID},
-		AttributeID:     attrID,
+		AttributeID:     uuidPtr(attrID),
 		Sequence:        1,
 		LogicalOperator: op,
 		// Single-sibling rule: forward-link ConnectorOperator must be omitted.
@@ -227,7 +227,7 @@ func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 		// Mixed connectors at one level must be rejected.
 		c1 := dto.LogicCondition{
 			ConditionID:       uuid.New().String(),
-			AttributeID:       attrID.String(),
+			AttributeID:       uuidPtr(attrID).String(),
 			DataType:          string(enums.AttributeDataTypeText),
 			LogicalOperator:   string(enums.LogicalOperatorEQ),
 			ConnectorOperator: string(enums.ConnectorOperatorAND),
@@ -236,7 +236,7 @@ func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 		}
 		c2 := dto.LogicCondition{
 			ConditionID:       uuid.New().String(),
-			AttributeID:       attrID.String(),
+			AttributeID:       uuidPtr(attrID).String(),
 			DataType:          string(enums.AttributeDataTypeText),
 			LogicalOperator:   string(enums.LogicalOperatorEQ),
 			ConnectorOperator: string(enums.ConnectorOperatorOR),
@@ -245,7 +245,7 @@ func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 		}
 		c3 := dto.LogicCondition{
 			ConditionID:     uuid.New().String(),
-			AttributeID:     attrID.String(),
+			AttributeID:     uuidPtr(attrID).String(),
 			DataType:        string(enums.AttributeDataTypeText),
 			LogicalOperator: string(enums.LogicalOperatorEQ),
 			Sequence:        3,
@@ -271,12 +271,12 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 
 	t.Run("ForwardLink_AND_TwoPass", func(t *testing.T) {
 		c1 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		c2 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(age), Sequence: 2,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -294,12 +294,12 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 
 	t.Run("ForwardLink_AND_FirstFails", func(t *testing.T) {
 		c1 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		c2 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(age), Sequence: 2,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -317,12 +317,12 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 
 	t.Run("ForwardLink_OR_SecondPasses", func(t *testing.T) {
 		c1 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
 		}
 		c2 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: age, Sequence: 2,
+			BaseModel: entity.BaseModel{ID: uuid.New()}, AttributeID: uuidPtr(age), Sequence: 2,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -341,13 +341,13 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 	t.Run("OwnCheckPlusChildren_ChildConnector_AND_BothPass", func(t *testing.T) {
 		parentID := uuid.New()
 		parent := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		child := entity.RuleCondition{
 			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
-			AttributeID: age, Sequence: 1,
+			AttributeID: uuidPtr(age), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -366,13 +366,13 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 	t.Run("OwnCheckPlusChildren_ChildConnector_AND_OwnFails", func(t *testing.T) {
 		parentID := uuid.New()
 		parent := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		child := entity.RuleCondition{
 			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
-			AttributeID: age, Sequence: 1,
+			AttributeID: uuidPtr(age), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -391,13 +391,13 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 	t.Run("OwnCheckPlusChildren_ChildConnector_OR_OwnFails_ChildPasses", func(t *testing.T) {
 		parentID := uuid.New()
 		parent := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: tier, Sequence: 1,
+			BaseModel: entity.BaseModel{ID: parentID}, AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
 		}
 		child := entity.RuleCondition{
 			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
-			AttributeID: age, Sequence: 1,
+			AttributeID: uuidPtr(age), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: ageAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -421,13 +421,13 @@ func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 		}
 		child1 := entity.RuleCondition{
 			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
-			AttributeID: tier, Sequence: 1,
+			AttributeID: uuidPtr(tier), Sequence: 1,
 			LogicalOperator: enums.LogicalOperatorEQ, Attribute: tierAttr,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		child2 := entity.RuleCondition{
 			BaseModel: entity.BaseModel{ID: uuid.New()}, ParentRuleConditionID: &parentID,
-			AttributeID: score, Sequence: 2,
+			AttributeID: uuidPtr(score), Sequence: 2,
 			LogicalOperator: enums.LogicalOperatorGTE, Attribute: scoreAttr,
 		}
 		expected := NewParsedExpectedValues(map[string]json.RawMessage{
@@ -720,7 +720,7 @@ func TestEvaluateLogicConditions_NilOrNullExpectedValue(t *testing.T) {
 	makeCondWithExpected := func(ev json.RawMessage) dto.LogicCondition {
 		return dto.LogicCondition{
 			ConditionID:       uuid.New().String(),
-			AttributeID:       attrID.String(),
+			AttributeID:       uuidPtr(attrID).String(),
 			DataType:          string(enums.AttributeDataTypeText),
 			LogicalOperator:   string(enums.LogicalOperatorEQ),
 			ConnectorOperator: string(enums.ConnectorOperatorAND),
@@ -810,7 +810,7 @@ func TestEvaluateSingleCondition_SentinelIntegration(t *testing.T) {
 		ruleID := uuid.New()
 		cond := entity.RuleCondition{
 			BaseModel:       entity.BaseModel{ID: condID},
-			AttributeID:     attrID,
+			AttributeID:     uuidPtr(attrID),
 			Sequence:        1,
 			LogicalOperator: op,
 			Attribute:       &entity.Attribute{DataType: dt},
