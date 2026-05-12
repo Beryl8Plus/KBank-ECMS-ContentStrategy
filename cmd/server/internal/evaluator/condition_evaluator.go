@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -524,31 +525,29 @@ func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expecte
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual == exp, nil
+		return strings.EqualFold(actual, exp), nil
 	case enums.LogicalOperatorNEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual != exp, nil
+		return !strings.EqualFold(actual, exp), nil
 	case enums.LogicalOperatorIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
-		if slices.Contains(exps, actual) {
-			return true, nil
-		}
-		return false, nil
+		return slices.ContainsFunc(exps, func(e string) bool {
+			return strings.EqualFold(e, actual)
+		}), nil
 	case enums.LogicalOperatorNIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text NOT IN values (want JSON string array) for attr %s", attrKey)
 		}
-		if slices.Contains(exps, actual) {
-			return false, nil
-		}
-		return true, nil
+		return !slices.ContainsFunc(exps, func(e string) bool {
+			return strings.EqualFold(e, actual)
+		}), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)
 	}
