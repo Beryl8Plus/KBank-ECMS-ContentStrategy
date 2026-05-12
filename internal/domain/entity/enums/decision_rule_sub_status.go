@@ -7,7 +7,7 @@ type DecisionRuleSubStatus string
 
 const (
 	DecisionRuleSubStatusNA      DecisionRuleSubStatus = "N/A"
-	DecisionRuleSubStatusMissing DecisionRuleSubStatus = "Missing attribute registry"
+	DecisionRuleSubStatusMissing DecisionRuleSubStatus = "Missing Attribute Registry"
 )
 
 func (s DecisionRuleSubStatus) String() string {
@@ -25,7 +25,7 @@ func (s DecisionRuleSubStatus) IsValid() bool {
 func (s DecisionRuleSubStatus) Parse(val string) (DecisionRuleSubStatus, error) {
 	v := DecisionRuleSubStatus(val)
 	if !v.IsValid() {
-		return "", fmt.Errorf("invalid DecisionRuleSubStatus %q: must be one of N/A, Missing attribute registry", val)
+		return "", fmt.Errorf("invalid DecisionRuleSubStatus %q: must be one of N/A, Missing Attribute Registry", val)
 	}
 	return v, nil
 }
