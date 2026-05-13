@@ -41,7 +41,7 @@ func TestMemoryMonitor_StartsWithNoPressure(t *testing.T) {
 	m := newTestMonitor(t, "monitor-no-pressure", 0.99)
 	pressure, pct := m.Status()
 	assert.False(t, pressure)
-	assert.GreaterOrEqual(t, pct, 0.0)
+	assert.Equal(t, 0.0, pct, "pct should be zero before first tick")
 }
 
 func TestMemoryMonitor_StopIsIdempotent(t *testing.T) {
@@ -51,6 +51,7 @@ func TestMemoryMonitor_StopIsIdempotent(t *testing.T) {
 }
 
 func TestMemoryMonitor_DetectsPressureAtZeroThreshold(t *testing.T) {
+	t.Parallel()
 	m := newTestMonitor(t, "monitor-zero-thresh", 0.0)
 	time.Sleep(6 * time.Second)
 	pressure, _ := m.Status()
@@ -87,6 +88,7 @@ func TestGet_MissOnNonExistentKey(t *testing.T) {
 // TestSet_RejectsNewEntryUnderMemPressure verifies that a brand-new key is not
 // stored when the shared monitor reports memory pressure.
 func TestSet_RejectsNewEntryUnderMemPressure(t *testing.T) {
+	t.Parallel()
 	c, _ := newPressuredCache(t, "pressure-reject-monitor", "pressure-reject-cache")
 	time.Sleep(6 * time.Second) // wait for monitor tick to activate pressure
 
@@ -99,6 +101,7 @@ func TestSet_RejectsNewEntryUnderMemPressure(t *testing.T) {
 // TestSet_UpdatesExistingEntryUnderMemPressure verifies that an already-cached
 // key is refreshed even when memory pressure is active (net-zero memory change).
 func TestSet_UpdatesExistingEntryUnderMemPressure(t *testing.T) {
+	t.Parallel()
 	c, _ := newPressuredCache(t, "pressure-update-monitor", "pressure-update-cache")
 	c.Set("key", "original", 10*time.Second) // prime before pressure activates
 
@@ -127,4 +130,21 @@ func TestClear_RemovesAllKeys(t *testing.T) {
 	c.Clear()
 
 	assert.Equal(t, 0, c.cache.ItemCount(), "cache should be empty after Clear")
+}
+
+func TestKeys_ReturnsAllStoredKeys(t *testing.T) {
+	c := newTestCache(t)
+	c.Set("x", "1", 10*time.Second)
+	c.Set("y", "2", 10*time.Second)
+
+	keys := c.Keys()
+	assert.ElementsMatch(t, []string{"x", "y"}, keys)
+}
+
+func TestKeys_EmptyAfterClear(t *testing.T) {
+	c := newTestCache(t)
+	c.Set("z", "3", 10*time.Second)
+	c.Clear()
+
+	assert.Empty(t, c.Keys())
 }
