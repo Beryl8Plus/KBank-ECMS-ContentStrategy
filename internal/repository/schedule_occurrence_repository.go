@@ -54,6 +54,7 @@ func (r *ScheduleOccurrencePostgresRepository) UpsertOccurrences(
 				"STATUS",
 				"SOURCE",
 				"UPDATED_AT",
+				"UPDATED_BY",
 			}),
 		}).
 		Create(&occurrences).Error; err != nil {
@@ -73,7 +74,7 @@ func (r *ScheduleOccurrencePostgresRepository) DeleteFutureByScheduleID(
 ) error {
 	if err := r.db.WithContext(ctx).
 		Unscoped(). // hard-delete: occurrences don't need soft-delete semantics
-		Where("\"SCHEDULE_ID\" = ? AND \"OCCURRENCE_START\" > ?", scheduleID, after).
+		Where(`"SCHEDULE_ID" = ? AND "OCCURRENCE_START" > ?`, scheduleID, after).
 		Delete(&entity.ScheduleOccurrence{}).Error; err != nil {
 		return fmt.Errorf("deleting future occurrences for schedule %s: %w", scheduleID, err)
 	}
@@ -89,7 +90,7 @@ func (r *ScheduleOccurrencePostgresRepository) DeletePastOccurrences(
 ) error {
 	if err := r.db.WithContext(ctx).
 		Unscoped(). // hard-delete for cleanup
-		Where("\"OCCURRENCE_END\" < ?", before).
+		Where(`"OCCURRENCE_END" < ?`, before).
 		Delete(&entity.ScheduleOccurrence{}).Error; err != nil {
 		return fmt.Errorf("deleting past occurrences before %s: %w", before.Format(time.RFC3339), err)
 	}
@@ -103,18 +104,25 @@ func (r *ScheduleOccurrencePostgresRepository) ListByScheduleID(
 	scheduleID uuid.UUID,
 	page, limit int,
 ) ([]*entity.ScheduleOccurrence, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+
 	var occurrences []*entity.ScheduleOccurrence
 	var total int64
 
 	base := r.db.WithContext(ctx).Model(&entity.ScheduleOccurrence{}).
-		Where("\"SCHEDULE_ID\" = ?", scheduleID)
+		Where(`"SCHEDULE_ID" = ?`, scheduleID)
 
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("counting occurrences for schedule %s: %w", scheduleID, err)
 	}
 
 	offset := (page - 1) * limit
-	if err := base.Order("\"OCCURRENCE_START\" ASC").
+	if err := base.Order(`"OCCURRENCE_START" ASC`).
 		Offset(offset).Limit(limit).
 		Find(&occurrences).Error; err != nil {
 		return nil, 0, fmt.Errorf("listing occurrences for schedule %s: %w", scheduleID, err)
@@ -133,14 +141,13 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 	at time.Time,
 ) ([]*entity.ScheduleOccurrence, error) {
 	var occurrences []*entity.ScheduleOccurrence
-	atStr := at.Format(time.RFC3339)
 	if err := r.db.WithContext(ctx).
-		Preload("Schedule").
-		Preload("Schedule.Placement").
-		Where("\"STATUS\" = ?", enums.OccurrenceStatusActive).
-		Where("\"OCCURRENCE_START\" <= ? AND \"OCCURRENCE_END\" > ?", atStr, atStr).
+		Preload(`Schedule`).
+		Preload(`Schedule.Placement`).
+		Where(`"STATUS" = ?`, enums.OccurrenceStatusActive).
+		Where(`"OCCURRENCE_START" <= ? AND "OCCURRENCE_END" > ?`, at, at).
 		Find(&occurrences).Error; err != nil {
-		return nil, fmt.Errorf("listing active occurrences at %s: %w", atStr, err)
+		return nil, fmt.Errorf("listing active occurrences at %s: %w", at.Format(time.RFC3339), err)
 	}
 	return occurrences, nil
 }
@@ -154,7 +161,7 @@ func (r *ScheduleOccurrencePostgresRepository) ExpireEndedOccurrences(
 ) (int64, error) {
 	result := r.db.WithContext(ctx).
 		Model(&entity.ScheduleOccurrence{}).
-		Where("\"STATUS\" = ? AND \"OCCURRENCE_END\" <= ?", enums.OccurrenceStatusActive, now).
+		Where(`"STATUS" = ? AND "OCCURRENCE_END" <= ?`, enums.OccurrenceStatusActive, now).
 		Update("STATUS", enums.OccurrenceStatusExpired)
 	if result.Error != nil {
 		return 0, fmt.Errorf("expiring ended occurrences: %w", result.Error)
@@ -173,17 +180,41 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
 	}
 
 	var occurrences []*entity.ScheduleOccurrence
-	atStr := at.Format(time.RFC3339)
 	if err := r.db.WithContext(ctx).
-		Joins("JOIN \"SCHEDULES\" ON \"SCHEDULES\".\"ID\" = \"SCHEDULE_OCCURRENCES\".\"SCHEDULE_ID\"").
-		Joins("JOIN \"PLACEMENTS\" ON \"PLACEMENTS\".\"ID\" = \"SCHEDULES\".\"PLACEMENT_ID\"").
-		Preload("Schedule").
-		Preload("Schedule.Placement").
-		Where("\"PLACEMENTS\".\"PLACEMENT_NAME\" IN ?", placementNames).
-		Where("\"SCHEDULE_OCCURRENCES\".\"STATUS\" = ?", enums.OccurrenceStatusActive).
-		Where("\"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_START\" <= ? AND \"SCHEDULE_OCCURRENCES\".\"OCCURRENCE_END\" > ?", atStr, atStr).
+		Joins(`JOIN "schedules" ON "schedules"."ID" = "schedule_occurrences"."SCHEDULE_ID"`).
+		Joins(`JOIN "placements" ON "placements"."ID" = "schedules"."PLACEMENT_ID"`).
+		Preload(`Schedule`).
+		Preload(`Schedule.Placement`).
+		Where(`"placements"."PLACEMENT_NAME" IN ?`, placementNames).
+		Where(`"schedule_occurrences"."STATUS" = ?`, enums.OccurrenceStatusActive).
+		Where(`"schedule_occurrences"."OCCURRENCE_START" <= ? AND "schedule_occurrences"."OCCURRENCE_END" > ?`, at, at).
 		Find(&occurrences).Error; err != nil {
-		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, atStr, err)
+		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, at.Format(time.RFC3339), err)
 	}
 	return occurrences, nil
+}
+
+// CancelByDecisionRuleID bulk-updates every ACTIVE occurrence whose parent
+// Schedule belongs to the given decision rule to CANCELLED. Uses a subquery
+// to scope by SCHEDULE_ID so the operation completes in a single round-trip
+// regardless of how many schedules the decision rule owns.
+// Returns the number of rows affected.
+func (r *ScheduleOccurrencePostgresRepository) CancelByDecisionRuleID(
+	ctx context.Context,
+	decisionRuleID uuid.UUID,
+) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Model(&entity.ScheduleOccurrence{}).
+		Where(
+			`"STATUS" = ? AND "SCHEDULE_ID" IN (?)`,
+			enums.OccurrenceStatusActive,
+			r.db.WithContext(ctx).Model(&entity.Schedule{}).
+				Select(`"ID"`).
+				Where(`"DECISION_RULE_ID" = ?`, decisionRuleID),
+		).
+		Update("STATUS", enums.OccurrenceStatusCancelled)
+	if result.Error != nil {
+		return 0, fmt.Errorf("cancelling occurrences for decision rule %s: %w", decisionRuleID, result.Error)
+	}
+	return result.RowsAffected, nil
 }
