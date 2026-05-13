@@ -1,18 +1,11 @@
 package cache
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"runtime"
-	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"kbank-ecms/internal/domain/entity"
-	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // mustRegister registers c in the default Prometheus registry.
@@ -32,32 +25,24 @@ func mustRegister[C prometheus.Collector](c C) C {
 
 // CacheMemory is a memory-aware in-process cache for any value type T.
 // Each entry carries its own TTL supplied at Set time.
-// It monitors heap usage and evicts entries under memory pressure.
+// Memory pressure is delegated to a shared MemoryMonitor — no per-instance
+// goroutine or ReadMemStats call.
 // Backed by github.com/patrickmn/go-cache for TTL management and eviction.
 type CacheMemory[T any] struct {
-	cache *gocache.Cache
-
-	// Config
-	maxMemoryPct float64 // e.g. 0.60 (60%)
-
-	// Lifecycle
-	stopCh chan struct{}
-
-	// Status
-	mu            sync.RWMutex
-	isMemPressure bool
-	lastUsedPct   float64
+	cache   *gocache.Cache
+	monitor *MemoryMonitor
 
 	// Metrics (per-instance, namespaced)
-	mCacheHits        prometheus.Counter
-	mCacheMisses      prometheus.Counter
-	mMemPressureGauge prometheus.Gauge
-	mCacheSizeGauge   prometheus.Gauge
+	mCacheHits      prometheus.Counter
+	mCacheMisses    prometheus.Counter
+	mCacheSizeGauge prometheus.Gauge
 }
 
-// NewCacheMemory initializes the cache and starts the background memory monitor.
-// namespace is used as a prefix for Prometheus metric names and must be unique per instance.
-func NewCacheMemory[T any](namespace string, maxMemPct float64, ttl time.Duration) *CacheMemory[T] {
+// NewCacheMemory initialises the cache.
+// namespace is used as a prefix for per-instance Prometheus metric names; must be unique.
+// monitor is the shared MemoryMonitor that tracks heap pressure for this cache.
+// ttl sets the default item lifetime and the underlying go-cache cleanup interval baseline.
+func NewCacheMemory[T any](namespace string, monitor *MemoryMonitor, ttl time.Duration) *CacheMemory[T] {
 	cacheHits := mustRegister(prometheus.NewCounter(prometheus.CounterOpts{
 		Name: namespace + "_cache_hits_total",
 		Help: "Total number of cache hits in local memory",
@@ -68,38 +53,26 @@ func NewCacheMemory[T any](namespace string, maxMemPct float64, ttl time.Duratio
 		Help: "Total number of cache misses in local memory",
 	}))
 
-	memPressure := mustRegister(prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: namespace + "_memory_pressure_active",
-		Help: "Indicates if the memory pressure threshold is active (1 = active, 0 = inactive)",
-	}))
-
 	cacheSize := mustRegister(prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: namespace + "_cache_entries_count",
 		Help: "Current number of entries in the local cache",
 	}))
 
-	rc := &CacheMemory[T]{
-		cache:             gocache.New(ttl, 5*time.Minute),
-		maxMemoryPct:      maxMemPct,
-		stopCh:            make(chan struct{}),
-		mCacheHits:        cacheHits,
-		mCacheMisses:      cacheMisses,
-		mMemPressureGauge: memPressure,
-		mCacheSizeGauge:   cacheSize,
+	return &CacheMemory[T]{
+		cache:           gocache.New(ttl, 5*time.Second),
+		monitor:         monitor,
+		mCacheHits:      cacheHits,
+		mCacheMisses:    cacheMisses,
+		mCacheSizeGauge: cacheSize,
 	}
-
-	go rc.monitorMemory()
-	return rc
 }
 
-// Stop shuts down the background memory monitor goroutine.
-func (rc *CacheMemory[T]) Stop() {
-	close(rc.stopCh)
-}
+// Stop is a no-op. Lifecycle is managed by MemoryMonitor.Stop().
+// Kept for call-site backward compatibility.
+func (rc *CacheMemory[T]) Stop() {}
 
 // Get retrieves a value from local memory.
 // Returns the zero value and false when the key is absent or expired.
-// The context is accepted for future tracing/cancellation support.
 func (rc *CacheMemory[T]) Get(key string) (T, bool) {
 	v, found := rc.cache.Get(key)
 	if !found {
@@ -112,22 +85,16 @@ func (rc *CacheMemory[T]) Get(key string) (T, bool) {
 }
 
 // Set adds or replaces a value with the given TTL.
-// Under memory pressure, existing keys are still updated (stale data is replaced
-// with fresh evaluated data, which is net-zero on memory). Only brand-new keys
-// are rejected to avoid growing the memory footprint.
-// Critical pressure (>80%) triggers a GC cycle, not a cache flush.
+// Under memory pressure, existing keys are still updated (stale data replaced
+// with fresh evaluated data is net-zero on memory). Only brand-new keys are
+// rejected to avoid growing the memory footprint.
 func (rc *CacheMemory[T]) Set(key string, value T, ttl time.Duration) {
-	rc.mu.RLock()
-	pressure := rc.isMemPressure
-	rc.mu.RUnlock()
-
-	if pressure {
+	if rc.monitor.IsUnderPressure() {
 		if _, exists := rc.cache.Get(key); !exists {
 			rc.updateMetrics()
 			return
 		}
 	}
-
 	rc.cache.Set(key, value, ttl)
 	rc.updateMetrics()
 }
@@ -154,77 +121,13 @@ func (rc *CacheMemory[T]) Keys() []string {
 }
 
 // Status returns whether the cache is under memory pressure and the last
-// measured heap utilisation ratio (HeapInuse/HeapSys, range 0–1).
-// Returns 0 before the first monitor tick fires.
+// measured heap utilisation ratio from the shared monitor (range 0–1).
+// Returns false/0 before the monitor's first tick fires.
 func (rc *CacheMemory[T]) Status() (isMemPressure bool, usedPct float64) {
-	rc.mu.RLock()
-	defer rc.mu.RUnlock()
-	return rc.isMemPressure, rc.lastUsedPct
-}
-
-// monitorMemory runs in the background to check HeapAlloc against the threshold.
-func (rc *CacheMemory[T]) monitorMemory() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	var m runtime.MemStats
-
-	for {
-		select {
-		case <-ticker.C:
-			runtime.ReadMemStats(&m)
-
-			// Guard: HeapSys can be zero immediately after startup.
-			if m.HeapSys == 0 {
-				continue
-			}
-
-			// Always purge expired entries on every tick, regardless of memory pressure.
-			rc.purgeExpired()
-
-			// HeapInuse/HeapSys: fraction of Go's reserved heap that is in active use.
-			// HeapInuse is stable across GC cycles; HeapAlloc/HeapSys is not — it spikes
-			// before GC and drops sharply after, causing false-positive flushes.
-			usedPct := float64(m.HeapInuse) / float64(m.HeapSys)
-
-			rc.mu.Lock()
-			rc.lastUsedPct = usedPct
-			if usedPct > rc.maxMemoryPct {
-				rc.isMemPressure = true
-				rc.mMemPressureGauge.Set(1)
-			} else {
-				rc.isMemPressure = false
-				rc.mMemPressureGauge.Set(0)
-			}
-			rc.mu.Unlock()
-
-			// Critical pressure: trigger GC to reclaim request-handling garbage rather
-			// than flushing cache entries. Cache data is bounded and small; the pressure
-			// comes from request allocations. After GC, HeapInuse drops and cache
-			// continues serving data on the next tick.
-			if usedPct > 0.8 {
-				logger.LSystem(context.Background(), entity.SystemLog{
-					Service: "Memory",
-					Level:   "WARN",
-					Message: fmt.Sprintf("critical memory pressure (%.1f%% heap in use) — triggering GC", usedPct*100),
-				})
-				runtime.GC()
-			}
-
-			rc.updateMetrics()
-
-		case <-rc.stopCh:
-			return
-		}
-	}
+	return rc.monitor.Status()
 }
 
 // updateMetrics updates the Prometheus gauge for cache size.
 func (rc *CacheMemory[T]) updateMetrics() {
 	rc.mCacheSizeGauge.Set(float64(rc.cache.ItemCount()))
-}
-
-// purgeExpired removes entries that are past their TTL.
-func (rc *CacheMemory[T]) purgeExpired() {
-	rc.cache.DeleteExpired()
 }
