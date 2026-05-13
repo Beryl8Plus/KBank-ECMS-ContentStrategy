@@ -200,6 +200,12 @@ type CMSDeliveryService struct {
 	stopCh  chan struct{}
 	done    chan struct{}
 
+	// bgCancel cancels the long-lived context handed to runLoop and
+	// subscribeToUpdates. We cannot use fx's OnStart ctx for those
+	// goroutines because fx cancels it as soon as Start returns, which
+	// would kill the ticker before the first tick ever fires.
+	bgCancel context.CancelFunc
+
 	// Subscriber fields
 	subCtx    context.Context
 	subCancel context.CancelFunc
@@ -710,12 +716,20 @@ func (s *CMSDeliveryService) Start(ctx context.Context) error {
 	s.stopCh = make(chan struct{})
 	s.done = make(chan struct{})
 
-	// Warmup cache from database on startup to ensure fresh data
+	// Warmup cache from database on startup to ensure fresh data.
+	// Uses fx's OnStart ctx because it runs synchronously while ctx is alive.
 	s.warmupCache(ctx)
 
+	// Long-running goroutines must NOT capture fx's OnStart ctx — fx cancels
+	// it the moment Start returns, which would terminate the ticker before
+	// the first tick fires. Derive a background-rooted ctx instead; Stop
+	// cancels it explicitly via bgCancel.
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	s.bgCancel = bgCancel
+
 	// Start background synchronization loops
-	go s.runLoop(ctx)
-	go s.subscribeToUpdates(ctx)
+	go s.runLoop(bgCtx)
+	go s.subscribeToUpdates(bgCtx)
 
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
@@ -736,6 +750,9 @@ func (s *CMSDeliveryService) Stop() error {
 	close(s.stopCh)
 	if s.subCancel != nil {
 		s.subCancel()
+	}
+	if s.bgCancel != nil {
+		s.bgCancel()
 	}
 	s.mu.Unlock()
 
