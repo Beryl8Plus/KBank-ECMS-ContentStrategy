@@ -78,7 +78,7 @@ func buildLogicEntry(
 	}
 
 	return dto.ContentResult{
-		DecisionRuleId: sched.DecisionRuleID.String(),
+		DecisionRuleId: rule.DecisionRuleRunning,
 		ContentPath:    rule.ContentPath,
 		RuleSetType:    rule.Type.String(),
 		Source:         source,
