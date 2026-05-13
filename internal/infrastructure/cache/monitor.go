@@ -98,7 +98,7 @@ func (mm *MemoryMonitor) run() {
 
 			if usedPct > 0.8 {
 				logger.LSystem(context.Background(), entity.SystemLog{
-					Service: "Memory",
+					Service: "CMS-CACHE",
 					Level:   "WARN",
 					Message: fmt.Sprintf("critical memory pressure (%.1f%% heap in use) — triggering GC", usedPct*100),
 				})
