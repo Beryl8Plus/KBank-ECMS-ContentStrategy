@@ -26,8 +26,8 @@ func newTestCache(t *testing.T) *CacheMemory[string] {
 
 // newPressuredCache creates a CacheMemory[string] backed by a zero-threshold
 // monitor. After one tick (<=5 s) the monitor will flag pressure.
-// Prime the cache with any keys that must exist BEFORE calling this, then
-// sleep >=6s before the test assertion.
+// Prime any keys after calling this but before sleeping 6 s — pressure is
+// not active until the first tick at ~5 s.
 func newPressuredCache(t *testing.T, monitorNS string, cacheNS string) (*CacheMemory[string], *MemoryMonitor) {
 	t.Helper()
 	m := newTestMonitor(t, monitorNS, 0.0) // 0% threshold → always pressure after first tick

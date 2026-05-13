@@ -23,14 +23,12 @@ import (
 // newTestMemCache builds a *MemoryCache for tests and registers cleanup.
 func newTestMemCache(t *testing.T, ns string) *MemoryCache {
 	t.Helper()
-	s := cache.NewCacheMemory[[]*entity.Schedule](ns+"_schedules", 0.95, time.Hour)
-	r := cache.NewCacheMemory[*entity.DecisionRule](ns+"_rules", 0.95, time.Hour)
-	v := cache.NewCacheMemory[string](ns+"_versions", 0.95, time.Hour)
-	l := cache.NewCacheMemory[time.Time](ns+"_syncs", 0.95, time.Hour)
-	t.Cleanup(s.Stop)
-	t.Cleanup(r.Stop)
-	t.Cleanup(v.Stop)
-	t.Cleanup(l.Stop)
+	monitor := cache.NewMemoryMonitor("test-"+ns, 0.99)
+	s := cache.NewCacheMemory[[]*entity.Schedule](ns+"_schedules", monitor, time.Hour)
+	r := cache.NewCacheMemory[*entity.DecisionRule](ns+"_rules", monitor, time.Hour)
+	v := cache.NewCacheMemory[string](ns+"_versions", monitor, time.Hour)
+	l := cache.NewCacheMemory[time.Time](ns+"_syncs", monitor, time.Hour)
+	t.Cleanup(monitor.Stop)
 	return &MemoryCache{Schedules: s, DecisionRule: r, VersionHashes: v, LastSync: l}
 }
 

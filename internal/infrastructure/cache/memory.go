@@ -59,7 +59,7 @@ func NewCacheMemory[T any](namespace string, monitor *MemoryMonitor, ttl time.Du
 	}))
 
 	return &CacheMemory[T]{
-		cache:           gocache.New(ttl, 5*time.Minute),
+		cache:           gocache.New(ttl, 5*time.Second),
 		monitor:         monitor,
 		mCacheHits:      cacheHits,
 		mCacheMisses:    cacheMisses,
