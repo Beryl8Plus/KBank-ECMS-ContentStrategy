@@ -129,6 +129,38 @@ func TestKeys_ReturnsAllStoredKeys(t *testing.T) {
 	assert.ElementsMatch(t, []string{"alpha", "beta", "gamma"}, keys)
 }
 
+// --- MemoryMonitor tests ---
+
+func TestMemoryMonitor_StartsWithNoPressure(t *testing.T) {
+	// threshold near 100% — heap will never exceed it in a test
+	m := newTestMonitor(t, "monitor-no-pressure", 0.99)
+	pressure, pct := m.Status()
+	assert.False(t, pressure)
+	assert.GreaterOrEqual(t, pct, 0.0)
+}
+
+func TestMemoryMonitor_StopIsIdempotent(t *testing.T) {
+	m := NewMemoryMonitor("monitor-idempotent", 0.99)
+	m.Stop()
+	assert.NotPanics(t, func() { m.Stop() }, "second Stop must not panic")
+}
+
+func TestMemoryMonitor_DetectsPressureAtZeroThreshold(t *testing.T) {
+	// threshold 0.0 — any non-zero HeapInuse triggers pressure
+	m := newTestMonitor(t, "monitor-zero-thresh", 0.0)
+	time.Sleep(6 * time.Second) // wait for at least one tick
+	pressure, _ := m.Status()
+	assert.True(t, pressure, "zero threshold should always detect pressure after first tick")
+}
+
+// newTestMonitor creates a MemoryMonitor and registers Stop via t.Cleanup.
+func newTestMonitor(t *testing.T, namespace string, maxMemPct float64) *MemoryMonitor {
+	t.Helper()
+	m := NewMemoryMonitor(namespace, maxMemPct)
+	t.Cleanup(func() { m.Stop() })
+	return m
+}
+
 // TestKeys_EmptyAfterClear verifies that Keys returns an empty slice once the cache is cleared.
 func TestKeys_EmptyAfterClear(t *testing.T) {
 	c := newTestCache(t)
