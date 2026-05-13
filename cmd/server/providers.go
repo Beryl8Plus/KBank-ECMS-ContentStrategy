@@ -129,13 +129,16 @@ func ProvideCustomerProfileEnrichConfig() deliveryservice.CustomerProfileEnrichC
 	}
 }
 
-// ProvideCacheMemory builds the L1 in-process cache and registers OnStop hooks
-// to stop each cache's eviction goroutine.
+// ProvideCacheMemory builds the L1 in-process cache and registers an OnStop hook.
+// A single MemoryMonitor owns the background ReadMemStats goroutine; all four
+// CacheMemory instances share it, reducing stop-the-world pauses from 4 to 1
+// per tick.
 func ProvideCacheMemory(lc fx.Lifecycle) *deliveryservice.MemoryCache {
-	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime", 0.60, 24*time.Hour)
-	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-runtime", 0.60, 24*time.Hour)
-	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", 0.60, 24*time.Hour)
-	lastSync := cache.NewCacheMemory[time.Time]("cms-runtime-syncs", 0.60, 24*time.Hour)
+	monitor := cache.NewMemoryMonitor("cms-l1", 0.60)
+	schedules := cache.NewCacheMemory[[]*entity.Schedule]("cms-runtime-schedules", monitor, 24*time.Hour)
+	decisionRule := cache.NewCacheMemory[*entity.DecisionRule]("cms-rule", monitor, 24*time.Hour)
+	versionHashes := cache.NewCacheMemory[string]("cms-runtime-versions", monitor, 24*time.Hour)
+	lastSync := cache.NewCacheMemory[time.Time]("cms-runtime-syncs", monitor, 24*time.Hour)
 	memoryCache := deliveryservice.MemoryCache{
 		Schedules:     schedules,
 		DecisionRule:  decisionRule,
@@ -144,10 +147,7 @@ func ProvideCacheMemory(lc fx.Lifecycle) *deliveryservice.MemoryCache {
 	}
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
-			schedules.Stop()
-			decisionRule.Stop()
-			versionHashes.Stop()
-			lastSync.Stop()
+			monitor.Stop()
 			return nil
 		},
 	})
