@@ -24,6 +24,7 @@ import (
 	"kbank-ecms/internal/infrastructure/cache"
 	"kbank-ecms/internal/infrastructure/logger"
 	"kbank-ecms/internal/infrastructure/pubsub"
+	"kbank-ecms/pkg/ctxconsts"
 )
 
 func computePlacementHash(schedules []*entity.Schedule) string {
@@ -432,7 +433,8 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 			}
 		}
 
-		result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName))
+		keyPlacementName := cmsPlacementSchedulesKey(placementName)
+		result, ok := s.cacheMemory.Schedules.Get(keyPlacementName)
 		if !ok {
 			missedPlacements[placementName] = struct{}{}
 			continue
@@ -451,10 +453,19 @@ func (s *CMSDeliveryService) GetPersonalizedContent(
 		// This adds latency to the request but ensures a better experience for subsequent requests,
 		// which is critical if the cache miss was caused by an eviction of active placements.
 		s.evaluate(ctx)
+
 		for placementName := range missedPlacements {
-			if result, ok := s.cacheMemory.Schedules.Get(cmsPlacementSchedulesKey(placementName)); ok {
-				schedules = append(schedules, result...)
+			keyPlacementName := cmsPlacementSchedulesKey(placementName)
+			result, ok := s.cacheMemory.Schedules.Get(keyPlacementName)
+			if !ok {
+				logger.LSystem(ctx, entity.SystemLog{
+					Service: "CMS-DELIVERY",
+					Level:   "WARN",
+					Message: fmt.Sprintf("Failed to retrieve schedules for placement %q after evaluate (key: %q)", placementName, keyPlacementName),
+				})
+				continue
 			}
+			schedules = append(schedules, result...)
 		}
 	}
 
@@ -725,6 +736,7 @@ func (s *CMSDeliveryService) Start(ctx context.Context) error {
 	// the first tick fires. Derive a background-rooted ctx instead; Stop
 	// cancels it explicitly via bgCancel.
 	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgCtx = ctxconsts.SetCorrelationID(bgCtx, uuid.New().String())
 	s.bgCancel = bgCancel
 
 	// Start background synchronization loops
