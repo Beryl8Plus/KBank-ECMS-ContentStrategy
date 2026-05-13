@@ -50,7 +50,7 @@ func audienceSchedule(contentPath string, attrID uuid.UUID, expected string, op 
 		RuleConditions: []entity.RuleCondition{
 			{
 				BaseModel:       entity.BaseModel{ID: uuid.New()},
-				AttributeID:     attrID,
+				AttributeID:     uuidPtr(attrID),
 				Sequence:        1,
 				LogicalOperator: op,
 				// Single-sibling: forward-link ConnectorOperator must be omitted.
@@ -204,7 +204,7 @@ func TestBuildPlacementLogicEntries_WithVariations(t *testing.T) {
 		ContentPath: "/v",
 		RuleConditions: []entity.RuleCondition{{
 			BaseModel:       entity.BaseModel{ID: uuid.New()},
-			AttributeID:     attrID,
+			AttributeID:     uuidPtr(attrID),
 			LogicalOperator: enums.LogicalOperatorEQ,
 			Attribute:       &entity.Attribute{DataType: enums.AttributeDataTypeText},
 		}},

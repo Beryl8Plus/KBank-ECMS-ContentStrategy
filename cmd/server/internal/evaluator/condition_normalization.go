@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 )
@@ -82,7 +80,7 @@ func buildCanonicalString(byParent map[string][]entity.RuleCondition, siblings [
 //  3. Mixed node (own check + children): "attr_uuid:operator [ChildConnectorOp] (children)"
 func renderCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition) string {
 	children := byParent[c.ID.String()]
-	hasOwnCheck := c.AttributeID != uuid.Nil
+	hasOwnCheck := c.AttributeID != nil
 
 	if len(children) == 0 {
 		if !hasOwnCheck {
@@ -195,7 +193,7 @@ func buildValueCanonicalString(byParent map[string][]entity.RuleCondition, sibli
 //  3. Mixed node (own check + children): "attr_uuid:operator:value [ChildConnectorOp] (children)"
 func renderValueCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, expectedValues map[string]json.RawMessage) string {
 	children := byParent[c.ID.String()]
-	hasOwnCheck := c.AttributeID != uuid.Nil
+	hasOwnCheck := c.AttributeID != nil
 
 	leafStr := func() string {
 		valStr := "null"
