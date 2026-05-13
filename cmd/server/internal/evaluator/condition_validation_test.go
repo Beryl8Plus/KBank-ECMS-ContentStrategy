@@ -19,7 +19,7 @@ func TestValidateConditionTree(t *testing.T) {
 	t.Run("SingleRoot_OK", func(t *testing.T) {
 		c := entity.RuleCondition{
 			BaseModel:       entity.BaseModel{ID: uuid.New()},
-			AttributeID:     uuid.New(),
+			AttributeID:     uuidPtr(uuid.New()),
 			LogicalOperator: enums.LogicalOperatorEQ,
 			Sequence:        1,
 		}
@@ -30,13 +30,13 @@ func TestValidateConditionTree(t *testing.T) {
 		// Forward-link: c1.ConnectorOperator -> joins c1 with c2; c2 (last) omits.
 		c1 := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: uuid.New()},
-			AttributeID:       uuid.New(),
+			AttributeID:       uuidPtr(uuid.New()),
 			Sequence:          1,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		c2 := entity.RuleCondition{
 			BaseModel:   entity.BaseModel{ID: uuid.New()},
-			AttributeID: uuid.New(),
+			AttributeID: uuidPtr(uuid.New()),
 			Sequence:    2,
 		}
 		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c1, c2}))
@@ -93,7 +93,7 @@ func TestValidateConditionTree(t *testing.T) {
 		parentID := uuid.New()
 		parent := entity.RuleCondition{
 			BaseModel:       entity.BaseModel{ID: parentID},
-			AttributeID:     uuid.New(),
+			AttributeID:     uuidPtr(uuid.New()),
 			LogicalOperator: enums.LogicalOperatorEQ,
 			Sequence:        1,
 			// ChildConnectorOperator missing
@@ -101,7 +101,7 @@ func TestValidateConditionTree(t *testing.T) {
 		child1 := entity.RuleCondition{
 			BaseModel:             entity.BaseModel{ID: uuid.New()},
 			ParentRuleConditionID: &parentID,
-			AttributeID:           uuid.New(),
+			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              1,
 		}
 		err := ValidateConditionTree([]entity.RuleCondition{parent, child1})
@@ -110,20 +110,20 @@ func TestValidateConditionTree(t *testing.T) {
 	})
 
 	t.Run("PureGroup_NoOwnCheck_NoChildConnectorRequired_OK", func(t *testing.T) {
-		// AttributeID = uuid.Nil = pure group container; ChildConnectorOperator not required.
+		// AttributeID = nil = pure group container; ChildConnectorOperator not required.
 		parentID := uuid.New()
 		parent := entity.RuleCondition{BaseModel: entity.BaseModel{ID: parentID}, Sequence: 1}
 		child1 := entity.RuleCondition{
 			BaseModel:             entity.BaseModel{ID: uuid.New()},
 			ParentRuleConditionID: &parentID,
-			AttributeID:           uuid.New(),
+			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              1,
 			ConnectorOperator:     connectorPtr(enums.ConnectorOperatorOR),
 		}
 		child2 := entity.RuleCondition{
 			BaseModel:             entity.BaseModel{ID: uuid.New()},
 			ParentRuleConditionID: &parentID,
-			AttributeID:           uuid.New(),
+			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              2,
 		}
 		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1, child2}))
@@ -133,7 +133,7 @@ func TestValidateConditionTree(t *testing.T) {
 		parentID := uuid.New()
 		parent := entity.RuleCondition{
 			BaseModel:              entity.BaseModel{ID: parentID},
-			AttributeID:            uuid.New(),
+			AttributeID:            uuidPtr(uuid.New()),
 			LogicalOperator:        enums.LogicalOperatorEQ,
 			Sequence:               1,
 			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
@@ -141,7 +141,7 @@ func TestValidateConditionTree(t *testing.T) {
 		child1 := entity.RuleCondition{
 			BaseModel:             entity.BaseModel{ID: uuid.New()},
 			ParentRuleConditionID: &parentID,
-			AttributeID:           uuid.New(),
+			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              1,
 		}
 		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1}))

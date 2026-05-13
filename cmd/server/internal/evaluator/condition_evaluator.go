@@ -1,11 +1,13 @@
 package evaluator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,6 +194,20 @@ func (p *ParsedUserAttrs) Len() int {
 	return len(p.raw)
 }
 
+// IsNull reports whether the user attribute is null. It returns true when
+// attrID is absent from the map, when the raw value is nil, or when the raw
+// JSON is the literal "null" (possibly surrounded by whitespace).
+func (p *ParsedUserAttrs) IsNull(attrID string) bool {
+	if p == nil {
+		return true
+	}
+	raw, ok := p.raw[attrID]
+	if !ok || len(raw) == 0 {
+		return true
+	}
+	return string(bytes.TrimSpace(raw)) == "null"
+}
+
 func (p *ParsedUserAttrs) get(attrID string) *parsedEntry {
 	if p == nil {
 		return nil
@@ -237,6 +253,16 @@ func (p *ParsedExpectedValues) Has(attrID string) bool {
 	}
 	_, ok := p.raw[attrID]
 	return ok
+}
+
+// Raw returns the raw JSON expected value for attrID. The second return value
+// is false when attrID is absent or the receiver is nil.
+func (p *ParsedExpectedValues) Raw(attrID string) (json.RawMessage, bool) {
+	if p == nil {
+		return nil, false
+	}
+	v, ok := p.raw[attrID]
+	return v, ok
 }
 
 func (p *ParsedExpectedValues) get(attrID string) *parsedEntry {
@@ -416,11 +442,11 @@ func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.
 }
 
 // evalNode evaluates a single condition node.
-// If the node is a pure group (AttributeID == uuid.Nil), its result is determined entirely by its children.
+// If the node is a pure group (AttributeID == nil), its result is determined entirely by its children.
 // If the node has an own leaf check AND children, the own-check result is combined with the
 // children-combined result using the node's ChildConnectorOperator.
 func evalNode(byParent map[string][]entity.RuleCondition, c entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
-	hasOwnCheck := c.AttributeID != uuid.Nil
+	hasOwnCheck := c.AttributeID != nil
 
 	var children []entity.RuleCondition
 	if depth < maxConditionDepth {
@@ -466,11 +492,17 @@ func evaluateSingleCondition(c entity.RuleCondition, expectedVals *ParsedExpecte
 	if parsed == nil {
 		return false, nil
 	}
-	if _, present := parsed.Raw(attrKey); !present {
-		return false, nil
-	}
 	if c.Attribute == nil {
 		return false, fmt.Errorf("condition %s: Attribute association not preloaded (need DataType)", c.ID)
+	}
+
+	rawExpected, _ := expectedVals.Raw(attrKey)
+	if result, handled, err := applySentinel(c.Attribute.DataType, c.LogicalOperator, rawExpected, parsed, attrKey); handled {
+		return result, err
+	}
+
+	if _, present := parsed.Raw(attrKey); !present {
+		return false, nil
 	}
 
 	return compareValuesParsed(c.Attribute.DataType, c.LogicalOperator, parsed, attrKey, expectedVals)
@@ -518,37 +550,36 @@ func compareValuesParsed(
 // ---------------------------------------------------------------------------
 
 func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expectedVals *ParsedExpectedValues) (bool, error) {
+	actual = strings.TrimSpace(actual)
 	switch op {
 	case enums.LogicalOperatorEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual == exp, nil
+		return strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorNEQ:
 		exp, ok := expectedVals.GetString(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
 		}
-		return actual != exp, nil
+		return !strings.EqualFold(actual, strings.TrimSpace(exp)), nil
 	case enums.LogicalOperatorIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text IN values (want JSON string array) for attr %s", attrKey)
 		}
-		if slices.Contains(exps, actual) {
-			return true, nil
-		}
-		return false, nil
+		return slices.ContainsFunc(exps, func(e string) bool {
+			return strings.EqualFold(strings.TrimSpace(e), actual)
+		}), nil
 	case enums.LogicalOperatorNIN:
 		exps, ok := expectedVals.GetStringSlice(attrKey)
 		if !ok {
 			return false, fmt.Errorf("parse text NOT IN values (want JSON string array) for attr %s", attrKey)
 		}
-		if slices.Contains(exps, actual) {
-			return false, nil
-		}
-		return true, nil
+		return !slices.ContainsFunc(exps, func(e string) bool {
+			return strings.EqualFold(strings.TrimSpace(e), actual)
+		}), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)
 	}
@@ -660,7 +691,7 @@ func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	id, _ := uuid.Parse(lc.ConditionID)
 	rc := entity.RuleCondition{
 		BaseModel:       entity.BaseModel{ID: id},
-		AttributeID:     mustParseUUID(lc.AttributeID),
+		AttributeID:     mustParseUUIDPtr(lc.AttributeID),
 		Sequence:        lc.Sequence,
 		LogicalOperator: enums.LogicalOperator(lc.LogicalOperator),
 		Attribute:       &entity.Attribute{DataType: enums.AttributeDataType(lc.DataType)},
@@ -680,9 +711,20 @@ func logicConditionToRuleCondition(lc dto.LogicCondition) entity.RuleCondition {
 	return rc
 }
 
-func mustParseUUID(s string) uuid.UUID {
-	id, _ := uuid.Parse(s)
-	return id
+// func mustParseUUID(s string) uuid.UUID {
+// 	id, _ := uuid.Parse(s)
+// 	return id
+// }
+
+func mustParseUUIDPtr(s string) *uuid.UUID {
+	if s == "" {
+		return nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil || id == uuid.Nil {
+		return nil
+	}
+	return &id
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +743,11 @@ func sortedVariations(rules []entity.Rule) []entity.Rule {
 // connectorPtr returns &op (helper for building *enums.ConnectorOperator literals).
 func connectorPtr(op enums.ConnectorOperator) *enums.ConnectorOperator {
 	return &op
+}
+
+// uuidPtr returns &id (helper for building *uuid.UUID literals).
+func uuidPtr(id uuid.UUID) *uuid.UUID {
+	return &id
 }
 
 // connectorValue safely dereferences a *enums.ConnectorOperator, returning

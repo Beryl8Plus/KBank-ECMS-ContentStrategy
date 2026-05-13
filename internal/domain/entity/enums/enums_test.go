@@ -250,8 +250,7 @@ func TestOccurrenceSource(t *testing.T) {
 func TestOccurrenceStatus(t *testing.T) {
 	t.Parallel()
 	for _, v := range []OccurrenceStatus{
-		OccurrenceStatusActive, OccurrenceStatusCancelled,
-		OccurrenceStatusModified, OccurrenceStatusExpired,
+		OccurrenceStatusActive, OccurrenceStatusCancelled, OccurrenceStatusExpired,
 	} {
 		if v.String() != string(v) || !v.IsValid() {
 			t.Errorf("%v should be valid", v)
