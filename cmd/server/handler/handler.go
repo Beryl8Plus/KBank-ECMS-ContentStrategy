@@ -122,7 +122,8 @@ func (h *Handler) getStatus(c *gin.Context) {
 	}
 
 	logger.LSystem(ctx, entity.SystemLog{
-		Service: "SVS-CONTSTRAT-DELIVERY",
+		Service: "CMS-DELIVERY",
+		Level:   "INFO",
 		Message: fmt.Sprintf("cache status: pressure=%v usage=%.2f%% keys=%d", isMemPressure, memUsagePct*100, len(keys)),
 	})
 

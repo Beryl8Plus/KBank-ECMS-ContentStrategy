@@ -1,13 +1,18 @@
 package cache
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"kbank-ecms/internal/domain/entity"
+	"kbank-ecms/internal/infrastructure/logger"
 )
 
 // mustRegister registers c in the default Prometheus registry.
@@ -110,7 +115,7 @@ func (rc *CacheMemory[T]) Get(key string) (T, bool) {
 // Under memory pressure, existing keys are still updated (stale data is replaced
 // with fresh evaluated data, which is net-zero on memory). Only brand-new keys
 // are rejected to avoid growing the memory footprint.
-// Critical eviction (>80%) is handled by monitorMemory flushing the whole cache.
+// Critical pressure (>80%) triggers a GC cycle, not a cache flush.
 func (rc *CacheMemory[T]) Set(key string, value T, ttl time.Duration) {
 	rc.mu.RLock()
 	pressure := rc.isMemPressure
@@ -149,7 +154,7 @@ func (rc *CacheMemory[T]) Keys() []string {
 }
 
 // Status returns whether the cache is under memory pressure and the last
-// measured heap utilisation ratio (HeapAlloc/HeapSys, range 0–1).
+// measured heap utilisation ratio (HeapInuse/HeapSys, range 0–1).
 // Returns 0 before the first monitor tick fires.
 func (rc *CacheMemory[T]) Status() (isMemPressure bool, usedPct float64) {
 	rc.mu.RLock()
@@ -177,8 +182,10 @@ func (rc *CacheMemory[T]) monitorMemory() {
 			// Always purge expired entries on every tick, regardless of memory pressure.
 			rc.purgeExpired()
 
-			// Use HeapAlloc/HeapSys — a meaningful heap-specific utilisation ratio.
-			usedPct := float64(m.HeapAlloc) / float64(m.HeapSys)
+			// HeapInuse/HeapSys: fraction of Go's reserved heap that is in active use.
+			// HeapInuse is stable across GC cycles; HeapAlloc/HeapSys is not — it spikes
+			// before GC and drops sharply after, causing false-positive flushes.
+			usedPct := float64(m.HeapInuse) / float64(m.HeapSys)
 
 			rc.mu.Lock()
 			rc.lastUsedPct = usedPct
@@ -191,9 +198,17 @@ func (rc *CacheMemory[T]) monitorMemory() {
 			}
 			rc.mu.Unlock()
 
-			// Critical pressure: wipe all remaining entries.
+			// Critical pressure: trigger GC to reclaim request-handling garbage rather
+			// than flushing cache entries. Cache data is bounded and small; the pressure
+			// comes from request allocations. After GC, HeapInuse drops and cache
+			// continues serving data on the next tick.
 			if usedPct > 0.8 {
-				rc.cache.Flush()
+				logger.LSystem(context.Background(), entity.SystemLog{
+					Service: "Memory",
+					Level:   "WARN",
+					Message: fmt.Sprintf("critical memory pressure (%.1f%% heap in use) — triggering GC", usedPct*100),
+				})
+				runtime.GC()
 			}
 
 			rc.updateMetrics()
