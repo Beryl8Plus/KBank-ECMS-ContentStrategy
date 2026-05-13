@@ -200,6 +200,12 @@ type CMSDeliveryService struct {
 	stopCh  chan struct{}
 	done    chan struct{}
 
+	// bgCancel cancels the long-lived context handed to runLoop and
+	// subscribeToUpdates. We cannot use fx's OnStart ctx for those
+	// goroutines because fx cancels it as soon as Start returns, which
+	// would kill the ticker before the first tick ever fires.
+	bgCancel context.CancelFunc
+
 	// Subscriber fields
 	subCtx    context.Context
 	subCancel context.CancelFunc
@@ -710,12 +716,20 @@ func (s *CMSDeliveryService) Start(ctx context.Context) error {
 	s.stopCh = make(chan struct{})
 	s.done = make(chan struct{})
 
-	// Warmup cache from database on startup to ensure fresh data
+	// Warmup cache from database on startup to ensure fresh data.
+	// Uses fx's OnStart ctx because it runs synchronously while ctx is alive.
 	s.warmupCache(ctx)
 
+	// Long-running goroutines must NOT capture fx's OnStart ctx — fx cancels
+	// it the moment Start returns, which would terminate the ticker before
+	// the first tick fires. Derive a background-rooted ctx instead; Stop
+	// cancels it explicitly via bgCancel.
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	s.bgCancel = bgCancel
+
 	// Start background synchronization loops
-	go s.runLoop(ctx)
-	go s.subscribeToUpdates(ctx)
+	go s.runLoop(bgCtx)
+	go s.subscribeToUpdates(bgCtx)
 
 	logger.LSystem(ctx, entity.SystemLog{
 		Service: "CMS-DELIVERY",
@@ -736,6 +750,9 @@ func (s *CMSDeliveryService) Stop() error {
 	close(s.stopCh)
 	if s.subCancel != nil {
 		s.subCancel()
+	}
+	if s.bgCancel != nil {
+		s.bgCancel()
 	}
 	s.mu.Unlock()
 
@@ -793,6 +810,11 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 	// Targeted refresh cleanup: if a placement has no active schedules in DB,
 	// we must clear its local cache entry.
 	if len(placementNames) > 0 && len(occurrences) == 0 {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("evaluate: no active occurrences in DB for placements %v at %s — clearing local mirror for these placements", placementNames, time.Now().Format(time.RFC3339)),
+		})
 		for _, name := range placementNames {
 			if s.cacheMemory != nil {
 				s.cacheMemory.Schedules.Delete(cmsPlacementSchedulesKey(name))
@@ -838,7 +860,14 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 	}
 
 	if len(groups) == 0 {
-		// If no groups found, clear all schedules and rules in cache
+		// If no groups found, clear all schedules and rules in cache.
+		// This is the silent-mirror-wipe path: returns the API empty results
+		// until the DB has active occurrences again, so make it loud.
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("evaluate: no active occurrences in DB at %s (occurrences fetched=%d, schedules after dedup=%d) — wiping full local mirror; API will return empty until DB has active rows", time.Now().Format(time.RFC3339), len(occurrences), len(schedules)),
+		})
 		if s.cacheMemory != nil {
 			s.cacheMemory.UpdateSchedules(nil, nil, nil, s.resultTTL, s.updateVersionMetric)
 		}
