@@ -793,6 +793,11 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 	// Targeted refresh cleanup: if a placement has no active schedules in DB,
 	// we must clear its local cache entry.
 	if len(placementNames) > 0 && len(occurrences) == 0 {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("evaluate: no active occurrences in DB for placements %v at %s — clearing local mirror for these placements", placementNames, time.Now().Format(time.RFC3339)),
+		})
 		for _, name := range placementNames {
 			if s.cacheMemory != nil {
 				s.cacheMemory.Schedules.Delete(cmsPlacementSchedulesKey(name))
@@ -838,7 +843,14 @@ func (s *CMSDeliveryService) evaluate(ctx context.Context, placementNames ...str
 	}
 
 	if len(groups) == 0 {
-		// If no groups found, clear all schedules and rules in cache
+		// If no groups found, clear all schedules and rules in cache.
+		// This is the silent-mirror-wipe path: returns the API empty results
+		// until the DB has active occurrences again, so make it loud.
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: fmt.Sprintf("evaluate: no active occurrences in DB at %s (occurrences fetched=%d, schedules after dedup=%d) — wiping full local mirror; API will return empty until DB has active rows", time.Now().Format(time.RFC3339), len(occurrences), len(schedules)),
+		})
 		if s.cacheMemory != nil {
 			s.cacheMemory.UpdateSchedules(nil, nil, nil, s.resultTTL, s.updateVersionMetric)
 		}
