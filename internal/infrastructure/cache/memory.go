@@ -67,10 +67,6 @@ func NewCacheMemory[T any](namespace string, monitor *MemoryMonitor, ttl time.Du
 	}
 }
 
-// Stop is a no-op. Lifecycle is managed by MemoryMonitor.Stop().
-// Kept for call-site backward compatibility.
-func (rc *CacheMemory[T]) Stop() {}
-
 // Get retrieves a value from local memory.
 // Returns the zero value and false when the key is absent or expired.
 func (rc *CacheMemory[T]) Get(key string) (T, bool) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 
 	deliveryservice "kbank-ecms/cmd/server/service"
 	domainrepo "kbank-ecms/internal/domain/repository"
@@ -13,6 +14,9 @@ import (
 // the originating module name, making startup and shutdown order legible.
 func App() fx.Option {
 	return fx.Options(
+		// Replace fx's default plain-text "[Fx] TERMINATED" output with
+		// structured JSON logs that match the rest of the service.
+		fx.WithLogger(func() fxevent.Logger { return newStructuredFxLogger() }),
 		configModule(),
 		infraModule(),
 		repositoryModule(),
