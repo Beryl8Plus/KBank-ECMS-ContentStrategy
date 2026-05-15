@@ -105,7 +105,6 @@ type ContentResult struct {
 	ContentPath    string           `json:"contentPath"`
 	Source         string           `json:"source"`
 	Score          float64          `json:"score"`
-	Variation      *string          `json:"variation"`
 	StartDateTime  string           `json:"startDateTime"`
 	EndDateTime    string           `json:"endDateTime"`
 	Campaign       *Campaign        `json:"campaign"`
@@ -119,7 +118,6 @@ func (r ContentResult) ToResponse() ContentResult {
 		ContentPath:    r.ContentPath,
 		Source:         r.Source,
 		Score:          r.Score,
-		Variation:      r.Variation,
 		StartDateTime:  r.StartDateTime,
 		EndDateTime:    r.EndDateTime,
 		Campaign:       r.Campaign,

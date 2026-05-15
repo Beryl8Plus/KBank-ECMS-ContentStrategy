@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/datatypes"
 
 	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
@@ -21,110 +20,74 @@ import (
 
 func mustJSON(v string) json.RawMessage { return json.RawMessage(v) }
 
-// buildSimpleRule builds a DecisionRule with one RuleCondition and one Rule variation.
-//
-//	attrID        — attribute UUID used in both condition and variation
-//	expectedValue — value stored in RuleAttribute (the "expected" threshold)
-//	op            — logical operator applied in the condition
-func buildSimpleRule(attrID uuid.UUID, expectedValue string, op enums.LogicalOperator) entity.DecisionRule {
-	condID := uuid.New()
-	ruleID := uuid.New()
-
-	cond := entity.RuleCondition{
-		BaseModel:       entity.BaseModel{ID: condID},
-		AttributeID:     uuidPtr(attrID),
+func buildSimpleLogicCondition(attrID uuid.UUID, expectedValue string, op enums.LogicalOperator) dto.LogicCondition {
+	return dto.LogicCondition{
+		ConditionID:     uuid.New().String(),
+		AttributeID:     attrID.String(),
+		DataType:        string(enums.AttributeDataTypeText),
+		LogicalOperator: string(op),
 		Sequence:        1,
-		LogicalOperator: op,
-		// Single-sibling rule: forward-link ConnectorOperator must be omitted.
-		Attribute: &entity.Attribute{
-			DataType: enums.AttributeDataTypeText,
-		},
-	}
-
-	variation := entity.Rule{
-		BaseModel:     entity.BaseModel{ID: ruleID},
-		VariationName: "varA",
-		Score:         10,
-		OrderNo:       1,
-		RuleAttributes: []entity.RuleAttribute{
-			{
-				AttributeID: attrID,
-				Value:       datatypes.JSON(expectedValue),
-			},
-		},
-	}
-
-	return entity.DecisionRule{
-		Score:          1.0,
-		RuleConditions: []entity.RuleCondition{cond},
-		Rules:          []entity.Rule{variation},
+		ExpectedValue:   mustJSON(expectedValue),
 	}
 }
 
 // ---------------------------------------------------------------------------
-// TestEvaluateRuleScore_NilUserAttrs — nil userAttrs treats conditions as non-match
+// TestEvaluateLogicConditions_NilUserAttrs - nil userAttrs treats conditions as non-match
 // ---------------------------------------------------------------------------
 
-func TestEvaluateRuleScore_NilUserAttrs(t *testing.T) {
+func TestEvaluateLogicConditions_NilUserAttrs(t *testing.T) {
 	attrID := uuid.New()
 
-	t.Run("NoConditions_ReturnsDefaultScore", func(t *testing.T) {
-		rule := entity.DecisionRule{Score: 5.0}
-		v, score, err := EvaluateRuleScore(rule, nil)
+	t.Run("NoConditions_ReturnsTrue", func(t *testing.T) {
+		ok, err := EvaluateLogicConditions(nil, nil)
 		require.NoError(t, err)
-		assert.Nil(t, v)
-		assert.Equal(t, 5.0, score)
+		assert.True(t, ok)
 	})
 
-	t.Run("WithConditions_NilUserAttrs_ReturnsDefaultScore", func(t *testing.T) {
-		rule := buildSimpleRule(attrID, `"gold"`, enums.LogicalOperatorEQ)
-		v, score, err := EvaluateRuleScore(rule, nil)
+	t.Run("WithConditions_NilUserAttrs_ReturnsFalse", func(t *testing.T) {
+		cond := buildSimpleLogicCondition(attrID, `"gold"`, enums.LogicalOperatorEQ)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, nil)
 		require.NoError(t, err)
-		assert.Nil(t, v)
-		assert.Equal(t, rule.Score, score) // no match → fallback
+		assert.False(t, ok)
 	})
 }
 
 // ---------------------------------------------------------------------------
-// TestEvaluateRuleScore_WithUserAttrs — non-nil userAttrs provides actual values
+// TestEvaluateLogicConditions_WithUserAttrs - non-nil userAttrs provides actual values
 // ---------------------------------------------------------------------------
 
-func TestEvaluateRuleScore_WithUserAttrs(t *testing.T) {
+func TestEvaluateLogicConditions_WithUserAttrs(t *testing.T) {
 	attrID := uuid.New()
 
 	t.Run("Pass_UserAttrMatchesExpected", func(t *testing.T) {
-		rule := buildSimpleRule(attrID, `"gold"`, enums.LogicalOperatorEQ)
+		cond := buildSimpleLogicCondition(attrID, `"gold"`, enums.LogicalOperatorEQ)
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"gold"`),
 		}
-		v, score, err := EvaluateRuleScore(rule, userAttrs)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
 		require.NoError(t, err)
-		require.NotNil(t, v)
-		assert.Equal(t, "varA", *v)
-		assert.Equal(t, float64(10), score)
+		assert.True(t, ok)
 	})
 
 	t.Run("Fail_UserAttrDoesNotMatchExpected", func(t *testing.T) {
-		rule := buildSimpleRule(attrID, `"gold"`, enums.LogicalOperatorEQ)
+		cond := buildSimpleLogicCondition(attrID, `"gold"`, enums.LogicalOperatorEQ)
 		userAttrs := map[string]json.RawMessage{
 			attrID.String(): mustJSON(`"silver"`),
 		}
-		v, score, err := EvaluateRuleScore(rule, userAttrs)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
 		require.NoError(t, err)
-		assert.Nil(t, v)
-		assert.Equal(t, rule.Score, score)
+		assert.False(t, ok)
 	})
 
 	t.Run("MissingAttr_TreatedAsNonMatch", func(t *testing.T) {
-		rule := buildSimpleRule(attrID, `"gold"`, enums.LogicalOperatorEQ)
+		cond := buildSimpleLogicCondition(attrID, `"gold"`, enums.LogicalOperatorEQ)
 		// userAttrs provided but does not contain attrID
 		userAttrs := map[string]json.RawMessage{
 			uuid.New().String(): mustJSON(`"gold"`),
 		}
-		v, score, err := EvaluateRuleScore(rule, userAttrs)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
 		require.NoError(t, err)
-		assert.Nil(t, v)
-		assert.Equal(t, rule.Score, score)
+		assert.False(t, ok)
 	})
 }
 
@@ -453,7 +416,7 @@ func TestParsedUserAttrs_ConcurrentAccess(t *testing.T) {
 
 	// ParsedUserAttrs is documented as single-goroutine per request.
 	// This test verifies the removed mutex does not hide a real race:
-	// each goroutine must use its own instance (as EvaluateRuleScore does).
+	// each goroutine must use its own instance, matching request-scoped evaluation.
 	const goroutines = 20
 	attrs := map[string]json.RawMessage{"tier": mustJSON(`"gold"`)}
 
@@ -719,13 +682,12 @@ func TestEvaluateLogicConditions_NilOrNullExpectedValue(t *testing.T) {
 
 	makeCondWithExpected := func(ev json.RawMessage) dto.LogicCondition {
 		return dto.LogicCondition{
-			ConditionID:       uuid.New().String(),
-			AttributeID:       uuidPtr(attrID).String(),
-			DataType:          string(enums.AttributeDataTypeText),
-			LogicalOperator:   string(enums.LogicalOperatorEQ),
-			ConnectorOperator: string(enums.ConnectorOperatorAND),
-			Sequence:          1,
-			ExpectedValue:     ev,
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID.String(),
+			DataType:        string(enums.AttributeDataTypeText),
+			LogicalOperator: string(enums.LogicalOperatorEQ),
+			Sequence:        1,
+			ExpectedValue:   ev,
 		}
 	}
 
@@ -805,79 +767,63 @@ func TestParsedUserAttrs_IsNull(t *testing.T) {
 
 func TestEvaluateSingleCondition_SentinelIntegration(t *testing.T) {
 	attrID := uuid.New()
-	buildRule := func(expectedJSON string, op enums.LogicalOperator, dt enums.AttributeDataType) entity.DecisionRule {
-		condID := uuid.New()
-		ruleID := uuid.New()
-		cond := entity.RuleCondition{
-			BaseModel:       entity.BaseModel{ID: condID},
-			AttributeID:     uuidPtr(attrID),
+	buildCond := func(expectedJSON string, op enums.LogicalOperator, dt enums.AttributeDataType) dto.LogicCondition {
+		return dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID.String(),
+			DataType:        string(dt),
+			LogicalOperator: string(op),
 			Sequence:        1,
-			LogicalOperator: op,
-			Attribute:       &entity.Attribute{DataType: dt},
-		}
-		variation := entity.Rule{
-			BaseModel:     entity.BaseModel{ID: ruleID},
-			VariationName: "v",
-			Score:         99,
-			OrderNo:       1,
-			RuleAttributes: []entity.RuleAttribute{
-				{AttributeID: attrID, Value: datatypes.JSON(expectedJSON)},
-			},
-		}
-		return entity.DecisionRule{
-			Score:          1.0,
-			RuleConditions: []entity.RuleCondition{cond},
-			Rules:          []entity.Rule{variation},
+			ExpectedValue:   mustJSON(expectedJSON),
 		}
 	}
 
 	t.Run("ANY_Text_AlwaysMatches", func(t *testing.T) {
-		rule := buildRule(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		cond := buildCond(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
 		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"anything"`)}
-		v, score, err := EvaluateRuleScore(rule, ua)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
 		require.NoError(t, err)
-		require.NotNil(t, v)
-		assert.Equal(t, 99.0, score)
+		assert.True(t, ok)
 	})
 
 	t.Run("NULL_Text_MatchesWhenUserAbsent", func(t *testing.T) {
-		rule := buildRule(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		cond := buildCond(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
 		ua := map[string]json.RawMessage{uuid.New().String(): mustJSON(`"x"`)}
-		v, _, err := EvaluateRuleScore(rule, ua)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
 		require.NoError(t, err)
-		assert.NotNil(t, v)
+		assert.True(t, ok)
 	})
 
 	t.Run("NULL_Text_NoMatchWhenUserHasValue", func(t *testing.T) {
-		rule := buildRule(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		cond := buildCond(`"NULL"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
 		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"gold"`)}
-		v, _, err := EvaluateRuleScore(rule, ua)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
 		require.NoError(t, err)
-		assert.Nil(t, v)
+		assert.False(t, ok)
 	})
 
 	t.Run("CaretList_Text_EQ_PromotedToIN", func(t *testing.T) {
-		rule := buildRule(`"gold^silver^bronze"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
+		cond := buildCond(`"gold^silver^bronze"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeText)
 		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"silver"`)}
-		v, _, err := EvaluateRuleScore(rule, ua)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
 		require.NoError(t, err)
-		assert.NotNil(t, v)
+		assert.True(t, ok)
 	})
 
 	t.Run("CaretList_Number_IN", func(t *testing.T) {
-		rule := buildRule(`"10^20^30"`, enums.LogicalOperatorIN, enums.AttributeDataTypeNumber)
+		cond := buildCond(`"10^20^30"`, enums.LogicalOperatorIN, enums.AttributeDataTypeNumber)
 		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`20`)}
-		v, _, err := EvaluateRuleScore(rule, ua)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
 		require.NoError(t, err)
-		assert.NotNil(t, v)
+		assert.True(t, ok)
 	})
 
-	t.Run("Date_ANY_FallsThroughToNormalComparator", func(t *testing.T) {
-		rule := buildRule(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeDate)
+	t.Run("Date_ANY_FallsThroughToNormalComparatorError", func(t *testing.T) {
+		cond := buildCond(`"ANY"`, enums.LogicalOperatorEQ, enums.AttributeDataTypeDate)
 		ua := map[string]json.RawMessage{attrID.String(): mustJSON(`"2026-01-01"`)}
-		v, _, err := EvaluateRuleScore(rule, ua)
-		require.NoError(t, err)
-		assert.Nil(t, v)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, ua)
+		require.Error(t, err)
+		assert.False(t, ok)
 	})
 }
 

@@ -137,9 +137,7 @@ func TestBuildLogicExpression(t *testing.T) {
 			attr1.String(): json.RawMessage(`"hello"`),
 		}
 		expr := BuildLogicExpression([]entity.RuleCondition{cond}, vals)
-		assert.Contains(t, expr, attr1.String()+":")
-		assert.Contains(t, expr, ":=:")
-		assert.Contains(t, expr, `"hello"`)
+		assert.Equal(t, attr1.String()+` = "hello"`, expr)
 	})
 
 	t.Run("Deterministic", func(t *testing.T) {
