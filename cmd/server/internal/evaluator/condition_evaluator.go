@@ -370,27 +370,33 @@ func evaluateConditionGroup(conditions []entity.RuleCondition, expectedVals *Par
 	return evalSiblings(byParent, roots, 1, expectedVals, parsed)
 }
 
-// evalSiblings evaluates a sorted sibling chain using forward-link semantics.
-// siblings[i].ConnectorOperator is a forward-link: it joins siblings[i] with siblings[i+1].
-// The last sibling must omit ConnectorOperator.
+// evalSiblings evaluates a sorted sibling chain using forward-link connectors
+// with standard boolean precedence: AND binds tighter than OR.
+//
+// The chain is split into AND-runs at OR connectors. Each run is evaluated as
+// a conjunction, then the completed runs are ORed together.
+// siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1]; the last
+// sibling must omit ConnectorOperator.
 func evalSiblings(byParent map[string][]entity.RuleCondition, siblings []entity.RuleCondition, depth int, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
+	accOr := false
 	result, err := evalNode(byParent, siblings[0], depth, expectedVals, parsed)
 	if err != nil {
 		return false, err
 	}
 	for i := 0; i < len(siblings)-1; i++ {
-		// Forward-link: siblings[i].ConnectorOperator joins siblings[i] with siblings[i+1].
+		conn := connectorValue(siblings[i].ConnectorOperator)
 		next, err := evalNode(byParent, siblings[i+1], depth, expectedVals, parsed)
 		if err != nil {
 			return false, err
 		}
-		if connectorValue(siblings[i].ConnectorOperator) == enums.ConnectorOperatorOR {
-			result = result || next
+		if conn == enums.ConnectorOperatorOR {
+			accOr = accOr || result
+			result = next
 		} else {
 			result = result && next
 		}
 	}
-	return result, nil
+	return accOr || result, nil
 }
 
 // evalNode evaluates a single condition node.
