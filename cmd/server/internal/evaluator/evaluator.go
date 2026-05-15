@@ -48,6 +48,11 @@ func (e *LocalEvaluator) Evaluate(
 			// this placement. The rule's own entry is dropped when no lead
 			// matches — a sales-targeted rule without a lead means no offer.
 			if isSalesTarget {
+				// for _, leadEntry := range expandWithLeads(entry, leads, placementName, entry.Score) {
+				// 	if existing, exists := results[leadEntry.ContentPath]; !exists || leadEntry.Score > existing.Score {
+				// 		results[leadEntry.ContentPath] = leadEntry
+				// 	}
+				// }
 				results = append(results, expandWithLeads(entry, leads, placementName, entry.Score)...)
 				continue
 			}
