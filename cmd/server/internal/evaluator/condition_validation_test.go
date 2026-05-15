@@ -14,7 +14,7 @@ import (
 
 func TestValidateConditionTree(t *testing.T) {
 	t.Run("EmptyConditions_OK", func(t *testing.T) {
-		require.NoError(t, ValidateConditionTree(nil))
+		require.NoError(t, ValidateConditionTree(nil, nil))
 	})
 
 	t.Run("SingleRoot_OK", func(t *testing.T) {
@@ -24,7 +24,7 @@ func TestValidateConditionTree(t *testing.T) {
 			LogicalOperator: enums.LogicalOperatorEQ,
 			Sequence:        1,
 		}
-		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c}))
+		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c}, nil))
 	})
 
 	t.Run("RootSiblings_ForwardLink_OK", func(t *testing.T) {
@@ -40,7 +40,7 @@ func TestValidateConditionTree(t *testing.T) {
 			AttributeID: uuidPtr(uuid.New()),
 			Sequence:    2,
 		}
-		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c1, c2}))
+		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c1, c2}, nil))
 	})
 
 	t.Run("RootSiblings_MixedConnector_Error", func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestValidateConditionTree(t *testing.T) {
 			Sequence:  3,
 			// last sibling: no connector
 		}
-		err := ValidateConditionTree([]entity.RuleCondition{c1, c2, c3})
+		err := ValidateConditionTree([]entity.RuleCondition{c1, c2, c3}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "mixed")
 	})
@@ -68,7 +68,7 @@ func TestValidateConditionTree(t *testing.T) {
 		// Two roots: c1 must carry ConnectorOperator (forward-link). c2 (last) must not.
 		c1 := entity.RuleCondition{BaseModel: entity.BaseModel{ID: uuid.New()}, Sequence: 1} // missing forward-link
 		c2 := entity.RuleCondition{BaseModel: entity.BaseModel{ID: uuid.New()}, Sequence: 2}
-		err := ValidateConditionTree([]entity.RuleCondition{c1, c2})
+		err := ValidateConditionTree([]entity.RuleCondition{c1, c2}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ConnectorOperator")
 	})
@@ -84,7 +84,7 @@ func TestValidateConditionTree(t *testing.T) {
 			Sequence:          2,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND), // last sibling MUST omit
 		}
-		err := ValidateConditionTree([]entity.RuleCondition{c1, c2})
+		err := ValidateConditionTree([]entity.RuleCondition{c1, c2}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "last sibling")
 	})
@@ -105,7 +105,7 @@ func TestValidateConditionTree(t *testing.T) {
 			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              1,
 		}
-		err := ValidateConditionTree([]entity.RuleCondition{parent, child1})
+		err := ValidateConditionTree([]entity.RuleCondition{parent, child1}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ChildConnectorOperator")
 	})
@@ -127,7 +127,7 @@ func TestValidateConditionTree(t *testing.T) {
 			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              2,
 		}
-		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1, child2}))
+		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1, child2}, nil))
 	})
 
 	t.Run("Group_OwnCheckPlusChildren_WithChildConnector_OK", func(t *testing.T) {
@@ -145,7 +145,7 @@ func TestValidateConditionTree(t *testing.T) {
 			AttributeID:           uuidPtr(uuid.New()),
 			Sequence:              1,
 		}
-		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1}))
+		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1}, nil))
 	})
 
 	t.Run("ErrorIncludesBuildLogicExpressionWithExpectedValues", func(t *testing.T) {
@@ -197,7 +197,7 @@ func TestValidateConditionTree(t *testing.T) {
 			attrB.String():  json.RawMessage(`"v4"`),
 		}
 
-		err := ValidateConditionTreeWithExpectedValues(
+		err := ValidateConditionTree(
 			[]entity.RuleCondition{lastWithDanglingConnector, child2, parent, child1},
 			expectedValues,
 		)
@@ -236,7 +236,7 @@ func TestValidateConditionTree(t *testing.T) {
 		}
 		conditions := []entity.RuleCondition{parent, child}
 
-		err := ValidateConditionTreeWithExpectedValues(conditions, expectedValues)
+		err := ValidateConditionTree(conditions, expectedValues)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ChildConnectorOperator")

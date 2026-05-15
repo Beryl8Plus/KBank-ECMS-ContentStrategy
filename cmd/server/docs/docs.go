@@ -379,9 +379,6 @@ const docTemplate = `{
                 },
                 "startDateTime": {
                     "type": "string"
-                },
-                "variation": {
-                    "type": "string"
                 }
             }
         },

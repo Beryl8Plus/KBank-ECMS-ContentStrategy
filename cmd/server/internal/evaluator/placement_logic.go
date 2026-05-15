@@ -23,7 +23,7 @@ func BuildPlacementLogicEntries(
 	// Support type Mass, that no rules or variations, just a single content path and score.
 	if len(rule.Rules) == 0 {
 		// No variations — single entry with base score, empty expected values.
-		entry := buildLogicEntry(rule, sched, nil, rule.Score, source, campaign, nil)
+		entry := buildLogicEntry(rule, sched, rule.Score, source, campaign, nil)
 		return []dto.ContentResult{entry}
 	}
 
@@ -33,8 +33,7 @@ func BuildPlacementLogicEntries(
 		for _, ra := range v.RuleAttributes {
 			expectedValues[ra.AttributeID.String()] = json.RawMessage(ra.Value)
 		}
-		varName := v.VariationName
-		entry := buildLogicEntry(rule, sched, &varName, float64(v.Score), source, campaign, expectedValues)
+		entry := buildLogicEntry(rule, sched, rule.Score, source, campaign, expectedValues)
 		results = append(results, entry)
 	}
 	return results
@@ -44,7 +43,6 @@ func BuildPlacementLogicEntries(
 func buildLogicEntry(
 	rule entity.DecisionRule,
 	sched *entity.Schedule,
-	variation *string,
 	score float64,
 	source string,
 	campaign *dto.Campaign,
@@ -83,7 +81,6 @@ func buildLogicEntry(
 		RuleSetType:    rule.Type.String(),
 		Source:         source,
 		Score:          score,
-		Variation:      variation,
 		StartDateTime:  sched.EffectiveFrom.Format(time.RFC3339),
 		EndDateTime:    sched.EffectiveUntil.Format(time.RFC3339),
 		Campaign:       campaign,

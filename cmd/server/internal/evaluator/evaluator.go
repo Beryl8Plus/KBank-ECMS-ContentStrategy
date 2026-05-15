@@ -29,7 +29,8 @@ func (e *LocalEvaluator) Evaluate(
 	userAttrs map[string]json.RawMessage,
 	leads []entity.Lead,
 ) ([]dto.ContentResult, error) {
-	var results = make(map[string]dto.ContentResult)
+	// var results = make(map[string]dto.ContentResult)
+	var results = make([]dto.ContentResult, 0)
 	for _, sched := range schedules {
 		if sched.DecisionRule == nil {
 			continue
@@ -47,24 +48,20 @@ func (e *LocalEvaluator) Evaluate(
 			// this placement. The rule's own entry is dropped when no lead
 			// matches — a sales-targeted rule without a lead means no offer.
 			if isSalesTarget {
-				for _, leadEntry := range expandWithLeads(entry, leads, placementName, entry.Score) {
-					if existing, exists := results[leadEntry.ContentPath]; !exists || leadEntry.Score > existing.Score {
-						results[leadEntry.ContentPath] = leadEntry
-					}
-				}
+				results = append(results, expandWithLeads(entry, leads, placementName, entry.Score)...)
 				continue
 			}
 
 			// score is determined by the decision rule, so we can safely overwrite results for the same content path since they will have the same score and we want to avoid duplicate entries in the sorted results.
-			if existing, exists := results[entry.ContentPath]; !exists || entry.Score > existing.Score {
-				results[entry.ContentPath] = entry
-			}
+			// if existing, exists := results[entry.ContentPath]; !exists || entry.Score > existing.Score {
+			// 	results[entry.ContentPath] = entry
+			// }
+			results = append(results, entry)
 		}
 	}
+
 	sortedResults := make([]dto.ContentResult, 0, len(results))
-	for _, entry := range results {
-		sortedResults = append(sortedResults, entry)
-	}
+	sortedResults = append(sortedResults, results...)
 	sort.Slice(sortedResults, func(i, j int) bool {
 		return sortedResults[i].Score > sortedResults[j].Score
 	})
