@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -145,5 +146,100 @@ func TestValidateConditionTree(t *testing.T) {
 			Sequence:              1,
 		}
 		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{parent, child1}))
+	})
+
+	t.Run("ErrorIncludesBuildLogicExpressionWithExpectedValues", func(t *testing.T) {
+		attrA := uuid.New()
+		attrA1 := uuid.New()
+		attrA2 := uuid.New()
+		attrB := uuid.New()
+		parentID := uuid.New()
+
+		parent := entity.RuleCondition{
+			BaseModel:              entity.BaseModel{ID: parentID},
+			AttributeID:            &attrA,
+			Attribute:              &entity.Attribute{DisplayName: "A"},
+			LogicalOperator:        enums.LogicalOperatorEQ,
+			Sequence:               1,
+			ConnectorOperator:      connectorPtr(enums.ConnectorOperatorAND),
+			ChildConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
+		}
+		child1 := entity.RuleCondition{
+			BaseModel:             entity.BaseModel{ID: uuid.New()},
+			ParentRuleConditionID: &parentID,
+			AttributeID:           &attrA1,
+			Attribute:             &entity.Attribute{DisplayName: "A1"},
+			LogicalOperator:       enums.LogicalOperatorGT,
+			Sequence:              1,
+			ConnectorOperator:     connectorPtr(enums.ConnectorOperatorOR),
+		}
+		child2 := entity.RuleCondition{
+			BaseModel:             entity.BaseModel{ID: uuid.New()},
+			ParentRuleConditionID: &parentID,
+			AttributeID:           &attrA2,
+			Attribute:             &entity.Attribute{DisplayName: "A2"},
+			LogicalOperator:       enums.LogicalOperatorLT,
+			Sequence:              2,
+		}
+		lastWithDanglingConnector := entity.RuleCondition{
+			BaseModel:         entity.BaseModel{ID: uuid.New()},
+			AttributeID:       &attrB,
+			Attribute:         &entity.Attribute{DisplayName: "B"},
+			LogicalOperator:   enums.LogicalOperatorEQ,
+			Sequence:          2,
+			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
+		}
+
+		expectedValues := map[string]json.RawMessage{
+			attrA.String():  json.RawMessage(`"v1"`),
+			attrA1.String(): json.RawMessage(`"v2"`),
+			attrA2.String(): json.RawMessage(`"v3"`),
+			attrB.String():  json.RawMessage(`"v4"`),
+		}
+
+		err := ValidateConditionTreeWithExpectedValues(
+			[]entity.RuleCondition{lastWithDanglingConnector, child2, parent, child1},
+			expectedValues,
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "last sibling")
+		assert.Contains(t, err.Error(), "condition: "+BuildLogicExpression(
+			[]entity.RuleCondition{lastWithDanglingConnector, child2, parent, child1},
+			expectedValues,
+		))
+	})
+
+	t.Run("ErrorUsesBuildLogicExpressionForChildConnectorValidation", func(t *testing.T) {
+		attrParent := uuid.New()
+		attrChild := uuid.New()
+		parentID := uuid.New()
+
+		parent := entity.RuleCondition{
+			BaseModel:       entity.BaseModel{ID: parentID},
+			AttributeID:     &attrParent,
+			Attribute:       &entity.Attribute{FieldName: "parent_field"},
+			LogicalOperator: enums.LogicalOperatorEQ,
+			Sequence:        1,
+		}
+		child := entity.RuleCondition{
+			BaseModel:             entity.BaseModel{ID: uuid.New()},
+			ParentRuleConditionID: &parentID,
+			AttributeID:           &attrChild,
+			Attribute:             &entity.Attribute{DisplayName: "Child"},
+			LogicalOperator:       enums.LogicalOperatorIN,
+			Sequence:              1,
+		}
+		expectedValues := map[string]json.RawMessage{
+			attrParent.String(): json.RawMessage(`["x", "y"]`),
+			attrChild.String():  json.RawMessage(`["z"]`),
+		}
+		conditions := []entity.RuleCondition{parent, child}
+
+		err := ValidateConditionTreeWithExpectedValues(conditions, expectedValues)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ChildConnectorOperator")
+		assert.Contains(t, err.Error(), "condition: "+BuildLogicExpression(conditions, expectedValues))
 	})
 }

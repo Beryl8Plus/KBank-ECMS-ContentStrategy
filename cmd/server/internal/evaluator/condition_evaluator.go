@@ -301,54 +301,6 @@ func (p *ParsedExpectedValues) GetDateBounds(attrID string) ([2]time.Time, bool)
 // Public evaluation entry points
 // ---------------------------------------------------------------------------
 
-// EvaluateRuleScore resolves the effective score for a DecisionRule by evaluating
-// its RuleConditions against each Rule variation's expected attribute values
-// (sourced from RuleAttributes).
-//
-// userAttrs carries live user attribute values (attributeID → compact JSON value).
-// When non-nil, leaf conditions compare against these values.
-// When nil, conditions with user-dependent attributes are treated as non-match
-// (the caller is expected to defer real evaluation to delivery time).
-//
-// Algorithm:
-//  1. No conditions → return rule.Score unchanged.
-//  2. Evaluate each Rule variation in OrderNo order. Build an expected-value map
-//     from the variation's RuleAttributes (attributeID → value). Return the Score
-//     of the first variation whose conditions all pass.
-//  3. No variation matched → return rule.Score.
-func EvaluateRuleScore(rule entity.DecisionRule, userAttrs map[string]json.RawMessage) (*string, float64, error) {
-	if len(rule.RuleConditions) == 0 {
-		return nil, rule.Score, nil
-	}
-
-	if err := ValidateConditionTree(rule.RuleConditions); err != nil {
-		logger.LError(context.Background(), entity.ErrorLog{
-			Service: "EvaluateRuleScore",
-			Message: err.Error(),
-		})
-		return nil, rule.Score, nil
-	}
-
-	parsed := NewParsedUserAttrs(userAttrs)
-
-	for _, v := range sortedVariations(rule.Rules) {
-		rawExpected := make(map[string]json.RawMessage, len(v.RuleAttributes))
-		for _, ra := range v.RuleAttributes {
-			rawExpected[ra.AttributeID.String()] = json.RawMessage(ra.Value)
-		}
-
-		pass, err := evaluateConditionGroup(rule.RuleConditions, NewParsedExpectedValues(rawExpected), parsed)
-		if err != nil {
-			continue
-		}
-		if pass {
-			return &v.VariationName, float64(v.Score), nil
-		}
-	}
-
-	return nil, rule.Score, nil
-}
-
 // EvaluateLogicConditions evaluates a slice of LogicCondition (from PlacementLogicEntry)
 // against live user attribute values supplied in userAttrs (attr UUID → compact JSON value).
 //
@@ -368,14 +320,6 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 		rcs = append(rcs, logicConditionToRuleCondition(lc))
 	}
 
-	if err := ValidateConditionTree(rcs); err != nil {
-		logger.LError(context.Background(), entity.ErrorLog{
-			Service: "EvaluateLogicConditions",
-			Message: err.Error(),
-		})
-		return false, nil
-	}
-
 	// Only stamp entries where ExpectedValue is a non-nil, non-JSON-null value.
 	// Conditions without a stamped expected value (e.g. parent/grouping nodes or
 	// missing rule_attribute rows) must be skipped so that the Has guard in
@@ -388,6 +332,14 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 		}
 	}
 
+	if err := ValidateConditionTree(rcs, rawExpected); err != nil {
+		logger.LError(context.Background(), entity.ErrorLog{
+			Service: "EvaluateLogicConditions",
+			Message: err.Error(),
+		})
+		return false, nil
+	}
+
 	return evaluateConditionGroup(rcs, NewParsedExpectedValues(rawExpected), NewParsedUserAttrs(userAttrs))
 }
 
@@ -395,7 +347,7 @@ func EvaluateLogicConditions(conditions []dto.LogicCondition, userAttrs map[stri
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-const maxConditionDepth = 3
+const maxConditionDepth = 4
 
 func evaluateConditionGroup(conditions []entity.RuleCondition, expectedVals *ParsedExpectedValues, parsed *ParsedUserAttrs) (bool, error) {
 	byParent := make(map[string][]entity.RuleCondition, len(conditions))
