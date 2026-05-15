@@ -185,9 +185,8 @@ func TestEvaluateLogicConditions_UnifiedPath(t *testing.T) {
 func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 	attrID := uuid.New()
 
-	t.Run("MixedConnectors_ReturnsFalse", func(t *testing.T) {
-		// Two siblings: c1 has AND forward-link, c2 has OR forward-link, c3 is last.
-		// Mixed connectors at one level must be rejected.
+	t.Run("LastSiblingForwardLink_ReturnsFalse", func(t *testing.T) {
+		// c2 is the last sibling and must omit ConnectorOperator.
 		c1 := dto.LogicCondition{
 			ConditionID:       uuid.New().String(),
 			AttributeID:       uuidPtr(attrID).String(),
@@ -206,16 +205,8 @@ func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 			Sequence:          2,
 			ExpectedValue:     mustJSON(`"gold"`),
 		}
-		c3 := dto.LogicCondition{
-			ConditionID:     uuid.New().String(),
-			AttributeID:     uuidPtr(attrID).String(),
-			DataType:        string(enums.AttributeDataTypeText),
-			LogicalOperator: string(enums.LogicalOperatorEQ),
-			Sequence:        3,
-			ExpectedValue:   mustJSON(`"gold"`),
-		}
 		userAttrs := map[string]json.RawMessage{attrID.String(): mustJSON(`"gold"`)}
-		ok, err := EvaluateLogicConditions([]dto.LogicCondition{c1, c2, c3}, userAttrs)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{c1, c2}, userAttrs)
 		require.NoError(t, err)
 		assert.False(t, ok, "invalid tree must return false, not evaluate")
 	})
@@ -223,6 +214,154 @@ func TestEvaluateLogicConditions_InvalidTree_ReturnsFalse(t *testing.T) {
 
 // c1.ConnectorOperator = AND means "combine c1's result with c2 using AND".
 // The last sibling omits ConnectorOperator entirely.
+
+func TestEvaluateConditionGroup_MixedConnectorPrecedence(t *testing.T) {
+	textAttr := &entity.Attribute{DataType: enums.AttributeDataTypeText}
+
+	makeCondition := func(attrID uuid.UUID, sequence int, connector enums.ConnectorOperator) entity.RuleCondition {
+		c := entity.RuleCondition{
+			BaseModel:       entity.BaseModel{ID: uuid.New()},
+			AttributeID:     uuidPtr(attrID),
+			LogicalOperator: enums.LogicalOperatorEQ,
+			Attribute:       textAttr,
+			Sequence:        sequence,
+		}
+		if connector != "" {
+			c.ConnectorOperator = connectorPtr(connector)
+		}
+		return c
+	}
+
+	evaluate := func(t *testing.T, values []bool, connectors []enums.ConnectorOperator) bool {
+		t.Helper()
+		require.Len(t, values, len(connectors)+1)
+
+		conditions := make([]entity.RuleCondition, 0, len(values))
+		expected := make(map[string]json.RawMessage, len(values))
+		user := make(map[string]json.RawMessage, len(values))
+
+		for i, pass := range values {
+			attrID := uuid.New()
+			connector := enums.ConnectorOperator("")
+			if i < len(connectors) {
+				connector = connectors[i]
+			}
+			conditions = append(conditions, makeCondition(attrID, i+1, connector))
+			expected[attrID.String()] = mustJSON(`"yes"`)
+			if pass {
+				user[attrID.String()] = mustJSON(`"yes"`)
+			} else {
+				user[attrID.String()] = mustJSON(`"no"`)
+			}
+		}
+
+		result, err := evaluateConditionGroup(
+			conditions,
+			NewParsedExpectedValues(expected),
+			NewParsedUserAttrs(user),
+		)
+		require.NoError(t, err)
+		return result
+	}
+
+	t.Run("AndPairsOrTogether", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			a, b, c, d bool
+			want       bool
+		}{
+			{"all_true", true, true, true, true, true},
+			{"left_pair_true", true, true, false, true, true},
+			{"right_pair_true", false, true, true, true, true},
+			{"all_false", false, false, false, false, false},
+			{"left_T_F_or_F_T", true, false, false, true, false},
+			{"left_T_F_or_T_T", true, false, true, true, true},
+			{"left_pair_true_right_run_false", true, true, true, false, true},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				got := evaluate(
+					t,
+					[]bool{tc.a, tc.b, tc.c, tc.d},
+					[]enums.ConnectorOperator{
+						enums.ConnectorOperatorAND,
+						enums.ConnectorOperatorOR,
+						enums.ConnectorOperatorAND,
+					},
+				)
+				assert.Equal(t, tc.want, got)
+			})
+		}
+	})
+
+	t.Run("OrBeforeAnd", func(t *testing.T) {
+		got := evaluate(
+			t,
+			[]bool{true, false, false},
+			[]enums.ConnectorOperator{
+				enums.ConnectorOperatorOR,
+				enums.ConnectorOperatorAND,
+			},
+		)
+		assert.True(t, got, "T OR F AND F must evaluate as T OR (F AND F)")
+	})
+}
+
+func TestEvaluateLogicConditions_MixedConnectorUserScenario(t *testing.T) {
+	attrA := uuid.New()
+	attrB := uuid.New()
+	attrC := uuid.New()
+	attrD := uuid.New()
+
+	conditions := []dto.LogicCondition{
+		{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrA.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorAND),
+			Sequence:          1,
+			ExpectedValue:     mustJSON(`"3"`),
+		},
+		{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrB.String(),
+			DataType:          string(enums.AttributeDataTypeNumber),
+			LogicalOperator:   string(enums.LogicalOperatorGTE),
+			ConnectorOperator: string(enums.ConnectorOperatorOR),
+			Sequence:          2,
+			ExpectedValue:     mustJSON(`4000`),
+		},
+		{
+			ConditionID:       uuid.New().String(),
+			AttributeID:       attrC.String(),
+			DataType:          string(enums.AttributeDataTypeText),
+			LogicalOperator:   string(enums.LogicalOperatorEQ),
+			ConnectorOperator: string(enums.ConnectorOperatorAND),
+			Sequence:          3,
+			ExpectedValue:     mustJSON(`"500"`),
+		},
+		{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrD.String(),
+			DataType:        string(enums.AttributeDataTypeText),
+			LogicalOperator: string(enums.LogicalOperatorIN),
+			Sequence:        4,
+			ExpectedValue:   mustJSON(`["70"]`),
+		},
+	}
+	userAttrs := map[string]json.RawMessage{
+		attrA.String(): mustJSON(`"3"`),
+		attrB.String(): mustJSON(`5000`),
+		attrC.String(): mustJSON(`"not-500"`),
+		attrD.String(): mustJSON(`"not-70"`),
+	}
+
+	ok, err := EvaluateLogicConditions(conditions, userAttrs)
+	require.NoError(t, err)
+	assert.True(t, ok, `A = "3" AND B >= 4000 should match regardless of the right AND-pair`)
+}
 
 func TestEvaluateConditionGroup_NestedPrecedence(t *testing.T) {
 	tier := uuid.New()
