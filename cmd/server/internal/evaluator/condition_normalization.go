@@ -86,7 +86,7 @@ func renderCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.Ru
 		if !hasOwnCheck {
 			return "()" // pure group with no children — edge case
 		}
-		return fmt.Sprintf("%s:%s", c.AttributeID.String(), c.LogicalOperator)
+		return fmt.Sprintf("%s %s", c.AttributeID.String(), c.LogicalOperator)
 	}
 
 	childrenStr := "(" + buildCanonicalString(byParent, children) + ")"
@@ -97,7 +97,7 @@ func renderCanonicalNode(byParent map[string][]entity.RuleCondition, c entity.Ru
 	}
 
 	// Mixed node: own check combined with children via ChildConnectorOperator.
-	ownStr := fmt.Sprintf("%s:%s", c.AttributeID.String(), c.LogicalOperator)
+	ownStr := fmt.Sprintf("%s %s", c.AttributeID.String(), c.LogicalOperator)
 	return ownStr + " " + childConnectorOf(c.ChildConnectorOperator) + " " + childrenStr
 }
 
@@ -205,7 +205,7 @@ func renderValueCanonicalNode(byParent map[string][]entity.RuleCondition, c enti
 				}
 			}
 		}
-		return fmt.Sprintf("%s:%s:%s", c.AttributeID.String(), c.LogicalOperator, valStr)
+		return fmt.Sprintf("%s %s %s", c.AttributeID.String(), c.LogicalOperator, valStr)
 	}
 
 	if len(children) == 0 {

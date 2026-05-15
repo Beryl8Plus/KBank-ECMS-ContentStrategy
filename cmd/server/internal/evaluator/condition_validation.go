@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"kbank-ecms/internal/domain/entity"
@@ -20,7 +21,7 @@ import (
 //     group instead.
 //
 // Returns the first violation encountered.
-func ValidateConditionTree(conditions []entity.RuleCondition) error {
+func ValidateConditionTree(conditions []entity.RuleCondition, expectedValues map[string]json.RawMessage) error {
 	if len(conditions) == 0 {
 		return nil
 	}
@@ -46,14 +47,19 @@ func ValidateConditionTree(conditions []entity.RuleCondition) error {
 			continue // dangling parent reference; not this validator's concern
 		}
 		if parent.AttributeID != nil && parent.ChildConnectorOperator == nil {
-			return fmt.Errorf("rule_condition %s has own check and children but ChildConnectorOperator is unset", parent.ID)
+			return conditionTreeValidationError(
+				conditions,
+				expectedValues,
+				"rule_condition %s has own check and children but ChildConnectorOperator is unset",
+				parent.ID,
+			)
 		}
 	}
 
 	// Rules 2 + 3: forward-link uniformity in every sibling chain.
 	for _, siblings := range byParent {
 		if err := validateSiblingChain(siblings); err != nil {
-			return err
+			return conditionTreeValidationError(conditions, expectedValues, "%s", err.Error())
 		}
 	}
 
@@ -74,7 +80,7 @@ func validateSiblingChain(siblings []entity.RuleCondition) error {
 	sortConditionsBySequence(sorted)
 
 	var ref *string
-	for i := 0; i < len(sorted); i++ {
+	for i := range sorted {
 		isLast := i == len(sorted)-1
 		c := sorted[i]
 		if isLast {
@@ -104,4 +110,13 @@ func sortConditionsBySequence(cs []entity.RuleCondition) {
 			cs[j-1], cs[j] = cs[j], cs[j-1]
 		}
 	}
+}
+
+func conditionTreeValidationError(conditions []entity.RuleCondition, expectedValues map[string]json.RawMessage, format string, args ...any) error {
+	errText := fmt.Sprintf(format, args...)
+	expr := BuildLogicExpression(conditions, expectedValues)
+	if expr == "" {
+		return fmt.Errorf("%s", errText)
+	}
+	return fmt.Errorf("%s; condition: %s", errText, expr)
 }
