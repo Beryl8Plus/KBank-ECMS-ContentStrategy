@@ -52,8 +52,8 @@ func TestExpandWithLeads_OverridesAllFields(t *testing.T) {
 		assert.True(t, out.LogicEval)
 		assert.Equal(t, "/lead/lead-001.jpg", out.ContentPath)
 		assert.InDelta(t, 92.5, out.Score, 0.0001)
-		if assert.NotNil(t, out.Campaign) {
-			assert.Equal(t, "CSVM-2026-Q2", out.Campaign.Code)
+		if assert.NotNil(t, out.CampaignCode) {
+			assert.Equal(t, "CSVM-2026-Q2", *out.CampaignCode)
 		}
 		assert.Equal(t, "2026-04-01T00:00:00Z", out.StartDateTime)
 		assert.Equal(t, "2026-06-30T23:59:59Z", out.EndDateTime)
