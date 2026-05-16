@@ -187,7 +187,7 @@ func TestBuildPlacementLogicEntries_NoVariations(t *testing.T) {
 		EffectiveFrom:  time.Now(),
 		EffectiveUntil: time.Now().Add(time.Hour),
 	}
-	got := BuildPlacementLogicEntries(rule, sched, "hero", nil)
+	got := BuildPlacementLogicEntries(rule, sched, "hero")
 	require.Len(t, got, 1)
 	if got[0].Score != 7 || got[0].ContentPath != "/x" {
 		t.Errorf("entry mismatch: %+v", got[0])
@@ -213,6 +213,7 @@ func TestBuildPlacementLogicEntries_WithVariations(t *testing.T) {
 			{BaseModel: entity.BaseModel{ID: uuid.New()}, VariationName: "v2", Score: 3, OrderNo: 2,
 				RuleAttributes: []entity.RuleAttribute{{AttributeID: attrID, Value: datatypes.JSON(`"b"`)}}},
 		},
+		CampaignCode: "C1",
 	}
 	sched := &entity.Schedule{
 		BaseModel:      entity.BaseModel{ID: uuid.New()},
@@ -220,8 +221,7 @@ func TestBuildPlacementLogicEntries_WithVariations(t *testing.T) {
 		EffectiveFrom:  time.Now(),
 		EffectiveUntil: time.Now().Add(time.Hour),
 	}
-	camp := "C1"
-	got := BuildPlacementLogicEntries(rule, sched, "hero", &camp)
+	got := BuildPlacementLogicEntries(rule, sched, "hero")
 	require.Len(t, got, 2)
 	for _, entry := range got {
 		if entry.LogicHash == "" || entry.LogicExpr == "" {
