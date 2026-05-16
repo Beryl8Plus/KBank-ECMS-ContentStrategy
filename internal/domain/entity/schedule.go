@@ -13,7 +13,7 @@ import (
 // Table: schedules
 type Schedule struct {
 	BaseModel
-	DecisionRuleID uuid.UUID            `gorm:"type:uuid"                       json:"decisionRuleId"`
+	DecisionRuleID uuid.UUID            `gorm:"type:uuid;not null"              json:"decisionRuleId"`
 	DecisionRule   *DecisionRule        `gorm:"foreignKey:DecisionRuleID"       json:"decisionRule,omitempty"`
 	PlacementID    uuid.UUID            `gorm:"type:uuid"                       json:"placementId"`
 	Placement      *Placement           `gorm:"foreignKey:PlacementID"          json:"placement,omitempty"`
