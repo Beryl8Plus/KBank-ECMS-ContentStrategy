@@ -103,7 +103,7 @@ func TestHandler_GetContent_OK(t *testing.T) {
 	t.Parallel()
 
 	expected := []dto.ContentResult{
-		{ContentPath: "/a", Score: 0.9, RuleSetType: "Mass"},
+		{ContentPath: "/a", Score: 0.9, DecisionRuleType: "Mass"},
 	}
 	r := setupRouter(&mockDeliveryService{
 		getPersonalizedFn: func(_ context.Context, customerInfo *dto.CustomerRequest, _ string, placements []string) ([]dto.ContentResult, error) {
