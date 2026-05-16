@@ -17,13 +17,12 @@ import (
 func BuildPlacementLogicEntries(
 	rule entity.DecisionRule,
 	sched *entity.Schedule,
-	source string,
-	campaignCode *string,
+	placementName string,
 ) []dto.ContentResult {
 	// Support type Mass, that no rules or variations, just a single content path and score.
 	if len(rule.Rules) == 0 {
 		// No variations — single entry with base score, empty expected values.
-		entry := buildLogicEntry(rule, sched, rule.Score, source, campaignCode, nil)
+		entry := buildLogicEntry(rule, sched, rule.Score, placementName, nil)
 		return []dto.ContentResult{entry}
 	}
 
@@ -33,7 +32,7 @@ func BuildPlacementLogicEntries(
 		for _, ra := range v.RuleAttributes {
 			expectedValues[ra.AttributeID.String()] = json.RawMessage(ra.Value)
 		}
-		entry := buildLogicEntry(rule, sched, rule.Score, source, campaignCode, expectedValues)
+		entry := buildLogicEntry(rule, sched, rule.Score, placementName, expectedValues)
 		results = append(results, entry)
 	}
 	return results
@@ -44,8 +43,7 @@ func buildLogicEntry(
 	rule entity.DecisionRule,
 	sched *entity.Schedule,
 	score float64,
-	source string,
-	campaignCode *string,
+	placementName string,
 	expectedValues map[string]json.RawMessage,
 ) dto.ContentResult {
 	logicHash, _ := GenerateLogicHash(rule.RuleConditions, expectedValues)
@@ -79,11 +77,11 @@ func buildLogicEntry(
 		DecisionRuleId:   rule.DecisionRuleRunning,
 		ContentPath:      rule.ContentPath,
 		DecisionRuleType: rule.Type.String(),
-		Source:           source,
+		Source:           placementName,
 		Score:            score,
 		StartDateTime:    sched.EffectiveFrom.Format(time.RFC3339),
 		EndDateTime:      sched.EffectiveUntil.Format(time.RFC3339),
-		CampaignCode:     campaignCode,
+		CampaignCode:     &rule.CampaignCode,
 		LogicHash:        logicHash,
 		LogicExpr:        logicExpr,
 		Conditions:       conditions,
