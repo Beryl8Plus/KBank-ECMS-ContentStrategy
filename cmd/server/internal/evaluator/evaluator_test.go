@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
-	"kbank-ecms/internal/delivery/http/dto"
 	"kbank-ecms/internal/domain/entity"
 	"kbank-ecms/internal/domain/entity/enums"
 )
@@ -221,15 +220,15 @@ func TestBuildPlacementLogicEntries_WithVariations(t *testing.T) {
 		EffectiveFrom:  time.Now(),
 		EffectiveUntil: time.Now().Add(time.Hour),
 	}
-	camp := &dto.Campaign{Code: "C1"}
-	got := BuildPlacementLogicEntries(rule, sched, "hero", camp)
+	camp := "C1"
+	got := BuildPlacementLogicEntries(rule, sched, "hero", &camp)
 	require.Len(t, got, 2)
 	for _, entry := range got {
 		if entry.LogicHash == "" || entry.LogicExpr == "" {
 			t.Error("LogicHash and LogicExpr should be populated")
 		}
-		if entry.Campaign == nil || entry.Campaign.Code != "C1" {
-			t.Error("Campaign should round-trip")
+		if entry.CampaignCode == nil || *entry.CampaignCode != "C1" {
+			t.Error("CampaignCode should round-trip")
 		}
 	}
 }

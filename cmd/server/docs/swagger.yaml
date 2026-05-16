@@ -21,19 +21,10 @@ definitions:
       memoryUsagePct:
         type: number
     type: object
-  kbank-ecms_internal_delivery_http_dto.Campaign:
-    properties:
-      code:
-        type: string
-      endDate:
-        type: string
-      startDate:
-        type: string
-    type: object
   kbank-ecms_internal_delivery_http_dto.ContentResult:
     properties:
-      campaign:
-        $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.Campaign'
+      campaignCode:
+        type: string
       conditions:
         items:
           $ref: '#/definitions/kbank-ecms_internal_delivery_http_dto.LogicCondition'
@@ -41,6 +32,8 @@ definitions:
       contentPath:
         type: string
       decisionRuleId:
+        type: string
+      decisionRuleType:
         type: string
       endDateTime:
         type: string
@@ -53,8 +46,6 @@ definitions:
         type: string
       logicHash:
         description: Stable SHA-256 hash; present for logic cache entries
-        type: string
-      ruleSetType:
         type: string
       score:
         type: number

@@ -65,18 +65,18 @@ func TestCacheStatusResponse_MarshalJSON_RoundsPct(t *testing.T) {
 func TestContentResult_ToResponse_StripsLogicFields(t *testing.T) {
 	t.Parallel()
 	src := ContentResult{
-		LogicHash:      "h",
-		LogicExpr:      "x",
-		LogicEval:      true,
-		EvaluatedAt:    "2026-01-01T00:00:00Z",
-		DecisionRuleId: "r1",
-		RuleSetType:    "MASS",
-		ContentPath:    "/x",
-		Source:         "src",
-		Score:          1.5,
-		StartDateTime:  "s",
-		EndDateTime:    "e",
-		Conditions:     []LogicCondition{{ConditionID: "c1"}},
+		LogicHash:        "h",
+		LogicExpr:        "x",
+		LogicEval:        true,
+		EvaluatedAt:      "2026-01-01T00:00:00Z",
+		DecisionRuleId:   "r1",
+		DecisionRuleType: "MASS",
+		ContentPath:      "/x",
+		Source:           "src",
+		Score:            1.5,
+		StartDateTime:    "s",
+		EndDateTime:      "e",
+		Conditions:       []LogicCondition{{ConditionID: "c1"}},
 	}
 	got := src.ToResponse()
 	if got.LogicHash != "" || got.LogicExpr != "" || got.LogicEval {
