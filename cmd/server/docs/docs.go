@@ -321,25 +321,11 @@ const docTemplate = `{
                 }
             }
         },
-        "kbank-ecms_internal_delivery_http_dto.Campaign": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "endDate": {
-                    "type": "string"
-                },
-                "startDate": {
-                    "type": "string"
-                }
-            }
-        },
         "kbank-ecms_internal_delivery_http_dto.ContentResult": {
             "type": "object",
             "properties": {
-                "campaign": {
-                    "$ref": "#/definitions/kbank-ecms_internal_delivery_http_dto.Campaign"
+                "campaignCode": {
+                    "type": "string"
                 },
                 "conditions": {
                     "type": "array",
@@ -351,6 +337,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "decisionRuleId": {
+                    "type": "string"
+                },
+                "decisionRuleType": {
                     "type": "string"
                 },
                 "endDateTime": {
@@ -366,9 +355,6 @@ const docTemplate = `{
                 },
                 "logicHash": {
                     "description": "Stable SHA-256 hash; present for logic cache entries",
-                    "type": "string"
-                },
-                "ruleSetType": {
                     "type": "string"
                 },
                 "score": {
