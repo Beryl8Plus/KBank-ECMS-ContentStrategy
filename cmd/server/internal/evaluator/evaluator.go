@@ -35,7 +35,7 @@ func (e *LocalEvaluator) Evaluate(
 		if sched.DecisionRule == nil {
 			continue
 		}
-		entries := BuildPlacementLogicEntries(*sched.DecisionRule, sched, placementName, nil)
+		entries := BuildPlacementLogicEntries(*sched.DecisionRule, sched, placementName)
 		isSalesTarget := sched.DecisionRule.Type == enums.DecisionTypeSalesTarget
 		for _, entry := range entries {
 			pass, err := EvaluateLogicConditions(entry.Conditions, userAttrs)
