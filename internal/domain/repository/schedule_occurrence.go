@@ -46,4 +46,10 @@ type ScheduleOccurrenceRepository interface {
 	// occurrence_end ≤ now to EXPIRED in a single statement.
 	// Returns the number of rows updated.
 	ExpireEndedOccurrences(ctx context.Context, now time.Time) (int64, error)
+
+	// CancelByDecisionRuleID bulk-updates every ACTIVE occurrence whose parent
+	// Schedule belongs to the given decision rule to CANCELLED in a single
+	// statement. Called asynchronously after a decision rule is deactivated.
+	// Returns the number of rows updated.
+	CancelByDecisionRuleID(ctx context.Context, decisionRuleID uuid.UUID) (int64, error)
 }
