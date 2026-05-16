@@ -28,11 +28,13 @@ type ScheduleOccurrenceRepository interface {
 	// before `before`. Used by the cleanup job to keep the table bounded.
 	DeletePastOccurrences(ctx context.Context, before time.Time) error
 
-	// ListActiveAt returns all occurrences that are ACTIVE and whose window
-	// contains `at`: occurrence_start <= at AND occurrence_end > at.
+	// ListActiveAt returns all occurrences that are ACTIVE, belong to an ACTIVE
+	// decision rule, and whose window contains `at`:
+	// occurrence_start <= at AND occurrence_end > at.
 	ListActiveAt(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
 
-	// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+	// ListActiveByPlacementsAt returns active occurrences that belong to ACTIVE
+	// decision rules for specific placement names.
 	ListActiveByPlacementsAt(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error)
 
 	// ListByScheduleID returns a paginated list of occurrences for a given
