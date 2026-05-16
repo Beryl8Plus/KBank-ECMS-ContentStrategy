@@ -277,11 +277,11 @@ func TestGetPersonalizedContent_EvaluatorFallback(t *testing.T) {
 	t.Parallel()
 
 	entry := dto.ContentResult{
-		DecisionRuleId: uuid.New().String(),
-		ContentPath:    "/content/hero",
-		RuleSetType:    "MASS",
-		LogicEval:      true,
-		Score:          0.8,
+		DecisionRuleId:   uuid.New().String(),
+		ContentPath:      "/content/hero",
+		DecisionRuleType: "MASS",
+		LogicEval:        true,
+		Score:            0.8,
 	}
 
 	mem := newTestMemCache(t, "evaluator_fallback")

@@ -88,39 +88,32 @@ func (r CacheStatusResponse) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// ContentResult represents a single evaluated content item for a placement.
-type Campaign struct {
-	Code      string `json:"code"`
-	StartDate string `json:"startDate"`
-	EndDate   string `json:"endDate"`
-}
-
 type ContentResult struct {
-	LogicHash      string           `json:"logicHash,omitempty"` // Stable SHA-256 hash; present for logic cache entries
-	LogicExpr      string           `json:"logicExpr,omitempty"` // Human-readable expression; present for logic cache entries
-	LogicEval      bool             `json:"logicEval,omitempty"` // Evaluation result of the logic expression; present for logic cache entries
-	EvaluatedAt    string           `json:"-"`                   // RFC3339 UTC timestamp of evaluation; not stored in cache
-	DecisionRuleId string           `json:"decisionRuleId"`
-	RuleSetType    string           `json:"ruleSetType"`
-	ContentPath    string           `json:"contentPath"`
-	Source         string           `json:"source"`
-	Score          float64          `json:"score"`
-	StartDateTime  string           `json:"startDateTime"`
-	EndDateTime    string           `json:"endDateTime"`
-	Campaign       *Campaign        `json:"campaign"`
-	Conditions     []LogicCondition `json:"conditions,omitempty"`
+	LogicHash        string           `json:"logicHash,omitempty"` // Stable SHA-256 hash; present for logic cache entries
+	LogicExpr        string           `json:"logicExpr,omitempty"` // Human-readable expression; present for logic cache entries
+	LogicEval        bool             `json:"logicEval,omitempty"` // Evaluation result of the logic expression; present for logic cache entries
+	EvaluatedAt      string           `json:"-"`                   // RFC3339 UTC timestamp of evaluation; not stored in cache
+	DecisionRuleId   string           `json:"decisionRuleId"`
+	DecisionRuleType string           `json:"decisionRuleType"`
+	ContentPath      string           `json:"contentPath"`
+	Source           string           `json:"source"`
+	Score            float64          `json:"score"`
+	StartDateTime    string           `json:"startDateTime"`
+	EndDateTime      string           `json:"endDateTime"`
+	CampaignCode     *string          `json:"campaignCode"`
+	Conditions       []LogicCondition `json:"conditions,omitempty"`
 }
 
 func (r ContentResult) ToResponse() ContentResult {
 	return ContentResult{
-		DecisionRuleId: r.DecisionRuleId,
-		RuleSetType:    r.RuleSetType,
-		ContentPath:    r.ContentPath,
-		Source:         r.Source,
-		Score:          r.Score,
-		StartDateTime:  r.StartDateTime,
-		EndDateTime:    r.EndDateTime,
-		Campaign:       r.Campaign,
+		DecisionRuleId:   r.DecisionRuleId,
+		DecisionRuleType: r.DecisionRuleType,
+		ContentPath:      r.ContentPath,
+		Source:           r.Source,
+		Score:            r.Score,
+		StartDateTime:    r.StartDateTime,
+		EndDateTime:      r.EndDateTime,
+		CampaignCode:     r.CampaignCode,
 	}
 }
 
