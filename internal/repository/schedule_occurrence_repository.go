@@ -131,7 +131,8 @@ func (r *ScheduleOccurrencePostgresRepository) ListByScheduleID(
 	return occurrences, total, nil
 }
 
-// ListActiveAt returns all ACTIVE occurrences whose window contains `at`:
+// ListActiveAt returns all ACTIVE occurrences whose parent decision rule is
+// ACTIVE and whose window contains `at`:
 //
 //	occurrence_start <= at AND occurrence_end > at
 //
@@ -144,8 +145,11 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveAt(
 	if err := r.db.WithContext(ctx).
 		Preload(`Schedule`).
 		Preload(`Schedule.Placement`).
-		Where(`"STATUS" = ?`, enums.OccurrenceStatusActive).
-		Where(`"OCCURRENCE_START" <= ? AND "OCCURRENCE_END" > ?`, at, at).
+		Joins(`JOIN "schedules" ON "schedules"."ID" = "schedule_occurrences"."SCHEDULE_ID"`).
+		Joins(`JOIN "decision_rules" ON "decision_rules"."ID" = "schedules"."DECISION_RULE_ID"`).
+		Where(`"schedule_occurrences"."STATUS" = ?`, enums.OccurrenceStatusActive).
+		Where(`"schedule_occurrences"."OCCURRENCE_START" <= ? AND "schedule_occurrences"."OCCURRENCE_END" > ?`, at, at).
+		Where(`"decision_rules"."STATUS" = ?`, enums.DecisionRuleStatusActive).
 		Find(&occurrences).Error; err != nil {
 		return nil, fmt.Errorf("listing active occurrences at %s: %w", at.Format(time.RFC3339), err)
 	}
@@ -169,7 +173,8 @@ func (r *ScheduleOccurrencePostgresRepository) ExpireEndedOccurrences(
 	return result.RowsAffected, nil
 }
 
-// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+// ListActiveByPlacementsAt returns active occurrences whose parent decision
+// rule is ACTIVE for specific placement names.
 func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
 	ctx context.Context,
 	placementNames []string,
@@ -183,11 +188,13 @@ func (r *ScheduleOccurrencePostgresRepository) ListActiveByPlacementsAt(
 	if err := r.db.WithContext(ctx).
 		Joins(`JOIN "schedules" ON "schedules"."ID" = "schedule_occurrences"."SCHEDULE_ID"`).
 		Joins(`JOIN "placements" ON "placements"."ID" = "schedules"."PLACEMENT_ID"`).
+		Joins(`JOIN "decision_rules" ON "decision_rules"."ID" = "schedules"."DECISION_RULE_ID"`).
 		Preload(`Schedule`).
 		Preload(`Schedule.Placement`).
 		Where(`"placements"."PLACEMENT_NAME" IN ?`, placementNames).
 		Where(`"schedule_occurrences"."STATUS" = ?`, enums.OccurrenceStatusActive).
 		Where(`"schedule_occurrences"."OCCURRENCE_START" <= ? AND "schedule_occurrences"."OCCURRENCE_END" > ?`, at, at).
+		Where(`"decision_rules"."STATUS" = ?`, enums.DecisionRuleStatusActive).
 		Find(&occurrences).Error; err != nil {
 		return nil, fmt.Errorf("listing active occurrences for placements %v at %s: %w", placementNames, at.Format(time.RFC3339), err)
 	}

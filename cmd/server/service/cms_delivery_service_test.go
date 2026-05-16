@@ -152,6 +152,9 @@ func (m *mockOccurrenceRepo) ListByScheduleID(_ context.Context, _ uuid.UUID, _,
 func (m *mockOccurrenceRepo) ExpireEndedOccurrences(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
+func (m *mockOccurrenceRepo) CancelByDecisionRuleID(_ context.Context, _ uuid.UUID) (int64, error) {
+	return 0, nil
+}
 
 // mockDecisionRuleRepo is a minimal mock for domainrepo.DecisionRuleRepository.
 type mockDecisionRuleRepo struct {

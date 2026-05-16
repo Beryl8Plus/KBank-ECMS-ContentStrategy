@@ -43,25 +43,26 @@ func TestValidateConditionTree(t *testing.T) {
 		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c1, c2}, nil))
 	})
 
-	t.Run("RootSiblings_MixedConnector_Error", func(t *testing.T) {
+	t.Run("RootSiblings_MixedConnector_OK", func(t *testing.T) {
 		c1 := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: uuid.New()},
+			AttributeID:       uuidPtr(uuid.New()),
 			Sequence:          1,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorAND),
 		}
 		c2 := entity.RuleCondition{
 			BaseModel:         entity.BaseModel{ID: uuid.New()},
+			AttributeID:       uuidPtr(uuid.New()),
 			Sequence:          2,
 			ConnectorOperator: connectorPtr(enums.ConnectorOperatorOR),
 		}
 		c3 := entity.RuleCondition{
-			BaseModel: entity.BaseModel{ID: uuid.New()},
-			Sequence:  3,
+			BaseModel:   entity.BaseModel{ID: uuid.New()},
+			AttributeID: uuidPtr(uuid.New()),
+			Sequence:    3,
 			// last sibling: no connector
 		}
-		err := ValidateConditionTree([]entity.RuleCondition{c1, c2, c3}, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "mixed")
+		require.NoError(t, ValidateConditionTree([]entity.RuleCondition{c1, c2, c3}, nil))
 	})
 
 	t.Run("RootSibling_MissingForwardLink_Error", func(t *testing.T) {

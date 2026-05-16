@@ -104,7 +104,7 @@ func TestScheduleOccurrence_ListByScheduleID_CountError(t *testing.T) {
 
 func TestScheduleOccurrence_ListActiveAt_Success(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT \* FROM schedule_occurrences`).
+	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences JOIN "schedules" .*JOIN "decision_rules" .*"schedule_occurrences"\."STATUS".*"decision_rules"\."STATUS"`).
 		WillReturnRows(sqlmock.NewRows([]string{"ID"}))
 
 	r := NewScheduleOccurrencePostgresRepository(db)
@@ -116,7 +116,7 @@ func TestScheduleOccurrence_ListActiveAt_Success(t *testing.T) {
 
 func TestScheduleOccurrence_ListActiveAt_Error(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT \* FROM schedule_occurrences`).
+	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences JOIN "schedules" .*JOIN "decision_rules" .*"schedule_occurrences"\."STATUS".*"decision_rules"\."STATUS"`).
 		WillReturnError(errors.New("db"))
 
 	r := NewScheduleOccurrencePostgresRepository(db)
@@ -163,7 +163,7 @@ func TestScheduleOccurrence_ListActiveByPlacementsAt_EmptyShortCircuits(t *testi
 
 func TestScheduleOccurrence_ListActiveByPlacementsAt_Success(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences`).
+	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences JOIN "schedules" .*JOIN "placements" .*JOIN "decision_rules" .*"placements"\."PLACEMENT_NAME".*"schedule_occurrences"\."STATUS".*"decision_rules"\."STATUS"`).
 		WillReturnRows(sqlmock.NewRows([]string{"ID"}))
 
 	r := NewScheduleOccurrencePostgresRepository(db)
@@ -175,7 +175,7 @@ func TestScheduleOccurrence_ListActiveByPlacementsAt_Success(t *testing.T) {
 
 func TestScheduleOccurrence_ListActiveByPlacementsAt_Error(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences`).
+	mock.ExpectQuery(`SELECT .* FROM schedule_occurrences JOIN "schedules" .*JOIN "placements" .*JOIN "decision_rules" .*"placements"\."PLACEMENT_NAME".*"schedule_occurrences"\."STATUS".*"decision_rules"\."STATUS"`).
 		WillReturnError(errors.New("db"))
 
 	r := NewScheduleOccurrencePostgresRepository(db)

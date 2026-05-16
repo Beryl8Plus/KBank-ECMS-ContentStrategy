@@ -11,16 +11,7 @@ RUN apk add --no-cache git make
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Install swag CLI for documentation generation
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-
 COPY . .
-
-# Generate Swagger Documentation (delivery only)
-RUN swag init -g cmd/server/main.go \
-    --output cmd/server/docs \
-    --packageName svc_contstrat_delivery \
-    --parseDependency --parseInternal
 
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server/

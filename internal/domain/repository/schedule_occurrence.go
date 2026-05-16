@@ -28,11 +28,13 @@ type ScheduleOccurrenceRepository interface {
 	// before `before`. Used by the cleanup job to keep the table bounded.
 	DeletePastOccurrences(ctx context.Context, before time.Time) error
 
-	// ListActiveAt returns all occurrences that are ACTIVE and whose window
-	// contains `at`: occurrence_start <= at AND occurrence_end > at.
+	// ListActiveAt returns all occurrences that are ACTIVE, belong to an ACTIVE
+	// decision rule, and whose window contains `at`:
+	// occurrence_start <= at AND occurrence_end > at.
 	ListActiveAt(ctx context.Context, at time.Time) ([]*entity.ScheduleOccurrence, error)
 
-	// ListActiveByPlacementsAt returns active occurrences for specific placement names.
+	// ListActiveByPlacementsAt returns active occurrences that belong to ACTIVE
+	// decision rules for specific placement names.
 	ListActiveByPlacementsAt(ctx context.Context, placementNames []string, at time.Time) ([]*entity.ScheduleOccurrence, error)
 
 	// ListByScheduleID returns a paginated list of occurrences for a given
@@ -44,4 +46,10 @@ type ScheduleOccurrenceRepository interface {
 	// occurrence_end ≤ now to EXPIRED in a single statement.
 	// Returns the number of rows updated.
 	ExpireEndedOccurrences(ctx context.Context, now time.Time) (int64, error)
+
+	// CancelByDecisionRuleID bulk-updates every ACTIVE occurrence whose parent
+	// Schedule belongs to the given decision rule to CANCELLED in a single
+	// statement. Called asynchronously after a decision rule is deactivated.
+	// Returns the number of rows updated.
+	CancelByDecisionRuleID(ctx context.Context, decisionRuleID uuid.UUID) (int64, error)
 }

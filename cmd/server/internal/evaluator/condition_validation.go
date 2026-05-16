@@ -16,9 +16,8 @@ import (
 //  2. In any sibling chain (root or inner), every non-last sibling MUST set
 //     ConnectorOperator (forward-link to the next sibling) and the last
 //     sibling MUST omit it.
-//  3. All forward-link ConnectorOperator values within one sibling chain must
-//     share the same value. Mixing AND/OR at one level is disallowed; nest a
-//     group instead.
+//  3. Sibling chains may mix AND/OR forward-links freely; evaluation uses
+//     standard boolean precedence (AND binds tighter than OR).
 //
 // Returns the first violation encountered.
 func ValidateConditionTree(conditions []entity.RuleCondition, expectedValues map[string]json.RawMessage) error {
@@ -56,7 +55,7 @@ func ValidateConditionTree(conditions []entity.RuleCondition, expectedValues map
 		}
 	}
 
-	// Rules 2 + 3: forward-link uniformity in every sibling chain.
+	// Rule 2: forward-link presence in every sibling chain.
 	for _, siblings := range byParent {
 		if err := validateSiblingChain(siblings); err != nil {
 			return conditionTreeValidationError(conditions, expectedValues, "%s", err.Error())
@@ -79,7 +78,6 @@ func validateSiblingChain(siblings []entity.RuleCondition) error {
 	copy(sorted, siblings)
 	sortConditionsBySequence(sorted)
 
-	var ref *string
 	for i := range sorted {
 		isLast := i == len(sorted)-1
 		c := sorted[i]
@@ -91,14 +89,6 @@ func validateSiblingChain(siblings []entity.RuleCondition) error {
 		}
 		if c.ConnectorOperator == nil {
 			return fmt.Errorf("rule_condition %s must set ConnectorOperator (forward-link to next sibling)", c.ID)
-		}
-		val := string(*c.ConnectorOperator)
-		if ref == nil {
-			ref = &val
-			continue
-		}
-		if *ref != val {
-			return fmt.Errorf("rule_condition %s has mixed sibling ConnectorOperator (%s vs %s); nest a group instead", c.ID, *ref, val)
 		}
 	}
 	return nil

@@ -275,6 +275,12 @@ func (s *CMSDeliveryService) resolveUserAttrs(
 	cached := map[string]json.RawMessage{}
 	if raw, err := s.cacheRepo.Get(ctx, cacheKey); err == nil {
 		cached = parseRawEnvelope([]byte(raw))
+	} else {
+		logger.LSystem(ctx, entity.SystemLog{
+			Service: "CMS-DELIVERY",
+			Level:   "WARN",
+			Message: "Failed to read customer profile cache for cis " + customerId + ": " + err.Error(),
+		})
 	}
 
 	// Schema-driven warm fetch — for each datasource a rule touches, look up
