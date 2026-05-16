@@ -9,7 +9,7 @@ import (
 
 // expandWithLeads turns a single SALES_TARGET ContentResult into one entry per
 // lead that lists placementName in its Placements set. Lead fields override
-// the rule-derived ones — ContentPath, Score, Campaign.Code, StartDateTime,
+// the rule-derived ones — ContentPath, Score, CampaignCode, StartDateTime,
 // EndDateTime — because for sales-targeted rules the actual offering is
 // owned by the upstream Lead system, not the rule itself.
 //
@@ -30,7 +30,8 @@ func expandWithLeads(entry dto.ContentResult, leads []entity.Lead, placementName
 		clone := entry
 		clone.ContentPath = lead.ContentID
 		clone.Score = parseLeadScore(lead.FinalScore, fallbackScore)
-		clone.Campaign = &dto.Campaign{Code: lead.CSVMCampaignCode}
+		campaignCode := lead.CSVMCampaignCode
+		clone.CampaignCode = &campaignCode
 		clone.StartDateTime = lead.SLAStartDate
 		clone.EndDateTime = lead.SLAEndDate
 		out = append(out, clone)
