@@ -59,6 +59,11 @@ func TestCompareTextParsed_AllOps(t *testing.T) {
 		{"IN-no", enums.LogicalOperatorIN, `"x"`, `["a","b"]`, false, false},
 		{"NIN-yes", enums.LogicalOperatorNIN, `"x"`, `["a","b"]`, true, false},
 		{"NIN-no", enums.LogicalOperatorNIN, `"a"`, `["a","b"]`, false, false},
+		{"CONTAINS-match", enums.LogicalOperatorCONTAINS, `"golden card"`, `"gold"`, true, false},
+		{"CONTAINS-no-match", enums.LogicalOperatorCONTAINS, `"silver tier"`, `"gold"`, false, false},
+		{"CONTAINS-case-insensitive", enums.LogicalOperatorCONTAINS, `"GOLDEN"`, `"gold"`, true, false},
+		{"CONTAINS-empty-expected", enums.LogicalOperatorCONTAINS, `"anything"`, `""`, true, false},
+		{"CONTAINS-exact-match", enums.LogicalOperatorCONTAINS, `"gold"`, `"gold"`, true, false},
 		{"unsupported-op", enums.LogicalOperatorBETWEEN, `"a"`, `"a"`, false, true},
 	} {
 		c := c
