@@ -15,7 +15,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/content-strategy/v1/personalized-content": {
+        "/personalized-content": {
             "get": {
                 "description": "Returns evaluated content results for one or more placement names.",
                 "consumes": [
@@ -138,7 +138,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/content-strategy/v1/purge_requests": {
+        "/purge_requests": {
             "get": {
                 "description": "Returns in-memory cache keys, heap pressure flag, and heap usage ratio.",
                 "consumes": [
@@ -228,7 +228,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/content-strategy/v1/purge_requests/value": {
+        "/purge_requests/value": {
             "get": {
                 "description": "Returns the cached value for a given key. Used for monitoring and debugging.",
                 "consumes": [
@@ -454,7 +454,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "localhost:8082",
-	BasePath:         "/",
+	BasePath:         "/api/content-strategy/v1",
 	Schemes:          []string{},
 	Title:            "KBank ECMS CMS Delivery API",
 	Description:      "Backend API for KBank ECMS CMS Delivery Runtime Service.",

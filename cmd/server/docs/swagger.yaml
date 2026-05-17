@@ -1,4 +1,4 @@
-basePath: /
+basePath: /api/content-strategy/v1
 definitions:
   kbank-ecms_internal_delivery_http_dto.APIResponse:
     properties:
@@ -114,7 +114,7 @@ info:
   title: KBank ECMS CMS Delivery API
   version: "1.0"
 paths:
-  /api/content-strategy/v1/personalized-content:
+  /personalized-content:
     get:
       consumes:
       - application/json
@@ -198,7 +198,7 @@ paths:
       summary: Get content by placements
       tags:
       - svc-contstrat-delivery
-  /api/content-strategy/v1/purge_requests:
+  /purge_requests:
     get:
       consumes:
       - application/json
@@ -253,7 +253,7 @@ paths:
       summary: Flush content cache
       tags:
       - svc-contstrat-delivery
-  /api/content-strategy/v1/purge_requests/value:
+  /purge_requests/value:
     get:
       consumes:
       - application/json

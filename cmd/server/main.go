@@ -2,7 +2,7 @@
 // @version		1.0
 // @description	Backend API for KBank ECMS CMS Delivery Runtime Service.
 // @host			localhost:8082
-// @BasePath		/
+// @BasePath		/api/content-strategy/v1
 // @in				header
 package main
 
