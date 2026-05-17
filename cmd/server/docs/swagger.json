@@ -7,9 +7,9 @@
         "version": "1.0"
     },
     "host": "localhost:8082",
-    "basePath": "/",
+    "basePath": "/api/content-strategy/v1",
     "paths": {
-        "/api/content-strategy/v1/personalized-content": {
+        "/personalized-content": {
             "get": {
                 "description": "Returns evaluated content results for one or more placement names.",
                 "consumes": [
@@ -132,7 +132,7 @@
                 }
             }
         },
-        "/api/content-strategy/v1/purge_requests": {
+        "/purge_requests": {
             "get": {
                 "description": "Returns in-memory cache keys, heap pressure flag, and heap usage ratio.",
                 "consumes": [
@@ -222,7 +222,7 @@
                 }
             }
         },
-        "/api/content-strategy/v1/purge_requests/value": {
+        "/purge_requests/value": {
             "get": {
                 "description": "Returns the cached value for a given key. Used for monitoring and debugging.",
                 "consumes": [
