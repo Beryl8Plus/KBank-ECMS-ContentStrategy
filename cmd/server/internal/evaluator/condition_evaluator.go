@@ -538,6 +538,12 @@ func compareTextParsed(op enums.LogicalOperator, actual, attrKey string, expecte
 		return !slices.ContainsFunc(exps, func(e string) bool {
 			return strings.EqualFold(strings.TrimSpace(e), actual)
 		}), nil
+	case enums.LogicalOperatorCONTAINS:
+		exp, ok := expectedVals.GetString(attrKey)
+		if !ok {
+			return false, fmt.Errorf("parse text expected value for attr %s", attrKey)
+		}
+		return strings.Contains(strings.ToLower(actual), strings.ToLower(strings.TrimSpace(exp))), nil
 	default:
 		return false, fmt.Errorf("operator %q not supported for Text attribute type", op)
 	}
