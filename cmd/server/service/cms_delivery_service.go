@@ -339,10 +339,6 @@ func (s *CMSDeliveryService) GetCacheStatus(ctx context.Context) (isMemPressure 
 // ALL Redis placement caches are flushed via FlushDB.
 func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []string, isEvaluate bool) error {
 	if len(placementNames) == 0 {
-		// Full flush: wipe Redis and in-memory caches entirely.
-		if err := s.cacheRepo.FlushDB(ctx); err != nil {
-			return fmt.Errorf("flushing all caches: %w", err)
-		}
 		if s.cacheMemory != nil {
 			s.cacheMemory.Schedules.Clear()
 			s.cacheMemory.DecisionRule.Clear()
