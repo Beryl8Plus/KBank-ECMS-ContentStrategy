@@ -113,6 +113,7 @@ func TestCompareNumberParsed_AllOps(t *testing.T) {
 		{"BETWEEN-out", enums.LogicalOperatorBETWEEN, `15`, `[1,10]`, false, false},
 		{"BETWEEN-bad-bounds", enums.LogicalOperatorBETWEEN, `5`, `[1]`, false, true},
 		{"unsupported-op", enums.LogicalOperatorNIN, `5`, `5`, false, true},
+		{"unsupported-CONTAINS", enums.LogicalOperatorCONTAINS, `5`, `5`, false, true},
 	} {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
@@ -152,6 +153,7 @@ func TestCompareBooleanParsed(t *testing.T) {
 		{"EQ-mismatch", enums.LogicalOperatorEQ, `true`, `false`, false, false},
 		{"NEQ-match", enums.LogicalOperatorNEQ, `true`, `false`, true, false},
 		{"unsupported", enums.LogicalOperatorLT, `true`, `true`, false, true},
+		{"unsupported-CONTAINS", enums.LogicalOperatorCONTAINS, `true`, `true`, false, true},
 	} {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
@@ -196,6 +198,7 @@ func TestCompareDateParsed(t *testing.T) {
 		{"BETWEEN-in", enums.LogicalOperatorBETWEEN, `"2026-01-15"`, `["2026-01-01","2026-01-31"]`, true, false},
 		{"BETWEEN-out", enums.LogicalOperatorBETWEEN, `"2026-02-15"`, `["2026-01-01","2026-01-31"]`, false, false},
 		{"unsupported", enums.LogicalOperatorIN, `"2026-01-01"`, `"2026-01-01"`, false, true},
+		{"unsupported-CONTAINS", enums.LogicalOperatorCONTAINS, `"2026-01-01"`, `"2026-01-01"`, false, true},
 	} {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
