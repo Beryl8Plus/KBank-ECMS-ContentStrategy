@@ -210,7 +210,8 @@ func TestLogicalOperator(t *testing.T) {
 		LogicalOperatorLT, LogicalOperatorLTE,
 		LogicalOperatorGT, LogicalOperatorGTE,
 		LogicalOperatorEQ, LogicalOperatorNEQ,
-		LogicalOperatorIN, LogicalOperatorNIN, LogicalOperatorBETWEEN,
+		LogicalOperatorIN, LogicalOperatorNIN,
+		LogicalOperatorBETWEEN, LogicalOperatorCONTAINS,
 	} {
 		if v.String() != string(v) || !v.IsValid() {
 			t.Errorf("%v should be valid", v)
@@ -218,6 +219,9 @@ func TestLogicalOperator(t *testing.T) {
 		if got, err := v.Parse(string(v)); err != nil || got != v {
 			t.Errorf("Parse(%q) = (%v, %v)", v, got, err)
 		}
+	}
+	if got := LogicalOperatorEQ.GetAllOperators(); len(got) != 10 {
+		t.Errorf("GetAllOperators() returned %d items, want 10", len(got))
 	}
 	if LogicalOperator("??").IsValid() {
 		t.Error("unknown value should be invalid")
