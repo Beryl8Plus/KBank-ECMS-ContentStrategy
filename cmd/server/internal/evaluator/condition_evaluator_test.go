@@ -1006,3 +1006,79 @@ func TestEvaluateLogicConditions_Sentinels(t *testing.T) {
 		assert.True(t, ok)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// TestEvaluateLogicConditions_CONTAINS — end-to-end CONTAINS operator
+// ---------------------------------------------------------------------------
+
+func TestEvaluateLogicConditions_CONTAINS(t *testing.T) {
+	attrID := uuid.New()
+
+	makeCond := func(expected string) dto.LogicCondition {
+		return dto.LogicCondition{
+			ConditionID:     uuid.New().String(),
+			AttributeID:     attrID.String(),
+			DataType:        string(enums.AttributeDataTypeText),
+			LogicalOperator: string(enums.LogicalOperatorCONTAINS),
+			Sequence:        1,
+			ExpectedValue:   mustJSON(expected),
+		}
+	}
+
+	t.Run("Pass_SubstringFound", func(t *testing.T) {
+		cond := makeCond(`"gold"`)
+		userAttrs := map[string]json.RawMessage{
+			attrID.String(): mustJSON(`"golden card"`),
+		}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("Fail_SubstringNotFound", func(t *testing.T) {
+		cond := makeCond(`"gold"`)
+		userAttrs := map[string]json.RawMessage{
+			attrID.String(): mustJSON(`"silver tier"`),
+		}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("Pass_CaseInsensitive", func(t *testing.T) {
+		cond := makeCond(`"GOLD"`)
+		userAttrs := map[string]json.RawMessage{
+			attrID.String(): mustJSON(`"golden card"`),
+		}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("Pass_ExactMatch", func(t *testing.T) {
+		cond := makeCond(`"gold"`)
+		userAttrs := map[string]json.RawMessage{
+			attrID.String(): mustJSON(`"gold"`),
+		}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("Fail_MissingUserAttr", func(t *testing.T) {
+		cond := makeCond(`"gold"`)
+		userAttrs := map[string]json.RawMessage{
+			uuid.New().String(): mustJSON(`"gold"`),
+		}
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, userAttrs)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("Fail_NilUserAttrs", func(t *testing.T) {
+		cond := makeCond(`"gold"`)
+		ok, err := EvaluateLogicConditions([]dto.LogicCondition{cond}, nil)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+}
