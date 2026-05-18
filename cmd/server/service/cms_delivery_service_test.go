@@ -235,13 +235,19 @@ func TestCMSDeliveryService_FlushCache_Selective(t *testing.T) {
 }
 
 // TestCMSDeliveryService_FlushCache_All verifies that FlushCache with nil/empty
-// names calls FlushDB instead of Delete.
+// names clears all in-memory caches without touching Redis.
 func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
 	t.Parallel()
 
 	deleteCalled := false
 	flushDBCalled := false
 	mem := newTestMemCache(t, "flush_cache_all_test")
+
+	// Pre-populate all four in-memory maps so we can assert they are wiped.
+	mem.Schedules.Set(cmsPlacementSchedulesKey("hero"), []*entity.Schedule{{}}, time.Hour)
+	mem.DecisionRule.Set("rule:abc", &entity.DecisionRule{}, time.Hour)
+	mem.VersionHashes.Set("hero", "v1", time.Hour)
+	mem.LastSync.Set("hero", time.Now(), time.Hour)
 
 	svc := NewCMSDeliveryService(&mockCacheRepo{
 		deleteFn: func(_ context.Context, _ string) error {
@@ -254,16 +260,25 @@ func TestCMSDeliveryService_FlushCache_All(t *testing.T) {
 		},
 	}, nil, nil, nil, mem, time.Hour, 0, nil, nil, CustomerProfileEnrichConfig{}, nil, nil)
 
-	// nil placements → FlushDB
+	// nil placements → clears in-memory only, does NOT call FlushDB
 	require.NoError(t, svc.FlushCache(context.Background(), nil, false))
-	assert.True(t, flushDBCalled)
+	assert.False(t, flushDBCalled, "full flush must not call Redis FlushDB")
 	assert.False(t, deleteCalled)
+	assert.Empty(t, mem.Schedules.Keys(), "Schedules must be cleared")
+	assert.Empty(t, mem.DecisionRule.Keys(), "DecisionRule must be cleared")
+	assert.Empty(t, mem.VersionHashes.Keys(), "VersionHashes must be cleared")
+	assert.Empty(t, mem.LastSync.Keys(), "LastSync must be cleared")
 
-	// empty slice → FlushDB
-	flushDBCalled = false
+	// Re-populate and repeat for empty slice.
+	mem.Schedules.Set(cmsPlacementSchedulesKey("hero"), []*entity.Schedule{{}}, time.Hour)
+	mem.VersionHashes.Set("hero", "v1", time.Hour)
+	mem.LastSync.Set("hero", time.Now(), time.Hour)
+
 	require.NoError(t, svc.FlushCache(context.Background(), []string{}, false))
-	assert.True(t, flushDBCalled)
-	assert.False(t, deleteCalled)
+	assert.False(t, flushDBCalled, "full flush must not call Redis FlushDB")
+	assert.Empty(t, mem.Schedules.Keys(), "Schedules must be cleared")
+	assert.Empty(t, mem.VersionHashes.Keys(), "VersionHashes must be cleared")
+	assert.Empty(t, mem.LastSync.Keys(), "LastSync must be cleared")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

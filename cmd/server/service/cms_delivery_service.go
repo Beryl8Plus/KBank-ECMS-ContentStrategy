@@ -335,17 +335,19 @@ func (s *CMSDeliveryService) GetCacheStatus(ctx context.Context) (isMemPressure 
 }
 
 // FlushCache removes cached results for the given placement names.
-// If placementNames is nil or empty, all in-memory entries are cleared and
-// ALL Redis placement caches are flushed via FlushDB.
+// If placementNames is nil or empty, all in-memory entries are cleared.
+// Redis is left intact; the background ticker repopulates L1 from PostgreSQL.
 func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []string, isEvaluate bool) error {
 	if len(placementNames) == 0 {
-		// Full flush: wipe Redis and in-memory caches entirely.
-		if err := s.cacheRepo.FlushDB(ctx); err != nil {
-			return fmt.Errorf("flushing all caches: %w", err)
-		}
 		if s.cacheMemory != nil {
 			s.cacheMemory.Schedules.Clear()
 			s.cacheMemory.DecisionRule.Clear()
+			if s.cacheMemory.VersionHashes != nil {
+				s.cacheMemory.VersionHashes.Clear()
+			}
+			if s.cacheMemory.LastSync != nil {
+				s.cacheMemory.LastSync.Clear()
+			}
 		}
 	} else if s.cacheMemory != nil {
 		// Selective flush: evict only the named placements from the in-memory mirror.
@@ -357,10 +359,18 @@ func (s *CMSDeliveryService) FlushCache(ctx context.Context, placementNames []st
 				for _, sched := range schedules {
 					if sched.DecisionRule != nil {
 						s.cacheMemory.DecisionRule.Delete(ruleDecisionCacheKey(sched.DecisionRule.ID.String()))
+					} else if sched.DecisionRuleID != uuid.Nil {
+						s.cacheMemory.DecisionRule.Delete(ruleDecisionCacheKey(sched.DecisionRuleID.String()))
 					}
 				}
 			}
 			s.cacheMemory.Schedules.Delete(placementNameKey)
+			if s.cacheMemory.VersionHashes != nil {
+				s.cacheMemory.VersionHashes.Delete(name)
+			}
+			if s.cacheMemory.LastSync != nil {
+				s.cacheMemory.LastSync.Delete(name)
+			}
 		}
 	}
 

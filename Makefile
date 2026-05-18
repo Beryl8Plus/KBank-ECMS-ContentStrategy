@@ -1,4 +1,4 @@
-.PHONY: init build run dev-build dev-up dev-down test vet lint install-golangci-lint fmt format-tags clean install-hooks swagger swagger-format swagger-server
+.PHONY: init build run dev-build dev-up dev-down test vet lint install-golangci-lint fmt format-tags clean install-hooks swagger swagger-format swagger-server tidy update-pkg
 
 
 ## Install golangci-lint v2 (cross-platform: macOS/Linux via install script, Windows via winget)
@@ -28,6 +28,12 @@ init:
 tidy:
 	go mod tidy
 	@echo "go mod tidy completed."
+
+## Update all dependencies to their latest minor/patch versions
+update-pkg:
+	go get -u ./...
+	go mod tidy
+	@echo "Packages updated successfully."
 
 ## Build the server binary
 build: swagger
