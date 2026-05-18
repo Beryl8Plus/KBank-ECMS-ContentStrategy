@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
 
     steps:
-      - uses: beatlabs/delete-old-branches-action@v0.0.10
+      - uses: crs-k/stale-branches@v9.0.1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          date: '3 months ago'
-          dry_run: false
-          delete_tags: false
-          extra_protected_branch_regex: '^(main|dev|staging|hotfix/.*)$'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 60
+          days-before-delete: 90
+          dry-run: false
