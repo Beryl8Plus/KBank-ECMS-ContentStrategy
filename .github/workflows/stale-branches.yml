@@ -2,7 +2,7 @@ name: Remove Stale Branches
 
 on:
   schedule:
-    - cron: '0 2 * * 1'  # Every Monday at 02:00 UTC
+    - cron: "0 2 * * 1" # Every Monday at 02:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -20,3 +20,4 @@ jobs:
           days-before-stale: 60
           days-before-delete: 90
           dry-run: false
+          branches-filter-regex: "^((?!kbank-production))"
